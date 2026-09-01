@@ -1,3 +1,5 @@
+import pytest
+
 from sift.ingest.raw import parse_message
 from sift.models import Lane
 from sift.packs import load_pack
@@ -170,3 +172,16 @@ def test_pack_categories_cover_every_recipe_category():
         declared |= set(load_pack(name).categories)
     unreachable = {r.category for r in load_recipes()} - declared
     assert not unreachable, f"recipe categories no pack declares: {sorted(unreachable)}"
+
+
+def test_the_readme_recipe_count_is_accurate():
+    """A number in the README that nothing checks is a number that drifts."""
+    import re
+    from pathlib import Path
+
+    readme = Path(__file__).resolve().parents[1] / "README.md"
+    if not readme.exists():  # installed without the repo tree
+        pytest.skip("README not present")
+    stated = re.search(r"(\d+) starter template recipes", readme.read_text(encoding="utf-8"))
+    assert stated, "the README should state how many template recipes ship"
+    assert int(stated.group(1)) == len(load_recipes())

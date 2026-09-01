@@ -99,6 +99,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         ("sklearn", "calibrated logistic regression"),
         ("selectolax", "faster, more robust HTML extraction"),
         ("sentence_transformers", "stronger multilingual embeddings"),
+        ("msal", "Microsoft Graph sign-in"),
         ("keyring", "passwords in the OS keychain"),
     ):
         try:

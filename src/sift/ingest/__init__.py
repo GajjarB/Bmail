@@ -38,6 +38,20 @@ def build_source(spec: dict[str, Any], own_addresses: set[str] | None = None) ->
             folder=str(spec.get("folder", "INBOX")),
             own_addresses=own_addresses,
         )
+    if provider in ("graph", "outlook", "microsoft", "m365"):
+        from sift.ingest.graph import GraphSource
+
+        return GraphSource(
+            name=name,
+            client_id=str(spec.get("client_id", "")),
+            tenant=str(spec.get("tenant", "common")),
+            token_cache_file=spec.get("token_cache_file", ""),
+            folder=str(spec.get("folder", "inbox")),
+            allow_modify=bool(spec.get("allow_modify", False)),
+            page_size=int(spec.get("page_size", 50)),
+            auth_mode=str(spec.get("auth_mode", "interactive")),
+            own_addresses=own_addresses,
+        )
     if provider == "gmail":
         from sift.ingest.gmail import GmailSource
 

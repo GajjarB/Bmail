@@ -182,6 +182,16 @@ path = "~/mail/export.mbox"
 # allow_modify = false          # true only if you want Sift to write labels
 
 # [[accounts]]
+# name = "outlook"
+# provider = "graph"                 # Outlook.com, Hotmail, Live, Microsoft 365
+# client_id = "00000000-0000-0000-0000-000000000000"
+# tenant = "common"                  # consumers | organizations | common | <tenant id>
+# token_cache_file = "~/.local/share/sift/outlook_graph.json"
+# folder = "inbox"                   # "" for the whole mailbox
+# auth_mode = "interactive"          # "device" on a machine with no browser
+# allow_modify = false               # true only to let Sift write categories
+
+# [[accounts]]
 # name = "uni"
 # provider = "imap"
 # host = "imap.example.edu"

@@ -1,7 +1,8 @@
 """Provider label write-back — planned first, applied only on request.
 
-The one thing Sift ever writes back to a mail provider is a label. It never
-deletes, never moves, never sends. Even that is two steps: `plan` records what
+The one thing Sift ever writes back to a mail provider is a label — a Gmail
+label, or its closest Outlook equivalent, a category. It never deletes, never
+moves, never sends. Even that is two steps: `plan` records what
 would be applied, and `apply` performs it only when explicitly asked and only
 for an account configured with `allow_modify = true`.
 

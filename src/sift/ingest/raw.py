@@ -22,7 +22,7 @@ from sift.models import Attachment, Direction, EmailAddress, Message
 from sift.text.clean import clean_body, detect_language, normalise_whitespace
 from sift.text.html import html_to_text
 
-_KEEP_HEADERS = (
+KEEP_HEADERS = (
     "list-id", "list-unsubscribe", "precedence", "auto-submitted", "x-mailer",
     "x-auto-response-suppress", "authentication-results", "return-path",
     "x-campaign-id", "x-mailgun-tag", "feedback-id", "x-google-appliance",
@@ -159,7 +159,7 @@ def parse_message(
 
     headers = {
         name: _decode(msg.get(name))
-        for name in _KEEP_HEADERS
+        for name in KEEP_HEADERS
         if msg.get(name) is not None
     }
 

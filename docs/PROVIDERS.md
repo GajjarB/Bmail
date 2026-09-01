@@ -58,15 +58,97 @@ drops it after roughly a week of inactivity — re-run with `--reset`.
 
 ## Outlook, Hotmail and Microsoft 365
 
-Basic authentication is retired for consumer accounts; IMAP works only with
-XOAUTH2, which makes Microsoft Graph the simpler path. Publisher verification is
-free.
+Basic authentication is retired for these mailboxes, and IMAP works only with
+XOAUTH2, so Microsoft Graph is simply the easier path. Publisher verification is
+free, and because no mail content leaves your machine this stays a client-side
+integration — you register your own app, and no shared server holds anyone's
+tokens.
 
-The Graph connector is the one planned connector not yet implemented. Until it
-lands, export to `.mbox` and use the file source, or connect via IMAP with
-XOAUTH2 credentials you already hold. The interface it must implement is
-`SourceConnector` in `sift/ingest/base.py`: `fetch(cursor)` and `cursor()`,
-resuming from a `deltaLink`.
+```bash
+pip install 'sift-mail[graph]'
+```
+
+### Register a desktop app
+
+1. Go to <https://entra.microsoft.com/> → **App registrations** → **New
+   registration**.
+2. Supported account types: **Accounts in any organizational directory and
+   personal Microsoft accounts** for a mix of work and Outlook.com mailboxes;
+   personal-only is fine if that is all you have.
+3. Under **Authentication**, add a platform → **Mobile and desktop
+   applications**, and tick the `http://localhost` redirect URI. If you plan to
+   sign in on a machine with no browser, also set **Allow public client flows**
+   to *Yes*.
+4. Under **API permissions**, add the delegated Microsoft Graph permission
+   `Mail.Read` — and `Mail.ReadWrite` only if you want Sift to write categories
+   back.
+5. Copy the **Application (client) ID**.
+
+No client secret. A desktop app cannot keep one, so Sift uses the public-client
+flow with PKCE.
+
+```toml
+[[accounts]]
+name = "outlook"
+provider = "graph"
+client_id = "00000000-0000-0000-0000-000000000000"
+tenant = "common"                  # consumers | organizations | common | <tenant id>
+token_cache_file = "~/.local/share/sift/outlook_graph.json"
+folder = "inbox"                   # "" reads the whole mailbox
+auth_mode = "interactive"          # "device" on a machine with no browser
+allow_modify = false               # true only to let Sift write categories
+```
+
+Use `tenant = "consumers"` for a personal Outlook.com or Hotmail account,
+`"organizations"` for work or school only, and `"common"` for both.
+
+```bash
+sift ingest --account outlook
+```
+
+The first run opens a browser once. With `auth_mode = "device"` it prints a code
+and a URL to open on another device instead — the right choice over SSH. Tokens
+land in `token_cache_file`, written `0600`.
+
+### How syncing works
+
+Sift reads `/me/mailFolders/{folder}/messages/delta` for change tracking, then
+fetches each message's original MIME via `$value` and hands it to the same
+normaliser that parses an mbox. Outlook mail therefore goes through exactly the
+same parsing as every other source, so provider quirks cannot leak downstream.
+Graph's `conversationId` is used as the thread id, which is more reliable than
+reconstructing the chain from headers.
+
+A few behaviours worth knowing:
+
+- **Deletions are ignored.** Delta reports removed items; Sift skips them. It
+  never deletes anything from its own store either.
+- **`--limit` never advances the cursor.** A truncated run keeps the previous
+  delta link, because storing the new one would silently skip everything that
+  was not read.
+- **Expired cursors self-heal.** Graph drops sync state after a long gap; Sift
+  falls back to a full read of the folder rather than failing the run.
+- **Throttling is obeyed.** Graph answers 429 with a `Retry-After` header, and
+  Sift waits exactly that long. Ignoring it is how a backfill gets an account
+  temporarily blocked.
+- **A JSON fallback covers the rest.** Graph will not serve MIME for every item
+  it lists; those are rebuilt from the JSON projection instead of being dropped.
+
+### Writing categories back
+
+Graph has no labels. Outlook **categories** are the closest equivalent and are
+purely additive, so that is what Sift writes — and only with
+`allow_modify = true`, which is what escalates the scope to `Mail.ReadWrite`.
+
+```bash
+sift labels                                   # plan only
+sift labels --apply outlook --confirm         # add categories
+```
+
+Commas are stripped from category names, because Outlook stores categories as a
+comma-delimited list and a comma inside a name would split it in two. A new
+category appears without a colour until you assign one in Outlook; Sift does not
+request the extra scope needed to manage the master category list.
 
 ## Generic IMAP — Yahoo, GMX, Web.de, iCloud, university mail
 

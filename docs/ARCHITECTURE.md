@@ -33,7 +33,13 @@ cascade is the whole cost model.
 connector gets rewritten once and keep the rewrite local.
 
 Everything funnels through `sift/ingest/raw.py`, which produces the canonical
-`Message`. Two details there are load-bearing:
+`Message` — including the API-based connectors, which fetch original MIME
+(Gmail's `format=raw`, Graph's `$value`) rather than a provider's JSON
+projection, so every source is parsed by identical code. Where a provider knows
+the thread better than the headers do — Graph's `conversationId` — that is
+passed in as an override.
+
+Two details in the normaliser are load-bearing:
 
 - **HTML → text.** Quoted history is the biggest source of noise in mail
   summarisation — a three-reply thread is typically 80% repetition. Bodies are

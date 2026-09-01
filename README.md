@@ -76,8 +76,8 @@ pip install -e .
 ```
 
 Optional extras: `pip install -e '.[ml]'` (trainable classifier),
-`'.[html]'` (faster HTML extraction), `'.[gmail]'`, `'.[keyring]'`,
-`'.[embeddings]'`, or `'.[all]'`.
+`'.[html]'` (faster HTML extraction), `'.[gmail]'`, `'.[graph]'` (Outlook and
+Microsoft 365), `'.[keyring]'`, `'.[embeddings]'`, or `'.[all]'`.
 
 For Stage 3, install [Ollama](https://ollama.com) and pull the model
 `sift doctor` suggests for your hardware. **Everything except Stage 3 works
@@ -95,7 +95,9 @@ sift cases
 ```
 
 Then point it at real mail. Start with a file — a Gmail Takeout export or any
-`.mbox` — because it needs no OAuth and no rate limits:
+`.mbox` — because it needs no OAuth and no rate limits. Gmail, Outlook /
+Microsoft 365 and any IMAP mailbox are configured in `config.toml`; see
+[docs/PROVIDERS.md](docs/PROVIDERS.md).
 
 ```bash
 sift ingest --path ~/Downloads/takeout/Mail/All\ mail.mbox --account archive
@@ -233,17 +235,17 @@ stats = Pipeline(pack, classifier=Classifier(pack), use_llm=False).triage(
 
 ## Status and what is deliberately absent
 
-Working today: file/mbox/Maildir and IMAP ingest, Gmail ingest and label
-write-back, all four stages, four packs, 46 template recipes, the Brief, cases
-and ghosting detection, Excel/CSV/ICS/Notion export, the evaluation harness and
-ablations, and a local read-only API.
+Working today: file/mbox/Maildir, IMAP, Gmail and Microsoft Graph ingest, all
+four stages, four packs, 49 starter template recipes, the Brief, cases and
+ghosting detection, Excel/CSV/ICS/Notion export, Gmail label and Outlook
+category write-back, the evaluation harness and ablations, and a local
+read-only API.
 
-Not built yet: the Microsoft Graph connector (the interface it must implement is
-in `sift/ingest/base.py`), `sqlite-vec` embedding storage, and a desktop UI.
+Not built yet: `sqlite-vec` embedding storage and a desktop UI.
 
 Not planned: **compose and send.** The moment Sift becomes a mail client the
 project doubles — rendering, offline sync, threading, MIME edge cases. Sift sits
-*beside* your mail client and writes back only labels.
+*beside* your mail client and writes back only labels and categories.
 
 ## Development
 
