@@ -1,0 +1,108 @@
+# University admissions and the German international-applicant infrastructure.
+# uni-assist, DAAD, blocked accounts and APS are the bureaucratic chokepoints
+# that generate hard deadlines, so they get their own recipes.
+
+- id: uni-assist-notice
+  vendor: uni-assist
+  category: document_request
+  priority: 80
+  match:
+    from_domain: [uni-assist.de]
+  extract:
+    org: {const: "uni-assist"}
+
+- id: daad-notice
+  vendor: DAAD
+  category: admin
+  priority: 78
+  match:
+    from_domain: [daad.de]
+  extract:
+    org: {const: "DAAD"}
+
+- id: aps-certificate
+  vendor: APS
+  category: document_request
+  priority: 78
+  match:
+    body_any: ["aps certificate", "akademische prüfstelle", "aps zertifikat"]
+
+- id: blocked-account
+  vendor: blocked account provider
+  category: document_request
+  priority: 76
+  match:
+    body_any:
+      - "blocked account"
+      - "sperrkonto"
+      - "proof of financial resources"
+      - "finanzierungsnachweis"
+
+- id: admission-offer-en
+  vendor: generic
+  category: admission_offer
+  priority: 92
+  match:
+    body_any:
+      - "you have been admitted"
+      - "we are pleased to offer you a place"
+      - "offer of admission"
+      - "your application has been successful"
+  extract:
+    org: {source: from_domain, transform: [domain_to_org]}
+
+- id: admission-offer-de
+  vendor: generic
+  category: admission_offer
+  priority: 92
+  match:
+    body_any:
+      - "haben sie einen studienplatz erhalten"
+      - "zulassungsbescheid"
+      - "wir freuen uns, ihnen einen studienplatz"
+      - "sie wurden zum studium zugelassen"
+  extract:
+    org: {source: from_domain, transform: [domain_to_org]}
+
+- id: admission-rejection-de
+  vendor: generic
+  category: rejection
+  priority: 90
+  match:
+    body_any:
+      - "können wir ihnen keinen studienplatz anbieten"
+      - "ablehnungsbescheid"
+      - "ihre bewerbung konnte nicht berücksichtigt werden"
+  extract:
+    org: {source: from_domain, transform: [domain_to_org]}
+
+- id: waitlist-de
+  vendor: generic
+  category: waitlist
+  priority: 87
+  match:
+    body_any: ["warteliste", "nachrückverfahren", "rangplatz"]
+
+- id: portal-message-notice
+  vendor: generic
+  description: The portal notification that hides the actual message behind a login.
+  category: portal_notice
+  priority: 60
+  match:
+    body_any:
+      - "a new message is available in your portal"
+      - "please log in to your applicant portal"
+      - "neue nachricht in ihrem bewerbungsportal"
+      - "bitte loggen sie sich in ihr bewerberportal ein"
+      - "nachricht in ihrem bewerbungsaccount"
+
+- id: enrolment-de
+  vendor: generic
+  category: enrolment
+  priority: 64
+  match:
+    body_any:
+      - "immatrikulation"
+      - "semesterbeitrag"
+      - "einschreibung"
+      - "rückmeldung zum semester"

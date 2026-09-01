@@ -1,0 +1,44 @@
+# Bulk and housekeeping mail. These exist so obviously-uninteresting messages
+# never reach the classifier, let alone a model.
+
+- id: security-notice
+  vendor: generic
+  category: admin
+  priority: 68
+  match:
+    body_any:
+      - "your password was changed"
+      - "new sign-in to your account"
+      - "verify your email address"
+      - "two-factor authentication"
+      - "ihr passwort wurde geändert"
+      - "neue anmeldung bei ihrem konto"
+      - "bestätigen sie ihre e-mail-adresse"
+
+- id: invoice-receipt
+  vendor: generic
+  category: admin
+  priority: 66
+  match:
+    body_any:
+      - "your receipt from"
+      - "your invoice is ready"
+      - "payment receipt"
+      - "ihre rechnung steht zum download bereit"
+      - "zahlungsbestätigung"
+
+- id: newsletter-unsubscribe-footer
+  vendor: generic
+  description: Fires only together with the List-Unsubscribe header, so real mail is safe.
+  category: newsletter
+  priority: 40
+  confidence: 0.9
+  match:
+    header_any:
+      list-unsubscribe: "http"
+    body_any:
+      - "unsubscribe"
+      - "abmelden"
+      - "newsletter abbestellen"
+      - "manage your preferences"
+      - "view this email in your browser"

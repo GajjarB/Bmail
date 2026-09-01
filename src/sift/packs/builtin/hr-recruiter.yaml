@@ -1,0 +1,125 @@
+# The mirror image of job-seeker: one case per candidate per requisition,
+# with response-time SLAs instead of ghosting detection.
+name: hr-recruiter
+description: Inbound candidates per requisition, with response-time SLAs.
+language: [en, de]
+entity: candidate_application
+key: [contact_person, role]
+initial_state: applied
+states:
+  - applied
+  - screened
+  - interview
+  - offer
+  - hired
+  - declined
+  - rejected
+  - unresponsive
+terminal_states: [hired, declined, rejected]
+stall_days: 5
+
+transitions:
+  unresponsive:
+    from: [screened, interview, offer]
+    after_days_silent: 5
+
+categories:
+  application:
+    description: A candidate applying for a role, usually with a CV attached.
+    action_required: true
+    urgency: this_week
+    next_action: reply
+    high_stakes: true
+    state: applied
+    opens_case: true
+    label: Application
+    prototypes:
+      - "Please find attached my CV and cover letter for the position advertised on your website."
+      - "Hiermit bewerbe ich mich auf die ausgeschriebene Stelle. Anbei mein Lebenslauf."
+
+  candidate_reply:
+    description: A candidate answering an existing thread — availability, questions, follow-up.
+    action_required: true
+    urgency: this_week
+    next_action: reply
+    label: Candidate
+    prototypes:
+      - "Thank you for getting back to me. Tuesday afternoon works well for a call."
+      - "Vielen Dank für Ihre Rückmeldung. Dienstagnachmittag würde mir gut passen."
+
+  candidate_withdrawal:
+    description: A candidate withdrawing or declining an offer.
+    state: declined
+    closes_case: true
+    label: Withdrawn
+    prototypes:
+      - "I would like to withdraw my application as I have accepted another offer."
+      - "Ich möchte meine Bewerbung zurückziehen, da ich eine andere Zusage erhalten habe."
+
+  interview_scheduling:
+    description: Arranging or confirming an interview slot with a candidate or panel.
+    action_required: true
+    urgency: this_week
+    next_action: schedule
+    high_stakes: true
+    state: interview
+    label: Scheduling
+    prototypes:
+      - "Please confirm the interview panel for Thursday at 10:00."
+      - "Bitte bestätigen Sie den Gesprächstermin am Donnerstag um 10 Uhr."
+
+  offer_process:
+    description: Offer preparation, contract, salary approval or onboarding paperwork.
+    action_required: true
+    urgency: today
+    next_action: prepare
+    high_stakes: true
+    state: offer
+    label: Offer
+    prototypes:
+      - "The offer has been approved. Please prepare the contract for signature."
+      - "Das Angebot wurde freigegeben, bitte bereiten Sie den Vertrag vor."
+
+  agency_outreach:
+    description: A staffing agency or vendor pitching candidates or services.
+    label: Vendor
+    prototypes:
+      - "We have three pre-screened senior developers available immediately."
+      - "Wir hätten kurzfristig drei geprüfte Kandidaten für Sie."
+
+  job_board_notice:
+    description: Automated notifications from a job board or ATS about posting status.
+    label: Board
+    prototypes:
+      - "Your job posting expires in three days. Renew it to keep receiving applications."
+      - "Ihre Stellenanzeige läuft in drei Tagen ab."
+
+  newsletter:
+    description: HR marketing, webinars, industry mailing lists.
+    label: Bulk
+    prototypes:
+      - "Webinar: hiring trends for the coming year. Register now."
+      - "Newsletter mit aktuellen Recruiting-Trends."
+
+  admin:
+    description: Internal housekeeping, tooling, access or billing mail.
+    label: Admin
+    prototypes:
+      - "Your ATS seat licence has been renewed for another year."
+      - "Ihre Rechnung für das Bewerbermanagementsystem."
+
+  personal:
+    description: A colleague writing to you directly about something other than a candidate.
+    action_required: true
+    urgency: whenever
+    next_action: reply
+    label: Personal
+    prototypes:
+      - "Can we move our one-to-one to Wednesday?"
+      - "Können wir unser Gespräch auf Mittwoch verschieben?"
+
+  other:
+    description: Anything that does not fit the categories above.
+
+kpis: [time_to_first_response, sla_breaches, pipeline_by_state, offer_acceptance_rate]
+label_prefix: Sift

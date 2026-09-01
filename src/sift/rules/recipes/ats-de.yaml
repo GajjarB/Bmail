@@ -1,0 +1,192 @@
+# German-market job mail. This is where the German corpus actually lives:
+# Personio, softgarden, StepStone, Xing and the standard "Leider …" phrasing.
+#
+# German rejections are polite and indirect, which is exactly the case where a
+# small model trained mostly on English degrades. Handling them with a rule is
+# both cheaper and more reliable.
+
+- id: personio-acknowledgement
+  vendor: Personio
+  category: acknowledgement
+  priority: 70
+  match:
+    from_domain: [personio.de, personio.com, jobs.personio.de]
+    body_any:
+      - "vielen dank für ihre bewerbung"
+      - "wir haben ihre bewerbung erhalten"
+      - "thank you for your application"
+  extract:
+    org: {source: from_name, transform: [strip_via, strip, collapse]}
+    role:
+      source: subject
+      regex: "(?:bewerbung|application)\\s*(?:als|für|for|auf)\\s*(.{3,80})$"
+      transform: [strip_org_suffix, strip, collapse]
+
+- id: softgarden-acknowledgement
+  vendor: softgarden
+  category: acknowledgement
+  priority: 70
+  match:
+    from_domain: [softgarden.de, softgarden.io, sgtalent.de]
+    body_any:
+      - "vielen dank für ihre bewerbung"
+      - "ihre bewerbung ist bei uns eingegangen"
+      - "thank you for applying"
+      - "thank you for your application"
+      - "we have received your application"
+  extract:
+    org: {source: from_name, transform: [strip_via, strip, collapse]}
+
+- id: stepstone-application
+  vendor: StepStone
+  category: acknowledgement
+  priority: 74
+  match:
+    from_domain: [stepstone.de, stepstone.com]
+    subject_any: ["bewerbung", "ihre bewerbung", "application"]
+  extract:
+    org:
+      source: subject
+      regex: "(?:bei|an|at)\\s+(.{2,60})$"
+      transform: [strip, collapse]
+
+- id: stepstone-job-alert
+  vendor: StepStone
+  category: job_alert
+  priority: 76
+  match:
+    from_domain: [stepstone.de, stepstone.com]
+    subject_any: ["jobs für sie", "neue jobs", "jobagent", "stellenangebote"]
+
+- id: xing-job-alert
+  vendor: XING
+  category: job_alert
+  priority: 75
+  match:
+    from_domain: [xing.com, xing.de]
+    subject_any: ["jobs", "stellenangebote", "jobempfehlungen"]
+
+- id: arbeitsagentur-notice
+  vendor: Bundesagentur für Arbeit
+  category: admin
+  priority: 72
+  match:
+    from_domain: [arbeitsagentur.de]
+
+- id: join-acknowledgement
+  vendor: JOIN
+  category: acknowledgement
+  priority: 70
+  match:
+    from_domain: [join.com]
+    body_any: ["vielen dank für ihre bewerbung", "thank you for your application"]
+  extract:
+    org: {source: from_name, transform: [strip_via, strip, collapse]}
+
+- id: generic-rejection-de
+  vendor: generic
+  description: The standard German rejection formula, in its common variants.
+  category: rejection
+  priority: 90
+  match:
+    body_any:
+      - "leider müssen wir ihnen mitteilen"
+      - "leider können wir ihre bewerbung nicht"
+      - "haben wir uns für einen anderen bewerber"
+      - "haben wir uns für eine andere bewerberin"
+      - "können wir ihre bewerbung nicht weiter berücksichtigen"
+      - "nicht in die engere auswahl"
+      - "eine absage erteilen"
+      - "ihre bewerbung nicht berücksichtigen"
+  extract:
+    org: {source: from_domain, transform: [domain_to_org]}
+
+- id: generic-interview-invite-de
+  vendor: generic
+  category: interview_invite
+  priority: 88
+  match:
+    body_any:
+      - "zu einem vorstellungsgespräch einladen"
+      - "möchten wir sie gerne kennenlernen"
+      - "laden wir sie zu einem gespräch ein"
+      - "würden wir uns gerne mit ihnen unterhalten"
+      - "terminvorschlag für ein gespräch"
+  extract:
+    org: {source: from_domain, transform: [domain_to_org]}
+
+- id: generic-document-request-de
+  vendor: generic
+  category: document_request
+  priority: 84
+  match:
+    body_any:
+      - "bitte reichen sie noch"
+      - "es fehlen noch folgende unterlagen"
+      - "wir benötigen noch"
+      - "bitte laden sie folgende dokumente hoch"
+      - "ihre bewerbung ist unvollständig"
+  extract:
+    org: {source: from_domain, transform: [domain_to_org]}
+
+- id: generic-acknowledgement-de
+  vendor: generic
+  category: acknowledgement
+  priority: 50
+  match:
+    body_any:
+      - "vielen dank für ihre bewerbung"
+      - "wir haben ihre bewerbung erhalten"
+      - "ihre bewerbung ist bei uns eingegangen"
+      - "eingangsbestätigung ihrer bewerbung"
+  extract:
+    org: {source: from_domain, transform: [domain_to_org]}
+
+- id: generic-assessment-de
+  vendor: generic
+  description: German wording for online tests and coding challenges.
+  category: assessment
+  priority: 86
+  match:
+    body_any:
+      - "online-test"
+      - "online test"
+      - "testverfahren"
+      - "eignungstest"
+      - "programmieraufgabe"
+      - "testaufgabe"
+      - "auswahltest"
+      - "coding challenge"
+    body_none:
+      - "leider müssen wir ihnen mitteilen"
+      - "nicht weiter berücksichtigen"
+  extract:
+    org: {source: from_domain, transform: [domain_to_org]}
+
+- id: generic-offer-de
+  vendor: generic
+  description: A concrete job offer or contract to sign.
+  category: offer
+  priority: 92
+  match:
+    body_any:
+      - "freuen uns, ihnen die stelle anbieten"
+      - "möchten wir ihnen die stelle anbieten"
+      - "anbei erhalten sie den arbeitsvertrag"
+      - "ihr vertragsangebot"
+  extract:
+    org: {source: from_domain, transform: [domain_to_org]}
+
+- id: generic-offer-en
+  vendor: generic
+  description: A concrete job offer or contract to sign.
+  category: offer
+  priority: 92
+  match:
+    body_any:
+      - "we are delighted to offer you"
+      - "we are pleased to offer you the position"
+      - "please find attached your employment contract"
+      - "formal offer of employment"
+  extract:
+    org: {source: from_domain, transform: [domain_to_org]}

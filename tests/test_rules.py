@@ -1,0 +1,172 @@
+from sift.ingest.raw import parse_message
+from sift.models import Lane
+from sift.packs import load_pack
+from sift.rules.engine import RulesEngine, coverage
+from sift.rules.headers import header_signals
+from sift.rules.templates import load_recipes, match_template
+from sift.store import repo
+from tests.conftest import make_raw
+
+
+def test_all_shipped_recipes_are_valid():
+    recipes = load_recipes()
+    assert len(recipes) >= 40
+    assert len({r.id for r in recipes}) == len(recipes)  # ids are unique
+
+
+def test_recipes_are_sorted_by_priority():
+    priorities = [r.priority for r in load_recipes()]
+    assert priorities == sorted(priorities, reverse=True)
+
+
+def test_bulk_headers_are_detected():
+    message = parse_message(
+        make_raw(
+            sender="newsletter@shop.example",
+            extra={"List-Unsubscribe": "<https://shop.example/u>", "Precedence": "bulk"},
+        )
+    )
+    signals = header_signals(message)
+    assert signals.is_bulk and signals.is_list
+    assert signals.score >= 0.45
+
+
+def test_personal_mail_is_not_bulk():
+    message = parse_message(make_raw(sender="jonas@gmx.de", sender_name="Jonas Weber"))
+    assert header_signals(message).score == 0.0
+
+
+def test_rejection_outranks_vendor_acknowledgement():
+    """The decisive priority rule: every ATS opens its rejections with
+    'thank you for your interest', so an outcome phrase must win."""
+    message = parse_message(
+        make_raw(
+            sender="noreply@myworkday.com",
+            subject="Update on your application",
+            body=(
+                "Thank you for your interest in our company. After careful consideration "
+                "we have decided not to move forward with your application."
+            ),
+        )
+    )
+    hit = match_template(message)
+    assert hit is not None
+    assert hit.recipe.category == "rejection"
+
+
+def test_vendor_recipe_still_fires_without_an_outcome_phrase():
+    message = parse_message(
+        make_raw(
+            sender="noreply@myworkday.com",
+            subject="Your application",
+            body="Thank you for your interest. We have received your application.",
+        )
+    )
+    hit = match_template(message)
+    assert hit is not None and hit.recipe.category == "acknowledgement"
+
+
+def test_body_none_vetoes_a_recipe():
+    message = parse_message(
+        make_raw(
+            body=(
+                "Please complete the online assessment. However we have decided not to "
+                "move forward with your application."
+            )
+        )
+    )
+    hit = match_template(message)
+    assert hit is not None and hit.recipe.category != "assessment"
+
+
+def test_german_rejection_is_matched_by_rule():
+    message = parse_message(
+        make_raw(
+            subject="Ihre Bewerbung",
+            body=(
+                "Sehr geehrte Bewerberin,\n\nleider müssen wir Ihnen mitteilen, dass wir "
+                "Ihre Bewerbung nicht weiter berücksichtigen können.\n\nMit freundlichen Grüßen"
+            ),
+        )
+    )
+    hit = match_template(message)
+    assert hit is not None and hit.recipe.category == "rejection"
+
+
+def test_vendor_domain_never_becomes_the_employer():
+    message = parse_message(
+        make_raw(
+            sender="no-reply@greenhouse.io",
+            sender_name="Acme GmbH via Greenhouse",
+            body="Unfortunately, we have decided not to move forward with your application.",
+        )
+    )
+    hit = match_template(message)
+    assert hit is not None
+    assert hit.fields.get("org") in (None, "")  # not "Greenhouse"
+
+
+def test_stage1_resolves_most_of_a_realistic_corpus(conn, pack, tmp_path):
+    from sift.ingest import FileSource, ingest
+    from sift.samples import write_mbox
+
+    mbox, _ = write_mbox(tmp_path, applications=12, noise=20)
+    ingest(conn, FileSource(mbox, name="demo", own_addresses={"you@example.com"}))
+    engine = RulesEngine(pack)
+    results = [engine.run(conn, message) for message in repo.iter_messages(conn)]
+    stats = coverage(results)
+    assert stats["resolved_fraction"] >= 0.6  # the design target for Stage 1
+    assert stats["templates"] > 0
+
+
+def test_duplicates_inherit_the_original_verdict(conn, pack):
+    """Dedupe runs after template matching, so this uses a body no recipe claims.
+
+    The point being checked is that folding a repeat does not throw its category
+    away — a duplicate of a classified message inherits that classification.
+    """
+    body = (
+        "Sehr geehrte Damen und Herren, hier ist die monatliche Zusammenfassung "
+        "Ihrer Aktivitaeten in unserem Portal fuer diesen Zeitraum."
+    )
+    first = parse_message(
+        make_raw(message_id="<a@x>", body=body, subject="Zusammenfassung",
+                 extra={"List-Unsubscribe": "<https://x.example/u>"})
+    )
+    second = parse_message(
+        make_raw(message_id="<b@x>", body=body, subject="Zusammenfassung",
+                 extra={"List-Unsubscribe": "<https://x.example/u>"})
+    )
+    repo.bulk_upsert(conn, [first, second])
+    engine = RulesEngine(pack)
+    original = engine.run(conn, first).verdict
+    assert original.lane is not Lane.duplicate
+    duplicate = engine.run(conn, second)
+    assert duplicate.verdict.lane is Lane.duplicate
+    assert duplicate.verdict.category == original.category  # folded, not discarded
+
+
+def test_deterministic_deadline_carries_evidence(conn, pack):
+    message = parse_message(
+        make_raw(
+            subject="Online-Test",
+            body=(
+                "Guten Tag,\n\nals nächsten Schritt bitten wir Sie, den Online-Test zu "
+                "bearbeiten. Bitte schließen Sie den Test bis zum 15.10.2026 ab."
+            ),
+        )
+    )
+    repo.bulk_upsert(conn, [message])
+    verdict = RulesEngine(pack).run(conn, message).verdict
+    assert verdict.deadline is not None and verdict.deadline.isoformat() == "2026-10-15"
+    assert verdict.evidence and "15.10.2026" in verdict.evidence
+    assert verdict.evidence_ok is True
+
+
+def test_pack_categories_cover_every_recipe_category():
+    """A recipe whose category no pack declares can never fire — catch that here."""
+    declared: set[str] = set()
+    for name in ("job-seeker", "student-admissions", "hr-recruiter", "freelance-ops"):
+        declared |= set(load_pack(name).categories)
+    unreachable = {r.category for r in load_recipes()} - declared
+    assert not unreachable, f"recipe categories no pack declares: {sorted(unreachable)}"

@@ -1,0 +1,155 @@
+# Tracking job applications end to end.
+# A "case" is one application: one company, one role. Every mail about it —
+# auto-acknowledgement, assessment link, scheduling, rejection — lands on the
+# same card and moves its state.
+name: job-seeker
+description: Job applications, from submitted to offer or rejection.
+language: [en, de]
+entity: application
+key: [org_domain, role]
+initial_state: applied
+states:
+  - applied
+  - acknowledged
+  - assessment
+  - interview_scheduled
+  - interviewed
+  - offer
+  - rejected
+  - withdrawn
+  - ghosted
+terminal_states: [offer, rejected, withdrawn]
+stall_days: 21
+
+transitions:
+  ghosted:
+    from: [applied, acknowledged, interviewed, assessment]
+    after_days_silent: 21
+
+categories:
+  acknowledgement:
+    description: An automated confirmation that an application was received. No action needed.
+    state: acknowledged
+    opens_case: true
+    label: Acknowledged
+    prototypes:
+      - "Thank you for your application. We have received your documents and will review them."
+      - "Vielen Dank für Ihre Bewerbung. Wir haben Ihre Unterlagen erhalten und prüfen diese."
+      - "Your application has been submitted successfully and is now under review."
+
+  rejection:
+    description: The employer declines to move forward with the application.
+    state: rejected
+    closes_case: true
+    label: Rejected
+    prototypes:
+      - "Unfortunately we have decided not to move forward with your application at this time."
+      - "Leider müssen wir Ihnen mitteilen, dass wir Ihre Bewerbung nicht weiter berücksichtigen können."
+      - "We have decided to proceed with other candidates whose profile more closely matches."
+
+  interview_invite:
+    description: An invitation to an interview or a request to book a time slot.
+    action_required: true
+    urgency: this_week
+    next_action: schedule
+    high_stakes: true
+    state: interview_scheduled
+    label: Interview
+    prototypes:
+      - "We would like to invite you to an interview. Please choose a time slot that suits you."
+      - "Wir würden Sie gerne zu einem Vorstellungsgespräch einladen. Bitte wählen Sie einen Termin."
+      - "Are you available for a 30 minute introductory call next week?"
+
+  assessment:
+    description: An online test, coding challenge or task with a submission deadline.
+    action_required: true
+    urgency: this_week
+    next_action: submit_document
+    high_stakes: true
+    state: assessment
+    label: Assessment
+    prototypes:
+      - "Please complete the following online assessment within 5 days using the link below."
+      - "Bitte bearbeiten Sie den folgenden Online-Test innerhalb von fünf Tagen."
+      - "As a next step we ask you to complete a short coding challenge."
+
+  offer:
+    description: A concrete job offer or a contract to review and sign.
+    action_required: true
+    urgency: today
+    next_action: reply
+    high_stakes: true
+    state: offer
+    closes_case: true
+    label: Offer
+    prototypes:
+      - "We are delighted to offer you the position and attach the contract for your review."
+      - "Wir freuen uns, Ihnen die Stelle anbieten zu können. Anbei finden Sie den Vertrag."
+
+  document_request:
+    description: A request for missing documents, certificates, references or forms.
+    action_required: true
+    urgency: this_week
+    next_action: submit_document
+    high_stakes: true
+    label: Documents
+    prototypes:
+      - "Could you please send us your certificates and a copy of your degree?"
+      - "Bitte reichen Sie noch Ihre Zeugnisse und Ihren Lebenslauf nach."
+
+  scheduling:
+    description: Arranging, moving or confirming a time for an already-agreed meeting.
+    action_required: true
+    urgency: this_week
+    next_action: schedule
+    label: Scheduling
+    prototypes:
+      - "Does Tuesday at 14:00 work for you, or shall we move it to Thursday?"
+      - "Passt Ihnen der Termin am Dienstag um 14 Uhr?"
+
+  recruiter_outreach:
+    description: A recruiter approaching you about a role you did not apply for.
+    action_required: true
+    urgency: whenever
+    next_action: reply
+    label: Outreach
+    prototypes:
+      - "I came across your profile and think you would be a great fit for a role we are hiring for."
+      - "Ich bin auf Ihr Profil gestoßen und habe eine interessante Position für Sie."
+
+  job_alert:
+    description: An automated job board digest or saved-search alert. Not about a specific application.
+    label: Alerts
+    prototypes:
+      - "12 new jobs match your saved search this week."
+      - "Neue Stellenangebote für Ihre Suchanfrage."
+
+  newsletter:
+    description: Marketing, product news or a mailing list. Never about a specific application.
+    label: Bulk
+    prototypes:
+      - "Here is our monthly newsletter with product updates and company news."
+      - "Unser Newsletter mit Neuigkeiten und Angeboten."
+
+  admin:
+    description: Account, billing, security or platform housekeeping mail.
+    label: Admin
+    prototypes:
+      - "Your password was changed. If this was not you, please secure your account."
+      - "Ihre Rechnung für diesen Monat steht zum Download bereit."
+
+  personal:
+    description: A message written by a human, personally, to you.
+    action_required: true
+    urgency: whenever
+    next_action: reply
+    label: Personal
+    prototypes:
+      - "Hi, just wanted to check how you are doing and whether you are free on Friday."
+      - "Hallo, ich wollte kurz nachfragen, wie es dir geht."
+
+  other:
+    description: Anything that does not fit the categories above.
+
+kpis: [response_rate, interview_conversion, median_days_to_reply, stalled_count, rejection_rate]
+label_prefix: Sift

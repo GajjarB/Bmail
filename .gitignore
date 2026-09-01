@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.env
+
+# Tooling caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Local agent/editor state
+.claude/
+.idea/
+.vscode/
+
+# Sift runtime data — never commit mail, tokens or models
+data/
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+*.mbox
+*.eml
+credentials.json
+token.json
+config.toml
+models/
+out/

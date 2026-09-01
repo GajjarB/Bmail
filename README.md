@@ -1,0 +1,258 @@
+# Sift
+
+**A local-first email triage engine.** It reads your mailboxes on your own
+machine, decides what actually needs you, and turns lifecycle email — job
+applications, university admissions, candidate pipelines, invoices — into a live
+tracker you never have to type into.
+
+Nothing leaves your computer. No server, no account, no telemetry.
+
+```
+$ sift brief
+
+Sift brief · Tue 01 Sep 2026 09:12 UTC · pack: job-seeker
+========================================================================
+4 need you · 2 deadlines · 1 upcoming · 14 stalled · 61 archived
+
+NEEDS YOU
+ 1. Online-Test für Ihre Bewerbung als Data Engineer
+    Nordwind Analytics · assessment
+    deadline 2026-09-06
+    evidence: "Bitte schließen Sie den Test bis zum 06.09.2026 ab."
+ 2. Interview invitation – Platform Engineer
+    Lumen Mobility · interview_invite
+    Mon 14 Sep 09:00 UTC
+    evidence: "We propose 14 September 2026 at 10:00 CET."
+
+STALLED — worth one follow-up
+ · Helios Robotics — Backend Developer — silent 34 days · applied
+ · Weser Data GmbH — Data Engineer — silent 27 days · acknowledged
+```
+
+## Why this exists
+
+"Too many emails" is three problems, and most tools solve one:
+
+| Problem | What it actually is | Solved by |
+|---|---|---|
+| **Volume** — 100+ a day, most irrelevant | A filtering problem | Rules plus a small classifier. Cheap. |
+| **Comprehension** — long threads, buried asks | A summarisation problem | A language model. |
+| **State** — *"did that company ever reply?"* | A **stateful tracking** problem | Entity resolution and a state machine — not summarisation. |
+
+Nobody solves the third one well. A spreadsheet solves it only for what you
+remember to type in. That is the gap Sift fills.
+
+The concrete version: track 90 roles, and each generates two to six emails —
+auto-acknowledgement, portal invite, assessment link, scheduling, rejection.
+That is 200–500 messages of pure state change, arriving out of order, in two
+languages, from ATS systems that all write differently. No human holds that. A
+spreadsheet holds only what you remember to update.
+
+## Why local is the design, not a feature
+
+- **It removes the recurring compliance cost.** Gmail's `readonly` and `modify`
+  scopes are *restricted*: an app that stores or transmits that data on servers
+  needs an annual third-party security assessment. A desktop app that never
+  ships mail content anywhere sidesteps it entirely.
+- **GDPR.** Your inbox holds personal data about *other people* — recruiters,
+  professors, candidates. Send it to a US API and you are a controller using a
+  processor. Process it locally and, for personal use, there is no processor at
+  all.
+- **Unit economics.** Backfilling three years of mail is hundreds of thousands
+  of tokens — precisely the workload cloud APIs punish. Locally it is a warm
+  laptop for an hour, once.
+
+See [docs/PRIVACY.md](docs/PRIVACY.md).
+
+## Install
+
+Python 3.10+. The core needs three packages.
+
+```bash
+git clone https://github.com/GajjarB/Bmail.git
+cd Bmail
+python -m venv .venv && source .venv/bin/activate
+pip install -e .
+```
+
+Optional extras: `pip install -e '.[ml]'` (trainable classifier),
+`'.[html]'` (faster HTML extraction), `'.[gmail]'`, `'.[keyring]'`,
+`'.[embeddings]'`, or `'.[all]'`.
+
+For Stage 3, install [Ollama](https://ollama.com) and pull the model
+`sift doctor` suggests for your hardware. **Everything except Stage 3 works
+without it** — Sift degrades to rules plus the classifier and says so.
+
+## Try it in one minute, with no credentials
+
+```bash
+sift init
+sift samples --out ./sample        # a synthetic EN/DE corpus with ground truth
+sift ingest --path ./sample/sample.mbox --account demo
+sift triage
+sift brief
+sift cases
+```
+
+Then point it at real mail. Start with a file — a Gmail Takeout export or any
+`.mbox` — because it needs no OAuth and no rate limits:
+
+```bash
+sift ingest --path ~/Downloads/takeout/Mail/All\ mail.mbox --account archive
+sift triage && sift brief
+```
+
+## How it works
+
+Four stages. Each may settle a message and stop; only what survives goes on.
+
+```
+Stage 1  headers, contact graph, ATS template recipes, near-duplicate collapse
+           └─ resolves most of an inbox with zero model calls
+Stage 2  local embeddings + a calibrated classifier
+           └─ accept when confident; escalate when not, or when the miss is expensive
+Stage 3  local LLM, schema-constrained, every fact carrying its source sentence
+Stage 4  entity resolution + a per-pack state machine
+```
+
+Three ideas do most of the work:
+
+**Deterministic first.** ATS systems send the same text with three fields
+swapped. Fingerprint the boilerplate once and extraction becomes a regex — no
+model call, milliseconds, deterministic. Run `sift templates` on your own
+corpus; that number decides how much model you actually need, and it is usually
+higher than people expect.
+
+**Asymmetric routing.** Missing an interview invitation is catastrophic; a false
+alarm costs three seconds. So high-stakes categories escalate to the model
+regardless of confidence, and packs declare which those are.
+
+**Every fact shows its source.** Each extracted date arrives with the sentence
+it came from, and that sentence is checked against the email. A date the email
+does not contain is dropped, not displayed. This makes hallucination visible and
+measurable instead of silent — the single highest-value decision in the project.
+
+Full detail in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+## Domain packs
+
+Job seekers, university applicants and recruiters are the same machine with
+different vocabulary — so that is made explicit. A pack is a YAML file declaring
+categories, a case key, a state machine and KPIs. The engine is domain-agnostic.
+
+| Pack | Entity | Killer feature |
+|---|---|---|
+| `job-seeker` | application | Ghosting detection, ATS parsing, response-rate analytics |
+| `student-admissions` | programme application | Deadline extraction (uni-assist, DAAD, portals), missing-document alerts |
+| `hr-recruiter` | candidate × requisition | Response-time SLAs, candidate dedupe |
+| `freelance-ops` | invoice | Amount and due-date extraction, an overdue chase list |
+
+Write your own: [docs/PACKS.md](docs/PACKS.md).
+
+## Outputs
+
+SQLite is the source of truth; a spreadsheet is an export. It cannot dedupe,
+cannot hold a state machine, and cannot tell you what has gone stale.
+
+```bash
+sift export --xlsx tracker.xlsx    # Overview / Cases / Timeline / Deadlines / Contacts
+sift export --ics deadlines.ics    # interviews as events, deadlines with alarms
+sift export --csv ./out
+sift labels                        # plan provider labels — writes nothing outward
+sift notion --database <id>        # fill a Notion database you already have
+```
+
+## Evaluation
+
+Built in from the start, because trust is the product.
+
+```bash
+sift eval labels.jsonl --ablate
+```
+
+Reports per-class P/R/F1, **recall on `action_required`** as the headline
+number, precision@5 on the Brief, field-level accuracy (exact on dates including
+timezone, fuzzy on organisation names), a hallucination rate, and latency —
+across rules-only, +classifier, +LLM, LLM-on-everything, and German vs English
+subsets. See [docs/EVALUATION.md](docs/EVALUATION.md).
+
+## Security
+
+Email is attacker-controlled text being fed to a model, so prompt injection is
+not hypothetical:
+
+- **The model has no tools.** It emits JSON. Every side effect happens in Python
+  from validated fields.
+- **The body is data, not instructions** — fenced with delimiters stripped from
+  the content first.
+- **Nothing is fetched.** URLs are reduced to their host before reaching a
+  prompt: no tracking pixels, no SSRF.
+- **Nothing auto-deletes, ever.** The only outward write is a label, and only
+  after you confirm it. Worst case is a wrong row in a local database.
+- Passwords go to the OS keychain, never the config file. `sift doctor` warns if
+  one ends up there.
+- The local API binds `127.0.0.1` only, random port, token-gated. The model host
+  must be loopback unless you explicitly opt out.
+
+## Commands
+
+| Command | What it does |
+|---|---|
+| `sift init` | Create the config and the store |
+| `sift doctor` | Check the environment, models and privacy settings |
+| `sift samples` | Generate a synthetic corpus with ground truth |
+| `sift ingest` | Pull mail from a file, IMAP or Gmail |
+| `sift triage` | Run the pipeline |
+| `sift brief` | What needs you, in one screen (`--format md\|json`) |
+| `sift cases` | The tracker (`--id N` for a full timeline) |
+| `sift review` | Confirm low-confidence verdicts; each answer trains the classifier |
+| `sift templates` | Recipe coverage over your own corpus |
+| `sift search` | Full-text search |
+| `sift export` | Excel, CSV, calendar |
+| `sift labels` | Plan and apply provider labels |
+| `sift eval` | Score the pipeline; `--ablate` for the comparison |
+| `sift packs` | List and describe domain packs |
+| `sift serve` | Local read-only API on `127.0.0.1` |
+
+The core is importable and headless — the CLI is a client of it, not a container
+for it:
+
+```python
+from sift.store.db import connect
+from sift.packs import load_pack
+from sift.classify import Classifier
+from sift.pipeline import Pipeline
+from sift.store import repo
+
+conn = connect("~/.local/share/sift/sift.sqlite3")
+pack = load_pack("job-seeker")
+stats = Pipeline(pack, classifier=Classifier(pack), use_llm=False).triage(
+    conn, repo.iter_messages(conn, limit=200)
+)
+```
+
+## Status and what is deliberately absent
+
+Working today: file/mbox/Maildir and IMAP ingest, Gmail ingest and label
+write-back, all four stages, four packs, 46 template recipes, the Brief, cases
+and ghosting detection, Excel/CSV/ICS/Notion export, the evaluation harness and
+ablations, and a local read-only API.
+
+Not built yet: the Microsoft Graph connector (the interface it must implement is
+in `sift/ingest/base.py`), `sqlite-vec` embedding storage, and a desktop UI.
+
+Not planned: **compose and send.** The moment Sift becomes a mail client the
+project doubles — rendering, offline sync, threading, MIME edge cases. Sift sits
+*beside* your mail client and writes back only labels.
+
+## Development
+
+```bash
+pip install -e '.[dev,ml,html]'
+pytest -q
+ruff check src tests
+```
+
+## Licence
+
+MIT. See [LICENSE](LICENSE).
