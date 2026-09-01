@@ -161,9 +161,28 @@ embeddings when the vector count justifies it.
 A spreadsheet is a fine *export* and a terrible *source of truth*: it cannot
 dedupe, cannot hold a state machine, and cannot tell you what has gone stale.
 
+## The UI seam
+
+The core is headless and importable. `sift.api` puts a loopback HTTP server in
+front of it and `sift/ui/static` is a page that consumes it; the Tauri shell in
+`desktop/` owns a window and a child process and nothing more.
+
+That server was originally read-only, on the argument that ingest and triage are
+long-running jobs belonging to a scheduler rather than an HTTP handler. The UI
+made that untenable — a person clicking "Triage" should not be told to open a
+terminal — so writes exist now, but never inline: they queue on the single
+worker in `sift.jobs`, and the page polls for progress. One worker, not a pool,
+because the store has one writer and two triage runs at once is never what
+anyone wanted. The handler itself still does nothing slower than a query.
+
+Details, including the five guards that make running a mail-reading server on a
+laptop defensible, are in [UI.md](UI.md).
+
 ## What is deliberately absent
 
 - **No mail client.** No compose, no send, no rendering. That is a multi-year
   trap and it doubles the project the moment it starts.
-- **No server.** There is nothing to run, nothing to breach, no annual audit.
+- **No remote server.** The only server is a loopback daemon on your own
+  machine, started and stopped with the window. Nothing to breach remotely, no
+  annual audit.
 - **No telemetry.** No analytics, no crash reporting, no update pings.

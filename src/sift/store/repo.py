@@ -674,3 +674,179 @@ def bulk_upsert(conn: sqlite3.Connection, messages: Iterable[Message]) -> tuple[
             if upsert_message(conn, message):
                 new += 1
     return new, seen
+
+
+# --------------------------------------------------------------------------- #
+# Browsing — the queries the UI needs, which the CLI never did
+# --------------------------------------------------------------------------- #
+
+
+def browse_messages(
+    conn: sqlite3.Connection,
+    pack: str,
+    *,
+    category: str | None = None,
+    action_required: bool | None = None,
+    needs_review: bool | None = None,
+    lane: str | None = None,
+    query: str = "",
+    limit: int = 50,
+    offset: int = 0,
+) -> tuple[list[dict[str, Any]], int]:
+    """A filtered, paged message list with its triage verdict attached.
+
+    Returns (rows, total matching) so the UI can show "showing 50 of 812"
+    without a second round trip.
+    """
+    joins = [
+        "FROM messages m",
+        "LEFT JOIN verdicts v ON v.message_id = m.message_id AND v.pack = ?",
+    ]
+    params: list[Any] = [pack]
+    where: list[str] = ["m.direction = 'inbound'"]
+
+    if query.strip():
+        # MATCH must name the FTS table itself. Not every SQLite build accepts a
+        # table alias there, so the join stays unaliased.
+        joins.append("JOIN messages_fts ON messages_fts.message_id = m.message_id")
+        where.append("messages_fts MATCH ?")
+        params.append(query.strip())
+    if category:
+        where.append("v.category = ?")
+        params.append(category)
+    if action_required is not None:
+        where.append("COALESCE(v.action_required, 0) = ?")
+        params.append(int(action_required))
+    if needs_review is not None:
+        where.append("COALESCE(v.needs_review, 0) = ?")
+        params.append(int(needs_review))
+    if lane:
+        where.append("v.lane = ?")
+        params.append(lane)
+
+    clause = " ".join(joins) + " WHERE " + " AND ".join(where)
+    select = (
+        "SELECT m.message_id, m.subject, m.from_name, m.from_addr, m.date_utc, "
+        "m.language, v.category, v.action_required, v.urgency, v.summary, v.confidence, "
+        "v.stage, v.lane, v.needs_review, v.deadline, v.event_datetime, v.evidence, "
+        "v.org, v.role "
+    )
+
+    def run(bound: list[Any]) -> tuple[list[dict[str, Any]], int]:
+        total = conn.execute(f"SELECT COUNT(*) c {clause}", bound).fetchone()["c"]
+        rows = conn.execute(
+            f"{select}{clause} ORDER BY m.date_utc DESC LIMIT ? OFFSET ?",
+            [*bound, int(limit), int(offset)],
+        ).fetchall()
+        return [dict(row) for row in rows], int(total)
+
+    if not query.strip():
+        # No user-supplied query means no syntax to get wrong: let errors surface.
+        return run(params)
+    try:
+        return run(params)
+    except sqlite3.OperationalError as exc:
+        # Only a malformed *search expression* is recoverable. Anything else is a
+        # bug in this query and must not be swallowed into an empty result.
+        if not _is_fts_syntax_error(exc):
+            raise
+        phrase = '"' + query.strip().replace('"', '""') + '"'
+        retried = [phrase if value == query.strip() else value for value in params]
+        try:
+            return run(retried)
+        except sqlite3.OperationalError as inner:
+            if not _is_fts_syntax_error(inner):
+                raise
+            return [], 0
+
+
+_FTS_SYNTAX_HINTS = (
+    "fts5", "unterminated", "syntax error", "no such column", "malformed match",
+)
+
+
+def _is_fts_syntax_error(exc: sqlite3.OperationalError) -> bool:
+    """Distinguish a user's bad search string from a broken query of ours."""
+    return any(hint in str(exc).lower() for hint in _FTS_SYNTAX_HINTS)
+
+
+def message_detail(conn: sqlite3.Connection, message_id: str, pack: str) -> dict[str, Any] | None:
+    """One message with its body, verdict and owning case — the detail pane."""
+    row = conn.execute(
+        "SELECT m.*, b.body_text, b.body_raw_text FROM messages m "
+        "LEFT JOIN bodies b ON b.message_id = m.message_id WHERE m.message_id = ?",
+        (message_id,),
+    ).fetchone()
+    if row is None:
+        return None
+    message = row_to_message(row, row)
+    verdict = get_verdict(conn, message_id, pack)
+    case = find_case_by_message(conn, pack, message_id)
+    return {
+        "message": {
+            "message_id": message.message_id,
+            "subject": message.subject,
+            "from": {"name": message.from_.name, "address": message.from_.address},
+            "to": [a.address for a in message.to],
+            "date": _dt_to_text(message.date),
+            "language": message.language,
+            "folder": message.folder,
+            "account": message.account,
+            "provider": message.provider,
+            "has_html": message.has_html,
+            "attachments": [a.model_dump() for a in message.attachments],
+            "body_text": message.body_text,
+        },
+        "verdict": verdict.model_dump(mode="json") if verdict else None,
+        "case": case.model_dump(mode="json") if case else None,
+    }
+
+
+def category_counts(conn: sqlite3.Connection, pack: str) -> list[dict[str, Any]]:
+    return [
+        {"category": row["category"], "count": row["c"]}
+        for row in conn.execute(
+            "SELECT category, COUNT(*) c FROM verdicts WHERE pack = ? GROUP BY category "
+            "ORDER BY c DESC",
+            (pack,),
+        )
+    ]
+
+
+def recent_runs(conn: sqlite3.Connection, limit: int = 10) -> list[dict[str, Any]]:
+    return [
+        dict(row)
+        for row in conn.execute(
+            "SELECT * FROM runs ORDER BY id DESC LIMIT ?", (int(limit),)
+        )
+    ]
+
+
+def correct_verdict(
+    conn: sqlite3.Connection,
+    message_id: str,
+    pack: str,
+    category: str,
+    action_required: bool | None = None,
+) -> bool:
+    """Record a human correction: update the verdict and store a training row."""
+    existing = conn.execute(
+        "SELECT 1 FROM verdicts WHERE message_id = ? AND pack = ?", (message_id, pack)
+    ).fetchone()
+    if existing is None:
+        return False
+    if action_required is None:
+        conn.execute(
+            "UPDATE verdicts SET category = ?, needs_review = 0, stage = 'manual' "
+            "WHERE message_id = ? AND pack = ?",
+            (category, message_id, pack),
+        )
+    else:
+        conn.execute(
+            "UPDATE verdicts SET category = ?, action_required = ?, needs_review = 0, "
+            "stage = 'manual' WHERE message_id = ? AND pack = ?",
+            (category, int(action_required), message_id, pack),
+        )
+    add_training_row(conn, message_id, pack, category, action_required, source="user")
+    conn.commit()
+    return True

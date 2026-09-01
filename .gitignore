@@ -2,8 +2,9 @@
 __pycache__/
 *.py[cod]
 *.egg-info/
-build/
-dist/
+# Root-anchored: desktop/dist is the Tauri shell's fallback page and is tracked.
+/build/
+/dist/
 .venv/
 venv/
 .env
@@ -32,3 +33,7 @@ token.json
 config.toml
 models/
 out/
+
+# Rust / Tauri build output
+desktop/src-tauri/target/
+desktop/src-tauri/gen/

@@ -50,7 +50,7 @@ Source = "https://github.com/GajjarB/Bmail"
 where = ["src"]
 
 [tool.setuptools.package-data]
-sift = ["packs/builtin/*.yaml", "rules/recipes/*.yaml", "store/*.sql"]
+sift = ["packs/builtin/*.yaml", "rules/recipes/*.yaml", "store/*.sql", "ui/static/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

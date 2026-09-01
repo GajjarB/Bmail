@@ -20,12 +20,17 @@ That is the complete list. There is no Sift server, no telemetry, no analytics,
 no crash reporting and no update check. `sift doctor` prints the current state of
 these settings, and warns if a password has ended up in the config file.
 
-Two guards enforce this rather than merely documenting it:
+These guards enforce it rather than merely documenting it:
 
 - `OllamaClient` refuses any non-loopback host unless `llm.allow_remote = true`
   is set deliberately.
-- The local API binds `127.0.0.1` only, on a random port, behind a token
-  generated at startup.
+- The local daemon binds `127.0.0.1` only, on a random port, behind a token
+  generated at startup, with the `Host` header pinned against DNS rebinding and
+  `Origin` checked on every request.
+- The daemon stops when the window that started it goes away — including if that
+  window is killed outright — so a mail-reading server never lingers.
+- The UI fetches nothing from the internet: no fonts, no CDN, no analytics. A
+  test fails the build if any request leaves the machine.
 
 ## Google's restricted scopes
 

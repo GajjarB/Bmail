@@ -67,6 +67,7 @@ class Pipeline:
         use_llm: bool = True,
         max_llm_calls: int = 500,
         distil: bool = True,
+        respect_manual: bool = True,
     ) -> None:
         self.pack = pack
         self.rules = RulesEngine(pack, recipe_dir=recipe_dir)
@@ -75,12 +76,24 @@ class Pipeline:
         self.resolver = CaseResolver(pack)
         self.max_llm_calls = max_llm_calls
         self.distil = distil
+        self.respect_manual = respect_manual
 
     # -- one message ------------------------------------------------------------ #
 
     def triage_one(
         self, conn: sqlite3.Connection, message: Message, stats: TriageStats
     ) -> Verdict:
+        if self.respect_manual:
+            # A human correction outranks anything the pipeline would decide.
+            # Re-triaging must not quietly undo the answer someone typed in — and
+            # the case machinery below has to see the human's category too, so
+            # this returns early rather than merely skipping the write.
+            existing = repo.get_verdict(conn, message.message_id, self.pack.name)
+            if existing is not None and existing.stage is Stage.manual:
+                self.rules.remember(message, existing)
+                self._settle(conn, message, existing, stats)
+                return existing
+
         stage1 = self.rules.run(conn, message)
         verdict = stage1.verdict
 
@@ -117,7 +130,17 @@ class Pipeline:
             verdict.reasons.append("no classifier configured")
 
         repo.save_verdict(conn, verdict)
+        self._settle(conn, message, verdict, stats)
+        return verdict
 
+    def _settle(
+        self,
+        conn: sqlite3.Connection,
+        message: Message,
+        verdict: Verdict,
+        stats: TriageStats,
+    ) -> None:
+        """Run entity resolution for a finished verdict and count it."""
         stage4 = self.resolver.resolve(conn, message, verdict)
         if stage4.case is not None:
             stats.cases_created += int(stage4.created)
@@ -128,7 +151,6 @@ class Pipeline:
         stats.by_category[verdict.category] += 1
         stats.by_lane[verdict.lane.value] += 1
         stats.needs_review += int(verdict.needs_review)
-        return verdict
 
     # -- batch -------------------------------------------------------------------- #
 

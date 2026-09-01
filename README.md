@@ -8,7 +8,7 @@ tracker you never have to type into.
 Nothing leaves your computer. No server, no account, no telemetry.
 
 ```
-$ sift brief
+$ sift ui        # a window; or `sift brief` for the same thing in the terminal
 
 Sift brief · Tue 01 Sep 2026 09:12 UTC · pack: job-seeker
 ========================================================================
@@ -94,6 +94,12 @@ sift brief
 sift cases
 ```
 
+Or open the window:
+
+```bash
+sift ui                      # opens a browser at a loopback address
+```
+
 Then point it at real mail. Start with a file — a Gmail Takeout export or any
 `.mbox` — because it needs no OAuth and no rate limits. Gmail, Outlook /
 Microsoft 365 and any IMAP mailbox are configured in `config.toml`; see
@@ -103,6 +109,27 @@ Microsoft 365 and any IMAP mailbox are configured in `config.toml`; see
 sift ingest --path ~/Downloads/takeout/Mail/All\ mail.mbox --account archive
 sift triage && sift brief
 ```
+
+## The window
+
+`sift ui` serves the app from the local daemon and opens it. There is also a
+native shell built on Tauri, for a real desktop window and installers:
+
+```bash
+cd desktop/src-tauri && cargo build --release && ./target/release/sift-desktop
+```
+
+Both run the same page against the same daemon. Four surfaces — **Brief**
+(what needs you, ranked, each fact showing its source sentence), **Cases** (the
+tracker, with full message timelines), **Messages** (filter, search, page) and
+**Review** (correct a verdict; the classifier learns from it) — plus Settings
+for ingest, triage and export. Long jobs run in the background with a progress
+bar.
+
+The page is vanilla HTML, CSS and JavaScript with no build step and no
+framework: it is served from your own machine and has to work offline, so there
+is nothing to fetch and nothing to compile. A test asserts it makes no external
+requests at all. See [docs/UI.md](docs/UI.md).
 
 ## How it works
 
@@ -193,8 +220,12 @@ not hypothetical:
   after you confirm it. Worst case is a wrong row in a local database.
 - Passwords go to the OS keychain, never the config file. `sift doctor` warns if
   one ends up there.
-- The local API binds `127.0.0.1` only, random port, token-gated. The model host
-  must be loopback unless you explicitly opt out.
+- The local server binds `127.0.0.1` only, on a random port, behind a session
+  token, with the `Host` header pinned against DNS rebinding and `Origin`
+  checked on every request. The model host must be loopback unless you
+  explicitly opt out.
+- The daemon never outlives its window: the shell kills it on close, and the
+  daemon also watches its parent and stops when that goes away.
 
 ## Commands
 
@@ -214,7 +245,8 @@ not hypothetical:
 | `sift labels` | Plan and apply provider labels |
 | `sift eval` | Score the pipeline; `--ablate` for the comparison |
 | `sift packs` | List and describe domain packs |
-| `sift serve` | Local read-only API on `127.0.0.1` |
+| `sift ui` | Open the desktop UI |
+| `sift serve` | Run the local daemon without opening a browser |
 
 The core is importable and headless — the CLI is a client of it, not a container
 for it:
@@ -238,10 +270,11 @@ stats = Pipeline(pack, classifier=Classifier(pack), use_llm=False).triage(
 Working today: file/mbox/Maildir, IMAP, Gmail and Microsoft Graph ingest, all
 four stages, four packs, 49 starter template recipes, the Brief, cases and
 ghosting detection, Excel/CSV/ICS/Notion export, Gmail label and Outlook
-category write-back, the evaluation harness and ablations, and a local
-read-only API.
+category write-back, the evaluation harness and ablations, the local daemon,
+and the desktop UI in both browser and native-window form.
 
-Not built yet: `sqlite-vec` embedding storage and a desktop UI.
+Not built yet: `sqlite-vec` embedding storage, and signed installers — signing
+needs per-developer Apple and Windows certificates that cannot live in a repo.
 
 Not planned: **compose and send.** The moment Sift becomes a mail client the
 project doubles — rendering, offline sync, threading, MIME edge cases. Sift sits
@@ -251,8 +284,14 @@ project doubles — rendering, offline sync, threading, MIME edge cases. Sift si
 
 ```bash
 pip install -e '.[dev,ml,html]'
-pytest -q
+pytest -q                  # 178 tests
 ruff check src tests
+
+# The browser tests drive the real UI in Chromium; they skip if it is absent.
+pip install playwright && playwright install chromium
+
+# The native shell (needs Rust, and WebKitGTK on Linux)
+cd desktop/src-tauri && cargo build --release
 ```
 
 ## Licence

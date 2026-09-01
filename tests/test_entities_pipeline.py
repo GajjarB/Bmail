@@ -187,3 +187,64 @@ def test_triage_is_idempotent(conn, pack, tmp_path):
     first = len(repo.list_cases(conn, pack.name))
     Pipeline(pack, classifier=Classifier(pack), use_llm=False).triage(conn, messages)
     assert len(repo.list_cases(conn, pack.name)) == first  # no duplicate cases on re-run
+
+
+def test_a_human_correction_survives_a_re_triage(conn, pack, tmp_path):
+    """Re-triaging must not quietly undo an answer someone typed in."""
+    from sift.ingest import FileSource, ingest
+    from sift.models import Stage
+    from sift.samples import write_mbox
+
+    mbox, _ = write_mbox(tmp_path, applications=4, noise=4)
+    ingest(conn, FileSource(mbox, name="demo", own_addresses={"you@example.com"}))
+    messages = repo.iter_messages(conn)
+    pipeline = Pipeline(pack, classifier=Classifier(pack), use_llm=False)
+    pipeline.triage(conn, messages)
+
+    target = messages[0].message_id
+    original = repo.get_verdict(conn, target, pack.name)
+    assert original is not None and original.category != "personal"
+    repo.correct_verdict(conn, target, pack.name, "personal", True)
+
+    pipeline.triage(conn, messages)  # re-triage everything
+    kept = repo.get_verdict(conn, target, pack.name)
+    assert kept is not None
+    assert kept.category == "personal"
+    assert kept.stage is Stage.manual
+
+
+def test_the_correction_reaches_the_case_machinery(conn, pack, tmp_path):
+    """Honouring a manual verdict must not skip entity resolution for it."""
+    from sift.ingest import FileSource, ingest
+    from sift.samples import write_mbox
+
+    mbox, _ = write_mbox(tmp_path, applications=4, noise=4)
+    ingest(conn, FileSource(mbox, name="demo", own_addresses={"you@example.com"}))
+    messages = repo.iter_messages(conn)
+    pipeline = Pipeline(pack, classifier=Classifier(pack), use_llm=False)
+    pipeline.triage(conn, messages)
+    repo.correct_verdict(conn, messages[0].message_id, pack.name, "rejection", False)
+
+    stats = pipeline.triage(conn, messages)
+    assert stats.processed == len(messages)  # the manual one is still counted, not skipped
+
+
+def test_evaluation_ignores_human_corrections(conn, pack, tmp_path):
+    """Otherwise the harness would score the labels, not the pipeline."""
+    from sift.evaluation import Dataset, evaluate
+    from sift.ingest import FileSource, ingest
+    from sift.samples import write_mbox
+
+    mbox, labels = write_mbox(tmp_path, applications=4, noise=6)
+    ingest(conn, FileSource(mbox, name="demo", own_addresses={"you@example.com"}))
+    messages = repo.iter_messages(conn)
+    pipeline = Pipeline(pack, classifier=Classifier(pack), use_llm=False)
+    pipeline.triage(conn, messages)
+    for message in messages:
+        repo.correct_verdict(conn, message.message_id, pack.name, "offer", True)
+
+    report = evaluate(conn, pack, pipeline, Dataset.load(labels))
+    assert report.category.per_class.get("offer") is None or (
+        report.category.per_class["offer"].predicted < report.evaluated
+    ), "the planted manual labels leaked into the evaluation"
+    assert pipeline.respect_manual is True  # restored afterwards

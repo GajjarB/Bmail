@@ -594,7 +594,27 @@ def cmd_serve(args: argparse.Namespace) -> int:
     from sift.api import serve
 
     config = Config.load(getattr(args, "config", None))
-    return serve(config, host=args.host, port=args.port, pack=args.pack)
+    if getattr(args, "home", None):
+        config.home = Path(args.home).expanduser()
+    return serve(config, host=args.host, port=args.port, pack=args.pack,
+                 open_browser=False, machine_readable=args.json,
+                 exit_with_parent=args.exit_with_parent)
+
+
+def cmd_ui(args: argparse.Namespace) -> int:
+    """Start the daemon and open the desktop UI in the default browser."""
+    from sift.api import serve
+
+    config = Config.load(getattr(args, "config", None))
+    if getattr(args, "home", None):
+        config.home = Path(args.home).expanduser()
+    return serve(
+        config,
+        host="127.0.0.1",
+        port=args.port,
+        pack=args.pack,
+        open_browser=not args.no_open,
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -711,9 +731,18 @@ def build_parser() -> argparse.ArgumentParser:
     accounts.add_argument("--set-password", metavar="ACCOUNT")
     accounts.set_defaults(func=cmd_accounts)
 
-    serve = subparsers.add_parser("serve", help="local read-only API on 127.0.0.1")
+    ui = subparsers.add_parser("ui", help="open the desktop UI")
+    ui.add_argument("--port", type=int, default=0, help="0 picks a free port")
+    ui.add_argument("--no-open", action="store_true", help="do not launch a browser")
+    ui.set_defaults(func=cmd_ui)
+
+    serve = subparsers.add_parser("serve", help="run the local API without opening a browser")
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", type=int, default=0, help="0 picks a free port")
+    serve.add_argument("--json", action="store_true",
+                       help="print one JSON line with the url and token, for a supervising process")
+    serve.add_argument("--exit-with-parent", action="store_true",
+                       help="shut down when the process that started this one goes away")
     serve.set_defaults(func=cmd_serve)
 
     return parser

@@ -144,6 +144,11 @@ def evaluate(
 
     verdicts: dict[str, Verdict] = {}
     latencies: list[int] = []
+    # Scoring must never read back a human correction: the pipeline honours a
+    # manual verdict in normal use, and doing so here would measure the label
+    # rather than the model. Turned off for the duration, restored after.
+    honours_manual = getattr(pipeline, "respect_manual", False)
+    pipeline.respect_manual = False
     conn.execute("SAVEPOINT sift_eval")
     try:
         for message in messages:
@@ -152,6 +157,7 @@ def evaluate(
             latencies.append(int((time.perf_counter() - started) * 1000))
             verdicts[message.message_id] = verdict
     finally:
+        pipeline.respect_manual = honours_manual
         if persist:
             conn.execute("RELEASE SAVEPOINT sift_eval")
         else:

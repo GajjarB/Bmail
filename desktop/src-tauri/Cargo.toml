@@ -1,0 +1,19 @@
+[package]
+name = "sift-desktop"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.77"
+description = "Desktop shell for Sift, a local-first email triage engine"
+license = "MIT"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde_json = "1"
+
+[profile.release]
+strip = true
+lto = true
+opt-level = "s"
