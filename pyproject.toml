@@ -9,7 +9,7 @@ description = "Local-first email triage engine: filters, extracts and tracks lif
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
-authors = [{ name = "Bhargav Gajjar" }]
+authors = [{ name = "Bhargav Vadgama" }]
 keywords = ["email", "triage", "local-first", "privacy", "imap", "job-search"]
 classifiers = [
   "Development Status :: 3 - Alpha",
