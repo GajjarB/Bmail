@@ -251,11 +251,19 @@ class CaseEvent(BaseModel):
 
 
 class BriefItem(BaseModel):
-    """One line of the daily Brief."""
+    """One line of the daily Brief.
+
+    The fields are structured rather than pre-formatted: a display layer that
+    has to split a string back apart is a layer that will get it wrong.
+    """
 
     kind: str  # needs_you | deadline | stalled | event | archived
     title: str
     detail: str = ""
+    org: str | None = None
+    role: str | None = None
+    category: str = ""
+    urgency: Urgency = Urgency.none
     when: datetime | None = None
     due: date | None = None
     message_id: str | None = None

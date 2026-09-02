@@ -119,12 +119,13 @@ native shell built on Tauri, for a real desktop window and installers:
 cd desktop/src-tauri && cargo build --release && ./target/release/sift-desktop
 ```
 
-Both run the same page against the same daemon. Four surfaces — **Brief**
-(what needs you, ranked, each fact showing its source sentence), **Cases** (the
-tracker, with full message timelines), **Messages** (filter, search, page) and
-**Review** (correct a verdict; the classifier learns from it) — plus Settings
-for ingest, triage and export. Long jobs run in the background with a progress
-bar.
+Both run the same page against the same daemon. It is a briefing rather than a
+dashboard: **Today** opens with a sentence — *"Eighteen things need you."* —
+then the things themselves, each carrying its deadline and the quoted sentence
+that proves it. **Applications** draws every case's state machine as a rail and
+fills only the stages it actually reached. **Mail** is everything, searchable.
+**Review** asks about one uncertain guess at a time, and each answer teaches the
+classifier. Long jobs run in the background with a progress bar.
 
 The page is vanilla HTML, CSS and JavaScript with no build step and no
 framework: it is served from your own machine and has to work offline, so there

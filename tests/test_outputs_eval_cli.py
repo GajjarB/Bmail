@@ -41,13 +41,51 @@ def triaged(conn, pack, tmp_path):
 def test_brief_ranks_and_renders(triaged):
     conn, pack, _ = triaged
     brief = build_brief(conn, pack, window_days=400, limit=5)
-    assert brief.counts["needs_you"] <= 5
+    # `needs_you` is the true total and `showing` is what fits on the page. A
+    # count that shrinks when the page size shrinks is not a count.
+    assert len(brief.needs_you) <= 5
+    assert brief.counts["showing"] == len(brief.needs_you)
+    assert brief.counts["needs_you"] >= brief.counts["showing"]
     scores = [item.score for item in brief.needs_you]
     assert scores == sorted(scores, reverse=True)
     for renderer in (render_text, render_markdown):
         text = renderer(brief)
         assert "need" in text.lower() or "Needs you" in text
         assert text.endswith("\n")
+
+
+def test_the_brief_count_does_not_depend_on_the_page_size(triaged):
+    conn, pack, _ = triaged
+    small = build_brief(conn, pack, window_days=400, limit=2)
+    large = build_brief(conn, pack, window_days=400, limit=50)
+    assert small.counts["needs_you"] == large.counts["needs_you"]
+
+
+def test_brief_items_carry_structured_fields(triaged):
+    """A display layer that has to split a string back apart will get it wrong."""
+    conn, pack, _ = triaged
+    brief = build_brief(conn, pack, window_days=400, limit=10)
+    assert brief.needs_you
+    assert any(item.category for item in brief.needs_you)
+    assert any(item.org for item in brief.needs_you)
+
+
+def test_the_rendered_brief_names_the_organisation(triaged):
+    """The one-line context under each entry, composed from the fields.
+
+    It was briefly lost when BriefItem stopped carrying a pre-formatted string,
+    and nothing noticed because no assertion looked at the rendered line.
+    """
+    conn, pack, _ = triaged
+    brief = build_brief(conn, pack, window_days=400, limit=5)
+    assert brief.needs_you
+    text = render_text(brief)
+    first = brief.needs_you[0]
+    if first.org:
+        assert first.org in text
+    if first.category:
+        assert first.category.replace("_", " ") in text
+    assert first.org is None or first.org in render_markdown(brief)
 
 
 def test_brief_json_is_serialisable(triaged):

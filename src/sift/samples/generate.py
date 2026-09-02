@@ -16,7 +16,7 @@ import random
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
-from email.utils import format_datetime, make_msgid
+from email.utils import format_datetime
 from pathlib import Path
 
 COMPANIES = [
@@ -64,6 +64,16 @@ class Label:
     event_datetime: str | None = None
 
 
+def _stable_id(rng: random.Random) -> str:
+    """A Message-ID drawn from the seeded generator.
+
+    `email.utils.make_msgid` mixes in the clock and os.urandom, which would make
+    every run produce different ids — and the evaluation test split is keyed on
+    the message id, so two runs of a "seeded" corpus would not be comparable.
+    """
+    return f"<{rng.getrandbits(64):016x}.{rng.getrandbits(32):08x}@sift.example>"
+
+
 def _msg(
     *,
     subject: str,
@@ -72,11 +82,12 @@ def _msg(
     from_addr: str,
     to_addr: str,
     when: datetime,
+    rng: random.Random,
     extra_headers: dict[str, str] | None = None,
     references: list[str] | None = None,
 ) -> tuple[EmailMessage, str]:
     message = EmailMessage()
-    message_id = make_msgid(domain="sift.example")
+    message_id = _stable_id(rng)
     message["Message-ID"] = message_id
     message["Subject"] = subject
     message["From"] = f"{from_name} <{from_addr}>"
@@ -137,7 +148,7 @@ def generate_corpus(
             )
         message, message_id = _msg(
             subject=subject, body=body, from_name=f"{company} via {ats_name}",
-            from_addr=ats_addr, to_addr=owner, when=applied,
+            from_addr=ats_addr, to_addr=owner, when=applied, rng=rng,
             extra_headers={"Auto-Submitted": "auto-generated"},
         )
         thread.append(message_id)
@@ -166,7 +177,7 @@ def generate_corpus(
                 )
             message, message_id = _msg(
                 subject=subject, body=body, from_name=f"{company} Recruiting",
-                from_addr=f"recruiting@{domain}", to_addr=owner, when=when, references=list(thread),
+                from_addr=f"recruiting@{domain}", to_addr=owner, when=when, rng=rng, references=list(thread),
             )
             thread.append(message_id)
             emit(message, message_id, "assessment", True, company, role, lang,
@@ -198,7 +209,7 @@ def generate_corpus(
             message, message_id = _msg(
                 subject=subject, body=body, from_name=contact,
                 from_addr=f"{contact.split()[0].lower()}@{domain}", to_addr=owner,
-                when=when, references=list(thread),
+                when=when, rng=rng, references=list(thread),
             )
             thread.append(message_id)
             hour = 14 if lang == "de" else 10
@@ -227,7 +238,7 @@ def generate_corpus(
                 )
             message, message_id = _msg(
                 subject=subject, body=body, from_name=f"{company} via {ats_name}",
-                from_addr=ats_addr, to_addr=owner, when=when, references=list(thread),
+                from_addr=ats_addr, to_addr=owner, when=when, rng=rng, references=list(thread),
             )
             emit(message, message_id, "rejection", False, company, role, lang)
         # else: silence — these become the ghosted cases
@@ -251,7 +262,7 @@ def generate_corpus(
         )
         message, message_id = _msg(
             subject=subject, body=body, from_name=f"{uni} Admissions",
-            from_addr=f"admissions@{domain}", to_addr=owner, when=when,
+            from_addr=f"admissions@{domain}", to_addr=owner, when=when, rng=rng,
         )
         emit(message, message_id, "document_request", True, uni, programme, lang,
              deadline=due.date().isoformat())
@@ -268,7 +279,7 @@ def generate_corpus(
                     "Unsubscribe from these alerts at any time."
                 ),
                 from_name="LinkedIn Job Alerts", from_addr="jobalerts-noreply@linkedin.com",
-                to_addr=owner, when=when,
+                to_addr=owner, when=when, rng=rng,
                 extra_headers={
                     "List-Unsubscribe": "<https://linkedin.example/unsub>",
                     "Precedence": "bulk",
@@ -283,7 +294,7 @@ def generate_corpus(
                     "des Monats.\n\nSie können den Newsletter jederzeit abbestellen."
                 ),
                 from_name="Beispiel Shop", from_addr="newsletter@beispielshop.de",
-                to_addr=owner, when=when,
+                to_addr=owner, when=when, rng=rng,
                 extra_headers={
                     "List-Unsubscribe": "<https://beispielshop.de/unsub>",
                     "List-Id": "<news.beispielshop.de>",
@@ -298,7 +309,7 @@ def generate_corpus(
                     "If this was not you, please secure your account."
                 ),
                 from_name="Account Security", from_addr="no-reply@accounts.example.com",
-                to_addr=owner, when=when,
+                to_addr=owner, when=when, rng=rng,
                 extra_headers={"Auto-Submitted": "auto-generated"},
             )
             emit(message, message_id, "admin", False, "Accounts", "", "en")
@@ -310,7 +321,7 @@ def generate_corpus(
                     "Zeit für einen Kaffee?\n\nViele Grüße\nJonas"
                 ),
                 from_name="Jonas Weber", from_addr="jonas.weber@gmx.de",
-                to_addr=owner, when=when,
+                to_addr=owner, when=when, rng=rng,
             )
             emit(message, message_id, "personal", True, "", "", "de")
 

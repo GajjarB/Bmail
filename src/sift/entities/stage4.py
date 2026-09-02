@@ -38,10 +38,23 @@ class Stage4Result:
     to_state: str | None = None
 
 
+# Below this, a classification is a guess rather than a reading, and a guess
+# should not mint an entity. Note this is *confidence*, not the review flag: a
+# high-stakes category always escalates for a second opinion, and when no local
+# model is there to give one the verdict is flagged for review while still being
+# perfectly confident. Keying the guard on that flag made packs whose
+# case-opening category is high-stakes — hr-recruiter's `application` — unable to
+# track anything at all without a model running.
+MIN_CONFIDENCE_TO_OPEN = 0.5
+
+
 class CaseResolver:
-    def __init__(self, pack: Pack, *, fuzzy_threshold: int = 85) -> None:
+    def __init__(
+        self, pack: Pack, *, fuzzy_threshold: int = 85, min_confidence: float = MIN_CONFIDENCE_TO_OPEN
+    ) -> None:
         self.pack = pack
         self.fuzzy_threshold = fuzzy_threshold
+        self.min_confidence = min_confidence
 
     # -- keying ---------------------------------------------------------------- #
 
@@ -97,12 +110,11 @@ class CaseResolver:
             if not (spec.opens_case or spec.state):
                 # Newsletters and admin noise must never mint a case.
                 return Stage4Result(case=None)
-            if verdict.needs_review or not key.split("|")[0]:
-                # Two guards against junk cases, and both matter in practice:
-                # an uncertain classification should not mint an entity, and
-                # neither should a message with no identifiable organisation.
-                # Attaching to an existing case is still fine — only creation
-                # is blocked.
+            if verdict.confidence < self.min_confidence or not key.split("|")[0]:
+                # Two guards against junk cases, and both matter in practice: a
+                # low-confidence guess should not mint an entity, and neither
+                # should a message with nothing to key it on. Attaching to an
+                # existing case is still fine — only creation is blocked.
                 return Stage4Result(case=None)
             existing = Case(
                 pack=self.pack.name,
@@ -190,8 +202,11 @@ class CaseResolver:
             case.next_action_due = verdict.deadline
         if verdict.action_required and verdict.next_action is not NextAction.none:
             case.next_action = verdict.next_action
-        elif case.closed:
+        if case.closed:
+            # A rejected application has no outstanding task and no deadline.
+            # Leaving a stale one behind makes the Brief cry wolf for ever.
             case.next_action = NextAction.none
+            case.next_action_due = None
         if not case.title:
             case.title = self._title(case.org or "", verdict)
 

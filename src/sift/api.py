@@ -122,6 +122,11 @@ class SiftApp:
         return {
             "pack": pack.name,
             "packs": sorted(available_packs(self.config.pack_dirs)),
+            # The UI labels itself from this: "Applications" for job-seeker,
+            # "Invoices" for freelance-ops. The product should speak the user's
+            # domain, not the engine's.
+            "entity": pack.entity,
+            "entity_label": pack.entity.replace("_", " "),
             "categories": [
                 {
                     "name": name,
@@ -176,8 +181,12 @@ class SiftApp:
                 stalled=True if _one(query, "stalled") else None,
                 open_only=bool(_one(query, "open")),
             )
+            reached = repo.states_reached(conn, pack.name)
             return {
-                "cases": [case.model_dump(mode="json") for case in cases],
+                "cases": [
+                    {**case.model_dump(mode="json"), "reached": reached.get(case.id or 0, [])}
+                    for case in cases
+                ],
                 "states": pack.states,
             }
         finally:
@@ -193,7 +202,10 @@ class SiftApp:
             if found is None:
                 raise ApiError(f"no case {case_id}", 404)
             return {
-                "case": found.model_dump(mode="json"),
+                "case": {
+                    **found.model_dump(mode="json"),
+                    "reached": repo.states_reached(conn, pack.name).get(case_id, []),
+                },
                 "timeline": [dict(row) for row in repo.case_timeline(conn, case_id)],
             }
         finally:

@@ -59,6 +59,9 @@ def build_brief(
     since = now - timedelta(days=window_days)
     brief = Brief(generated_at=now, window_days=window_days, pack=pack.name)
 
+    # The case knows the tidied organisation name; a lone message often does not.
+    case_labels = repo.case_labels_for_messages(conn, pack.name)
+
     scored: list[tuple[float, BriefItem]] = []
     archived = 0
     for verdict, row in repo.iter_verdicts(conn, pack.name, since=since):
@@ -76,11 +79,15 @@ def build_brief(
                     )
                 )
             continue
+        case_org, case_role = case_labels.get(verdict.message_id, (None, None))
         item = BriefItem(
             kind="needs_you",
             title=title,
-            detail=f"{sender} · {verdict.category}"
-            + (f" · {verdict.summary}" if verdict.summary else ""),
+            detail=verdict.summary or sender,
+            org=case_org or verdict.org or sender,
+            role=case_role or verdict.role,
+            category=verdict.category,
+            urgency=verdict.urgency,
             when=verdict.event_datetime,
             due=verdict.deadline,
             message_id=verdict.message_id,
@@ -90,6 +97,7 @@ def build_brief(
         scored.append((item.score, item))
 
     scored.sort(key=lambda pair: pair[0], reverse=True)
+    needing = len(scored)
     brief.needs_you = [item for _, item in scored[:limit]]
 
     horizon = now.date() + timedelta(days=14)
@@ -132,7 +140,10 @@ def build_brief(
 
     open_cases = repo.list_cases(conn, pack.name, open_only=True)
     brief.counts = {
-        "needs_you": len(brief.needs_you),
+        # The true number, not the length of the truncated list: a count that
+        # changes when you change the page size is not a count.
+        "needs_you": needing,
+        "showing": len(brief.needs_you),
         "deadlines": len(brief.deadlines),
         "events": len(brief.events),
         "stalled": len(brief.stalled),
@@ -159,6 +170,20 @@ def _due_phrase(due: date, today: date) -> str:
 # --------------------------------------------------------------------------- #
 
 
+def _line(item: BriefItem) -> str:
+    """The one-line context under a Brief entry, from the structured fields.
+
+    Built here rather than stored on the item: the same item is rendered to a
+    terminal, to Markdown and to a web page, and each wants it slightly
+    differently.
+    """
+    parts = [part for part in (item.org, item.role, item.category.replace("_", " ")) if part]
+    context = " · ".join(parts)
+    if item.detail and item.detail not in parts:
+        context = f"{context} · {item.detail}" if context else item.detail
+    return context
+
+
 def render_text(brief: Brief) -> str:
     counts = brief.counts
     lines = [
@@ -173,7 +198,7 @@ def render_text(brief: Brief) -> str:
         lines.append("NEEDS YOU")
         for index, item in enumerate(brief.needs_you, start=1):
             lines.append(f" {index}. {item.title}")
-            lines.append(f"    {item.detail}")
+            lines.append(f"    {_line(item)}")
             if item.due:
                 lines.append(f"    deadline {item.due.isoformat()}")
             if item.when:
@@ -212,7 +237,7 @@ def render_markdown(brief: Brief) -> str:
         for item in brief.needs_you:
             suffix = f" — _due {item.due.isoformat()}_" if item.due else ""
             lines.append(f"- **{item.title}**{suffix}  ")
-            lines.append(f"  {item.detail}")
+            lines.append(f"  {_line(item)}")
             if item.evidence:
                 lines.append(f"  > {item.evidence[:200]}")
         lines.append("")

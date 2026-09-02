@@ -95,3 +95,27 @@ def test_reopening_the_store_keeps_data(tmp_path):
     second = connect(path)
     assert repo.count_messages(second)["total"] == 1
     second.close()
+
+
+def test_the_sample_corpus_is_reproducible(tmp_path):
+    """The generator documents itself as seeded, and the evaluation split is
+    keyed on message ids — so two runs of the same seed must be identical."""
+    import hashlib
+
+    def digest(directory, seed):
+        mbox, labels = write_mbox(directory, seed=seed, applications=5, noise=5)
+        return (
+            hashlib.sha256(mbox.read_bytes()).hexdigest(),
+            hashlib.sha256(labels.read_bytes()).hexdigest(),
+        )
+
+    assert digest(tmp_path / "a", 7) == digest(tmp_path / "b", 7)
+    assert digest(tmp_path / "c", 99) != digest(tmp_path / "d", 7)
+
+
+def test_sample_message_ids_are_unique(tmp_path):
+    import json
+
+    _mbox, labels = write_mbox(tmp_path, applications=12, noise=20)
+    ids = [json.loads(line)["message_id"] for line in labels.read_text().splitlines()]
+    assert len(ids) == len(set(ids))

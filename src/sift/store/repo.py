@@ -802,6 +802,44 @@ def message_detail(conn: sqlite3.Connection, message_id: str, pack: str) -> dict
     }
 
 
+def case_labels_for_messages(
+    conn: sqlite3.Connection, pack: str
+) -> dict[str, tuple[str | None, str | None]]:
+    """message_id -> (organisation, role) of the case it belongs to.
+
+    A case carries the tidied-up name — "Weser Data GmbH" — while a single
+    message may only have what could be scraped from a sender domain
+    ("Weserdata"). When both exist the case wins.
+    """
+    rows = conn.execute(
+        "SELECT cm.message_id, c.org, c.role FROM case_messages cm "
+        "JOIN cases c ON c.id = cm.case_id WHERE c.pack = ?",
+        (pack,),
+    )
+    return {row["message_id"]: (row["org"], row["role"]) for row in rows}
+
+
+def states_reached(conn: sqlite3.Connection, pack: str) -> dict[int, list[str]]:
+    """Every state each case has actually been in, from its recorded events.
+
+    Drawing a progress rail from the current state alone would imply the case
+    passed through every earlier stage, which is usually false: most
+    applications go straight from acknowledged to rejected without an interview.
+    """
+    reached: dict[int, list[str]] = {}
+    rows = conn.execute(
+        "SELECT e.case_id, e.to_state FROM case_events e "
+        "JOIN cases c ON c.id = e.case_id "
+        "WHERE c.pack = ? AND e.to_state IS NOT NULL ORDER BY e.id",
+        (pack,),
+    )
+    for row in rows:
+        seen = reached.setdefault(int(row["case_id"]), [])
+        if row["to_state"] not in seen:
+            seen.append(row["to_state"])
+    return reached
+
+
 def category_counts(conn: sqlite3.Connection, pack: str) -> list[dict[str, Any]]:
     return [
         {"category": row["category"], "count": row["c"]}

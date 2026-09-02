@@ -8,6 +8,7 @@ thing that proves the page actually works rather than merely parses.
 from __future__ import annotations
 
 import os
+import re
 import threading
 from pathlib import Path
 
@@ -73,8 +74,9 @@ def page_factory(ui):
     with playwright_api.sync_playwright() as p:
         browser = p.chromium.launch(executable_path=executable, args=["--no-sandbox"])
 
-        def make():
-            page = browser.new_page(viewport={"width": 1400, "height": 900})
+        def make(**kwargs):
+            kwargs.setdefault("viewport", {"width": 1440, "height": 900})
+            page = browser.new_page(**kwargs)
             errors: list[str] = []
             page.on("pageerror", lambda exc: errors.append(str(exc)))
             page.goto(f"{base}/?token={app.token}", wait_until="networkidle")
@@ -89,29 +91,69 @@ def test_the_app_boots_and_hides_the_token(page_factory):
     page, errors, _config = page_factory()
     assert "token=" not in page.url, "the token must not stay in the address bar"
     assert page.evaluate("sessionStorage.getItem('sift.token')")
-    assert "messages" in page.inner_text("#status-store")
+    assert "messages read" in page.inner_text("#rail-meta")
     assert not errors
     page.close()
 
 
-def test_the_brief_renders_evidence(page_factory):
+def test_the_headline_states_the_true_number(page_factory):
+    """The headline is a claim about reality, so it must not be the page size."""
     page, errors, _config = page_factory()
-    page.evaluate("localStorage.setItem('sift.briefDays','3650')")
+    page.evaluate("localStorage.setItem('sift.window','3650')")
     page.reload(wait_until="networkidle")
     page.wait_for_selector("#shell:not([hidden])")
-    assert page.locator(".card").count() >= 5
-    assert page.locator(".evidence").count() > 0, "every extracted fact should show its source"
+    headline = page.inner_text(".headline")
+    badge = page.inner_text('#nav a[data-tab="today"]')
+    numbers = [int(n) for n in re.findall(r"\d+", headline)]
+    if numbers:
+        assert str(numbers[0]) in badge, "headline and sidebar disagree about the count"
+    assert not errors
+    page.close()
+
+
+def test_every_extracted_fact_shows_its_source(page_factory):
+    page, errors, _config = page_factory()
+    page.evaluate("localStorage.setItem('sift.window','3650')")
+    page.reload(wait_until="networkidle")
+    page.wait_for_selector("#shell:not([hidden])")
+    assert page.locator(".quote").count() > 0, "the evidence quote is the trust device"
     assert not errors
     page.close()
 
 
 def test_an_empty_brief_offers_a_way_forward(page_factory):
     page, errors, _config = page_factory()
-    page.evaluate("localStorage.setItem('sift.briefDays','1')")
+    page.evaluate("localStorage.setItem('sift.window','1')")
     page.reload(wait_until="networkidle")
     page.wait_for_selector("#shell:not([hidden])")
-    if page.locator(".empty").count():
-        assert page.locator(".empty button").count() == 1, "a dead end is a bug"
+    if page.locator(".bar-row button").count():
+        assert page.inner_text(".headline"), "an empty day still needs a sentence"
+    assert not errors
+    page.close()
+
+
+def test_the_sidebar_speaks_the_packs_language(page_factory):
+    """job-seeker tracks applications, freelance-ops tracks invoices."""
+    page, errors, _config = page_factory()
+    labels = " ".join(page.locator("#nav a").all_inner_texts()).lower()
+    assert "application" in labels
+    assert not errors
+    page.close()
+
+
+def test_the_stage_rail_only_fills_stages_that_happened(page_factory):
+    """Inferring progress from the current state would claim interviews that
+    never took place."""
+    page, errors, _config = page_factory()
+    page.click('[data-tab="cases"]')
+    page.wait_for_selector(".stages")
+    filled = page.evaluate("""() => {
+      const card = document.querySelector('.card .stages');
+      const done = card.querySelectorAll('.stage[data-done="1"]').length;
+      const now = card.querySelectorAll('.stage[data-now="1"]').length;
+      return { done, now, total: card.querySelectorAll('.stage').length };
+    }""")
+    assert filled["total"] > filled["done"], "a rail with everything filled says nothing"
     assert not errors
     page.close()
 
@@ -119,38 +161,65 @@ def test_an_empty_brief_offers_a_way_forward(page_factory):
 def test_cases_open_a_timeline(page_factory):
     page, errors, _config = page_factory()
     page.click('[data-tab="cases"]')
-    page.wait_for_selector("tbody tr")
-    page.locator("tbody tr").first.click()
+    page.wait_for_selector(".card")
+    page.locator(".card").first.click()
     page.wait_for_selector(".timeline li")
     assert page.locator(".timeline li").count() >= 1
     assert not errors
     page.close()
 
 
-def test_messages_search_and_page(page_factory):
+def test_closed_cases_do_not_show_a_deadline(page_factory):
+    """A rejected application has no outstanding task."""
     page, errors, _config = page_factory()
-    page.click('[data-tab="messages"]')
-    page.wait_for_selector("tbody tr")
-    before = page.locator("tbody tr").count()
+    page.click('[data-tab="cases"]')
+    page.wait_for_selector(".card")
+    stale = page.locator('.stack.closed .card .chip[data-tone="urgent"]').count()
+    assert stale == 0
+    assert not errors
+    page.close()
+
+
+def test_mail_rows_do_not_collide(page_factory):
+    """Subject and preview are separate lines, not overlapping text."""
+    page, errors, _config = page_factory()
+    page.click('[data-tab="mail"]')
+    page.wait_for_selector(".row")
+    overlap = page.evaluate("""() => {
+      const row = document.querySelector('.row');
+      const t = row.querySelector('.row-title').getBoundingClientRect();
+      const s = row.querySelector('.row-sub').getBoundingClientRect();
+      return t.bottom > s.top + 1;
+    }""")
+    assert overlap is False
+    assert not errors
+    page.close()
+
+
+def test_mail_search_narrows_the_list(page_factory):
+    page, errors, _config = page_factory()
+    page.click('[data-tab="mail"]')
+    page.wait_for_selector(".row")
+    before = page.locator(".row").count()
     page.fill('input[type="search"]', "Bewerbung")
     page.press('input[type="search"]', "Enter")
     page.wait_for_timeout(700)
-    assert page.locator("tbody tr").count() <= before
+    assert page.locator(".row").count() <= before
     assert not errors
     page.close()
 
 
 def test_a_correction_round_trips_to_the_store(page_factory):
     page, errors, config = page_factory()
-    page.click('[data-tab="messages"]')
-    page.wait_for_selector("tbody tr")
-    page.locator("tbody tr").first.click()
-    page.wait_for_selector(".detail select")
+    page.click('[data-tab="mail"]')
+    page.wait_for_selector(".row")
+    page.locator(".row").first.click()
+    page.wait_for_selector(".aside select")
     message_id = page.evaluate(
         "new URLSearchParams(location.hash.split('?')[1]).get('id')"
     )
-    page.select_option(".detail select", "personal")
-    page.click(".detail button:has-text('Save correction')")
+    page.select_option(".aside select", "personal")
+    page.click(".aside button:has-text('Save')")
     page.wait_for_selector("#toast:not([hidden])")
 
     conn = connect(config.database)
@@ -165,11 +234,44 @@ def test_a_correction_round_trips_to_the_store(page_factory):
     page.close()
 
 
-def test_a_triage_job_runs_from_the_ui(page_factory):
+def test_review_asks_one_question_at_a_time(page_factory):
     page, errors, _config = page_factory()
-    page.click("#btn-triage")
+    page.click('[data-tab="review"]')
+    page.wait_for_timeout(900)
+    if "Nothing to check" in page.inner_text(".headline"):
+        page.close()
+        return
+    assert page.locator(".guess").count() == 1, "review shows one message, not a table"
+    assert page.locator("button:has-text(\"Yes, that's right\")").count() == 1
+    # Every alternative is offered: truncating hides the answer that matters.
+    offered = page.locator(".choices button").count()
+    total = page.evaluate("App.state.categories.length")
+    assert offered == total - 1
+    assert not errors
+    page.close()
+
+
+def test_a_review_answer_advances_the_queue(page_factory):
+    page, errors, _config = page_factory()
+    page.click('[data-tab="review"]')
+    page.wait_for_timeout(900)
+    if "Nothing to check" in page.inner_text(".headline"):
+        page.close()
+        return
+    before = page.inner_text(".review-progress")
+    page.click("button:has-text(\"Yes, that's right\")")
+    page.wait_for_timeout(1200)
+    after = page.inner_text(".review-progress") if page.locator(".review-progress").count() else ""
+    assert after != before
+    assert not errors
+    page.close()
+
+
+def test_a_sync_job_runs_from_the_sidebar(page_factory):
+    page, errors, _config = page_factory()
+    page.click("#btn-sync")
     page.wait_for_selector("#toast:not([hidden])", timeout=60000)
-    assert "Triage" in page.inner_text("#toast") or "Nothing" in page.inner_text("#toast")
+    assert page.inner_text("#toast")
     assert not errors
     page.close()
 
@@ -181,7 +283,22 @@ def test_keyboard_navigation(page_factory):
     assert page.url.endswith("#/cases")
     page.keyboard.press("5")
     page.wait_for_timeout(400)
-    assert "settings" in page.url
+    assert "setup" in page.url
+    assert not errors
+    page.close()
+
+
+def test_it_reads_in_dark_mode(page_factory):
+    """Both themes are first-class; a washed-out dark mode is a broken one."""
+    page, errors, _config = page_factory(color_scheme="dark")
+    contrast = page.evaluate(r"""() => {
+      const s = getComputedStyle(document.body);
+      const p = (c) => c.match(/\d+/g).slice(0, 3).map(Number);
+      const lum = (c) => p(c).reduce((a, v) => a + v, 0) / 3;
+      return { bg: lum(s.backgroundColor), fg: lum(s.color) };
+    }""")
+    assert contrast["bg"] < 80, "dark mode should actually be dark"
+    assert contrast["fg"] - contrast["bg"] > 100, "text must stay readable"
     assert not errors
     page.close()
 
@@ -191,10 +308,121 @@ def test_no_external_requests_are_made(page_factory, ui):
     base, _app, _config = ui
     page, errors, _ = page_factory()
     external: list[str] = []
-    page.on("request", lambda r: external.append(r.url) if not r.url.startswith(base) and not r.url.startswith("data:") else None)
-    for tab in ("brief", "cases", "messages", "review", "settings"):
+    page.on("request", lambda r: external.append(r.url)
+            if not r.url.startswith(base) and not r.url.startswith("data:") else None)
+    for tab in ("today", "cases", "mail", "review", "setup"):
         page.click(f'[data-tab="{tab}"]')
         page.wait_for_timeout(400)
     assert external == [], f"the UI reached outside the machine: {external}"
+    assert not errors
+    page.close()
+
+
+def test_switching_pack_switches_the_data_not_just_the_labels(page_factory):
+    """The sidebar once relabelled itself for the new domain while every list
+    underneath kept showing the old one's data — a working-looking switcher."""
+    page, errors, _config = page_factory()
+    page.evaluate("localStorage.setItem('sift.pack','student-admissions')")
+    page.goto(page.url.split("#")[0] + "#/cases")
+    page.reload(wait_until="networkidle")
+    page.wait_for_selector("#shell:not([hidden])")
+    page.wait_for_timeout(600)
+
+    nav = " ".join(page.locator("#nav a").all_inner_texts()).lower()
+    assert "programme" in nav, "the sidebar should name the new pack's entity"
+
+    options = " ".join(page.locator(".bar-row select option").all_inner_texts())
+    assert "enquiry" in options, "the stage filter still lists the old pack's states"
+    assert "acknowledged" not in options
+
+    calls = page.evaluate("""async () => {
+      const r = await fetch('/api/cases', {headers:{Authorization:'Bearer '+App.token}});
+      return App.packChoice;
+    }""")
+    assert calls == "student-admissions"
+    assert not errors
+    page.close()
+
+
+def test_mail_content_can_never_become_markup(page_factory, ui):
+    """Mail is attacker-controlled text rendered in a privileged local page.
+
+    The el() helper refuses innerHTML outright, so this asserts the outcome:
+    a subject full of markup renders as visible text and adds no elements.
+    """
+    _base, _app, config = ui
+    from datetime import datetime, timezone
+
+    from sift.models import EmailAddress, Message
+
+    conn = connect(config.database)
+    try:
+        repo.bulk_upsert(conn, [Message(
+            message_id="<xss@x>",
+            date=datetime(2026, 9, 1, tzinfo=timezone.utc),
+            subject="<script>alert(1)</script> <img src=x onerror=alert(2)>",
+            body_text="<b>bold</b> & <i>italic</i>",
+            **{"from": EmailAddress(name="<i>Name</i>", address="x@example.com")},
+        )])
+    finally:
+        conn.close()
+
+    page, errors, _ = page_factory()
+    dialogs: list[str] = []
+    page.on("dialog", lambda d: (dialogs.append(d.message), d.dismiss()))
+    page.goto(page.url.split("#")[0] + "#/mail")
+    page.wait_for_selector(".row")
+    page.fill('input[type="search"]', "script")
+    page.press('input[type="search"]', "Enter")
+    page.wait_for_timeout(800)
+
+    found = page.evaluate("""() => ({
+      scripts: [...document.querySelectorAll('script')].map(s => s.src),
+      imgs: document.querySelectorAll('img').length,
+      asText: [...document.querySelectorAll('.row-title')].some(e => e.textContent.includes('<script>')),
+    })""")
+    assert dialogs == [], "mail content executed"
+    assert found["imgs"] == 0, "mail content added an element"
+    assert all(src.endswith("/app.js") for src in found["scripts"] if src)
+    assert found["asText"], "the subject should be visible as text"
+    assert not errors
+    page.close()
+
+
+def test_long_subjects_do_not_break_the_layout(page_factory, ui):
+    _base, _app, config = ui
+    from datetime import datetime, timezone
+
+    from sift.models import EmailAddress, Message
+
+    conn = connect(config.database)
+    try:
+        repo.bulk_upsert(conn, [Message(
+            message_id="<long@x>",
+            date=datetime(2026, 9, 1, tzinfo=timezone.utc),
+            subject="Betreff " + "einsehrlangeswortohneleerzeichen" * 10,
+            body_text="A" * 3000,
+            **{"from": EmailAddress(name="N" * 100, address="long" * 12 + "@example.com")},
+        )])
+    finally:
+        conn.close()
+
+    page, errors, _ = page_factory()
+    page.goto(page.url.split("#")[0] + "#/mail")
+    page.wait_for_selector(".row")
+    page.wait_for_timeout(500)
+    overflow = page.evaluate(
+        "() => document.documentElement.scrollWidth > window.innerWidth + 2")
+    assert overflow is False, "a long subject pushed the page sideways"
+    assert not errors
+    page.close()
+
+
+def test_it_fits_a_narrow_window(page_factory):
+    """The rail collapses to a top bar; nothing should scroll sideways."""
+    page, errors, _config = page_factory(viewport={"width": 390, "height": 844})
+    assert page.locator("#nav a").first.is_visible()
+    assert page.evaluate(
+        "() => document.documentElement.scrollWidth <= window.innerWidth + 2")
     assert not errors
     page.close()
