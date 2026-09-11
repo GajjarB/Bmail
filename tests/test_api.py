@@ -16,25 +16,25 @@ import urllib.request
 
 import pytest
 
-from sift.api import build_server
-from sift.config import Config
-from sift.errors import SiftError
-from sift.ingest import FileSource, ingest
-from sift.samples import write_mbox
-from sift.store import repo
-from sift.store.db import connect
+from bmail.api import build_server
+from bmail.config import Config
+from bmail.errors import BmailError
+from bmail.ingest import FileSource, ingest
+from bmail.samples import write_mbox
+from bmail.store import repo
+from bmail.store.db import connect
 
 
 @pytest.fixture()
 def live(tmp_path):
     """A running server over a small, already-triaged store."""
-    from sift.classify.stage2 import Classifier
-    from sift.packs import load_pack
-    from sift.pipeline import Pipeline
+    from bmail.classify.stage2 import Classifier
+    from bmail.packs import load_pack
+    from bmail.pipeline import Pipeline
 
     home = tmp_path / "home"
     home.mkdir()
-    config = Config(home=home, db_path=home / "sift.sqlite3")
+    config = Config(home=home, db_path=home / "bmail.sqlite3")
     mbox, labels = write_mbox(tmp_path, applications=6, noise=8)
 
     conn = connect(config.database)
@@ -138,7 +138,7 @@ def test_static_files_cannot_escape_their_directory(live):
 
 
 def test_binding_a_public_interface_is_refused(tmp_path):
-    with pytest.raises(SiftError, match="loopback"):
+    with pytest.raises(BmailError, match="loopback"):
         build_server(Config(home=tmp_path), host="0.0.0.0")
 
 
@@ -364,9 +364,9 @@ def test_the_daemon_exits_when_its_parent_does(tmp_path):
     home.mkdir()
     script = textwrap.dedent(f"""
         import subprocess, sys, os
-        env = dict(os.environ, SIFT_HOME={str(home)!r})
+        env = dict(os.environ, BMAIL_HOME={str(home)!r})
         child = subprocess.Popen(
-            [sys.executable, "-m", "sift", "serve", "--json", "--port", "0",
+            [sys.executable, "-m", "bmail", "serve", "--json", "--port", "0",
              "--exit-with-parent"],
             stdout=subprocess.PIPE, env=env, text=True,
         )

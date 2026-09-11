@@ -9,7 +9,7 @@ Gmail Takeout, a Thunderbird export or any `.mbox` works, as do Maildir folders
 and directories of `.eml` files.
 
 ```bash
-sift ingest --path ~/Downloads/takeout/Mail/All\ mail.mbox --account archive
+bmail ingest --path ~/Downloads/takeout/Mail/All\ mail.mbox --account archive
 ```
 
 Re-ingesting is idempotent: messages are keyed on `Message-ID`, and a message
@@ -24,7 +24,7 @@ path = "~/mail/export.mbox"
 
 ## Gmail
 
-Sift asks for `gmail.readonly`. It never requests `https://mail.google.com/`.
+Bmail asks for `gmail.readonly`. It never requests `https://mail.google.com/`.
 Because no mail content leaves your machine, this stays a client-side
 integration — see `docs/PRIVACY.md` for why that matters.
 
@@ -39,20 +39,20 @@ anyone's tokens:
    JSON.
 
 ```bash
-pip install 'sift-mail[gmail]'
+pip install 'bmail[gmail]'
 ```
 
 ```toml
 [[accounts]]
 name = "gmail"
 provider = "gmail"
-client_secret_file = "~/.local/share/sift/client_secret.json"
-token_file = "~/.local/share/sift/gmail_token.json"
-allow_modify = false                  # true only to let Sift write labels
+client_secret_file = "~/.local/share/bmail/client_secret.json"
+token_file = "~/.local/share/bmail/gmail_token.json"
+allow_modify = false                  # true only to let Bmail write labels
 # query = "newer_than:2y"             # optional Gmail search filter
 ```
 
-The first `sift ingest --account gmail` opens a browser once. After that,
+The first `bmail ingest --account gmail` opens a browser once. After that,
 syncing is incremental via `historyId`. If the history cursor expires — Gmail
 drops it after roughly a week of inactivity — re-run with `--reset`.
 
@@ -65,7 +65,7 @@ integration — you register your own app, and no shared server holds anyone's
 tokens.
 
 ```bash
-pip install 'sift-mail[graph]'
+pip install 'bmail[graph]'
 ```
 
 ### Register a desktop app
@@ -80,11 +80,11 @@ pip install 'sift-mail[graph]'
    sign in on a machine with no browser, also set **Allow public client flows**
    to *Yes*.
 4. Under **API permissions**, add the delegated Microsoft Graph permission
-   `Mail.Read` — and `Mail.ReadWrite` only if you want Sift to write categories
+   `Mail.Read` — and `Mail.ReadWrite` only if you want Bmail to write categories
    back.
 5. Copy the **Application (client) ID**.
 
-No client secret. A desktop app cannot keep one, so Sift uses the public-client
+No client secret. A desktop app cannot keep one, so Bmail uses the public-client
 flow with PKCE.
 
 ```toml
@@ -93,17 +93,17 @@ name = "outlook"
 provider = "graph"
 client_id = "00000000-0000-0000-0000-000000000000"
 tenant = "common"                  # consumers | organizations | common | <tenant id>
-token_cache_file = "~/.local/share/sift/outlook_graph.json"
+token_cache_file = "~/.local/share/bmail/outlook_graph.json"
 folder = "inbox"                   # "" reads the whole mailbox
 auth_mode = "interactive"          # "device" on a machine with no browser
-allow_modify = false               # true only to let Sift write categories
+allow_modify = false               # true only to let Bmail write categories
 ```
 
 Use `tenant = "consumers"` for a personal Outlook.com or Hotmail account,
 `"organizations"` for work or school only, and `"common"` for both.
 
 ```bash
-sift ingest --account outlook
+bmail ingest --account outlook
 ```
 
 The first run opens a browser once. With `auth_mode = "device"` it prints a code
@@ -112,7 +112,7 @@ land in `token_cache_file`, written `0600`.
 
 ### How syncing works
 
-Sift reads `/me/mailFolders/{folder}/messages/delta` for change tracking, then
+Bmail reads `/me/mailFolders/{folder}/messages/delta` for change tracking, then
 fetches each message's original MIME via `$value` and hands it to the same
 normaliser that parses an mbox. Outlook mail therefore goes through exactly the
 same parsing as every other source, so provider quirks cannot leak downstream.
@@ -121,15 +121,15 @@ reconstructing the chain from headers.
 
 A few behaviours worth knowing:
 
-- **Deletions are ignored.** Delta reports removed items; Sift skips them. It
+- **Deletions are ignored.** Delta reports removed items; Bmail skips them. It
   never deletes anything from its own store either.
 - **`--limit` never advances the cursor.** A truncated run keeps the previous
   delta link, because storing the new one would silently skip everything that
   was not read.
-- **Expired cursors self-heal.** Graph drops sync state after a long gap; Sift
+- **Expired cursors self-heal.** Graph drops sync state after a long gap; Bmail
   falls back to a full read of the folder rather than failing the run.
 - **Throttling is obeyed.** Graph answers 429 with a `Retry-After` header, and
-  Sift waits exactly that long. Ignoring it is how a backfill gets an account
+  Bmail waits exactly that long. Ignoring it is how a backfill gets an account
   temporarily blocked.
 - **A JSON fallback covers the rest.** Graph will not serve MIME for every item
   it lists; those are rebuilt from the JSON projection instead of being dropped.
@@ -137,17 +137,17 @@ A few behaviours worth knowing:
 ### Writing categories back
 
 Graph has no labels. Outlook **categories** are the closest equivalent and are
-purely additive, so that is what Sift writes — and only with
+purely additive, so that is what Bmail writes — and only with
 `allow_modify = true`, which is what escalates the scope to `Mail.ReadWrite`.
 
 ```bash
-sift labels                                   # plan only
-sift labels --apply outlook --confirm         # add categories
+bmail labels                                   # plan only
+bmail labels --apply outlook --confirm         # add categories
 ```
 
 Commas are stripped from category names, because Outlook stores categories as a
 comma-delimited list and a comma inside a name would split it in two. A new
-category appears without a colour until you assign one in Outlook; Sift does not
+category appears without a colour until you assign one in Outlook; Bmail does not
 request the extra scope needed to manage the master category list.
 
 ## Generic IMAP — Yahoo, GMX, Web.de, iCloud, university mail
@@ -168,8 +168,8 @@ folder = "INBOX"
 Store the password outside the config:
 
 ```bash
-sift accounts set-password uni          # OS keychain, needs sift-mail[keyring]
-export SIFT_PASSWORD_UNI='…'            # or the environment
+bmail accounts set-password uni          # OS keychain, needs bmail[keyring]
+export BMAIL_PASSWORD_UNI='…'            # or the environment
 ```
 
 Incremental sync tracks `UIDVALIDITY` plus the highest UID seen. If the server
@@ -179,13 +179,13 @@ mail.
 
 ## Writing labels back
 
-The only thing Sift ever writes to a provider is a label. Never a delete, never
+The only thing Bmail ever writes to a provider is a label. Never a delete, never
 a move, never a send. It takes three deliberate steps:
 
 ```bash
-sift labels                                   # plan only; writes nothing outward
-sift labels --apply gmail                     # dry run, shows what would happen
-sift labels --apply gmail --confirm           # actually applies
+bmail labels                                   # plan only; writes nothing outward
+bmail labels --apply gmail                     # dry run, shows what would happen
+bmail labels --apply gmail --confirm           # actually applies
 ```
 
 The account must also have `allow_modify = true`, which is what escalates the
@@ -193,7 +193,7 @@ Gmail scope to `gmail.modify`.
 
 ## Adding a provider
 
-Implement `SourceConnector` and register it in `sift/ingest/__init__.py`:
+Implement `SourceConnector` and register it in `bmail/ingest/__init__.py`:
 
 ```python
 class MySource:

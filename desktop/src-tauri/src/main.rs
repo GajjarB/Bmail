@@ -1,4 +1,4 @@
-// Desktop shell for Sift.
+// Desktop shell for Bmail.
 //
 // The shell owns a window and a child process, and nothing else. All the
 // application logic lives in the Python core, which this starts as a local
@@ -25,26 +25,26 @@ struct Daemon(Mutex<Option<Child>>);
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Candidate ways to run the core, in order of preference: a bundled sidecar,
-/// then `sift` on PATH, then the module through whichever Python is available.
+/// then `bmail` on PATH, then the module through whichever Python is available.
 fn candidates() -> Vec<(String, Vec<String>)> {
     let mut found: Vec<(String, Vec<String>)> = Vec::new();
 
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
-            let sidecar = dir.join(if cfg!(windows) { "sift.exe" } else { "sift" });
+            let sidecar = dir.join(if cfg!(windows) { "bmail.exe" } else { "bmail" });
             if sidecar.is_file() {
                 found.push((sidecar.to_string_lossy().into_owned(), Vec::new()));
             }
         }
     }
-    if let Ok(custom) = std::env::var("SIFT_BIN") {
+    if let Ok(custom) = std::env::var("BMAIL_BIN") {
         if !custom.is_empty() {
             found.push((custom, Vec::new()));
         }
     }
-    found.push(("sift".into(), Vec::new()));
+    found.push(("bmail".into(), Vec::new()));
     for python in ["python3", "python"] {
-        found.push((python.into(), vec!["-m".into(), "sift".into()]));
+        found.push((python.into(), vec!["-m".into(), "bmail".into()]));
     }
     found
 }
@@ -118,8 +118,8 @@ fn start_daemon() -> Result<(String, Child), String> {
     }
 
     Err(format!(
-        "could not start the Sift engine. Tried: {}. Install it with `pip install sift-mail`, \
-         or set SIFT_BIN to its path.",
+        "could not start the Bmail engine. Tried: {}. Install it with `pip install bmail`, \
+         or set BMAIL_BIN to its path.",
         problems.join("; ")
     ))
 }
@@ -134,9 +134,9 @@ fn main() {
                 Err(message) => {
                     // Fall back to the bundled page, which explains what to do,
                     // rather than opening an empty window with no explanation.
-                    eprintln!("sift-desktop: {message}");
+                    eprintln!("bmail-desktop: {message}");
                     WebviewWindowBuilder::new(&handle, "main", WebviewUrl::default())
-                        .title("Sift")
+                        .title("Bmail")
                         .inner_size(720.0, 420.0)
                         .build()?;
                     return Ok(());
@@ -149,14 +149,14 @@ fn main() {
                 .parse()
                 .map_err(|err| format!("the engine reported an unusable URL: {err}"))?;
             WebviewWindowBuilder::new(&handle, "main", WebviewUrl::External(parsed))
-                .title("Sift")
+                .title("Bmail")
                 .inner_size(1280.0, 860.0)
                 .min_inner_size(880.0, 560.0)
                 .build()?;
             Ok(())
         })
         .build(tauri::generate_context!())
-        .expect("failed to start the Sift desktop shell")
+        .expect("failed to start the Bmail desktop shell")
         .run(|handle, event| {
             if let tauri::RunEvent::ExitRequested { .. } = event {
                 // The daemon holds the mail store open; never leave it running

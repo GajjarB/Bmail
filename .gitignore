@@ -21,7 +21,7 @@ htmlcov/
 .idea/
 .vscode/
 
-# Sift runtime data — never commit mail, tokens or models
+# Bmail runtime data — never commit mail, tokens or models
 data/
 *.sqlite3
 *.sqlite3-wal

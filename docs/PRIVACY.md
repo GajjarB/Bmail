@@ -16,8 +16,8 @@ anything — this area changes yearly.
 | `127.0.0.1:11434` | Message text, to a model running on your own machine | Only for messages that reach Stage 3 |
 | Notion | Case fields, if you configure a token and pass `--confirm` | Never by default |
 
-That is the complete list. There is no Sift server, no telemetry, no analytics,
-no crash reporting and no update check. `sift doctor` prints the current state of
+That is the complete list. There is no Bmail server, no telemetry, no analytics,
+no crash reporting and no update check. `bmail doctor` prints the current state of
 these settings, and warns if a password has ended up in the config file.
 
 These guards enforce it rather than merely documenting it:
@@ -47,7 +47,7 @@ It still needs OAuth brand and scope verification, but the recurring audit — t
 thing that kills indie projects in this space — falls away. That is a moat you
 get for free by choosing the local architecture.
 
-Sift's scope policy follows from this:
+Bmail's scope policy follows from this:
 
 - `gmail.readonly` by default — all that triage needs.
 - `gmail.modify` only when you turn label write-back on.
@@ -66,7 +66,7 @@ Process it on your own machine and, for personal use, you are largely in
 household-exemption territory and there is no processor at all. In the EU that
 is the difference between an interesting side project and something shippable.
 
-If you deploy Sift inside an organisation — the `hr-recruiter` pack is exactly
+If you deploy Bmail inside an organisation — the `hr-recruiter` pack is exactly
 that case — the household exemption does not apply and you are a controller
 with the usual obligations. The local architecture still helps: with no
 processor and no transfer, the remaining work is a lawful basis, a retention
@@ -85,12 +85,12 @@ The options, in increasing order of effort:
    and the desktop-only architecture is what keeps you out of the annual
    assessment even then.
 
-## Data handling inside Sift
+## Data handling inside Bmail
 
 - The store lives in your data directory with `0700` permissions.
 - Attachment *payloads* are never stored, only filenames, types and sizes.
 - Passwords go to the OS keychain (macOS Keychain, Windows DPAPI, libsecret) or
-  the environment. Never the config file — `sift doctor` warns if one is there.
+  the environment. Never the config file — `bmail doctor` warns if one is there.
 - OAuth token files are written `0600`.
 - URLs are reduced to their host before any text reaches a prompt, so no
   tracking pixel is loaded and no link is followed.
@@ -102,8 +102,8 @@ The options, in increasing order of effort:
 Everything is in one SQLite file. To delete all data:
 
 ```bash
-rm -rf ~/.local/share/sift        # Linux
-rm -rf ~/Library/Application\ Support/Sift   # macOS
+rm -rf ~/.local/share/bmail        # Linux
+rm -rf ~/Library/Application\ Support/Bmail   # macOS
 ```
 
 To revoke access, remove the app from your provider's connected-apps page and

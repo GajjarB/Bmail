@@ -1,10 +1,10 @@
 from datetime import datetime, timezone
 
-from sift.ingest import FileSource, ingest
-from sift.ingest.raw import parse_message, synth_message_id
-from sift.models import Direction
-from sift.samples import write_mbox
-from sift.store import repo
+from bmail.ingest import FileSource, ingest
+from bmail.ingest.raw import parse_message, synth_message_id
+from bmail.models import Direction
+from bmail.samples import write_mbox
+from bmail.store import repo
 from tests.conftest import make_raw
 
 
@@ -42,7 +42,7 @@ def test_missing_message_id_is_deterministic():
     raw = make_raw(message_id="").replace(b"Message-ID: \r\n", b"")
     first, second = parse_message(raw), parse_message(raw)
     assert first.message_id == second.message_id
-    assert first.message_id.startswith("<sift-")
+    assert first.message_id.startswith("<bmail-")
 
 
 def test_synth_id_differs_on_different_content():
@@ -84,7 +84,7 @@ def test_search_survives_malformed_query(conn):
 
 
 def test_reopening_the_store_keeps_data(tmp_path):
-    from sift.store.db import connect
+    from bmail.store.db import connect
 
     path = tmp_path / "s.sqlite3"
     with connect(path) as _c:

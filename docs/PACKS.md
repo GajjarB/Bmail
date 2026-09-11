@@ -9,9 +9,9 @@ The engine is domain-agnostic. Swapping `job-seeker` for `student-admissions`
 changes the behaviour without a line of Python.
 
 ```bash
-sift packs                      # list
-sift packs student-admissions   # describe one
-sift --pack student-admissions triage
+bmail packs                      # list
+bmail packs student-admissions   # describe one
+bmail --pack student-admissions triage
 ```
 
 ## Shipped packs
@@ -67,7 +67,7 @@ categories:
     description: Anything the pack does not model.
 
 kpis: [award_rate, median_days_to_decision, deadlines_next_30d]
-label_prefix: Sift
+label_prefix: Bmail
 ```
 
 ### Fields
@@ -83,7 +83,7 @@ label_prefix: Sift
 | `terminal_states` | Reaching one closes the case |
 | `stall_days` | Silence beyond this marks the case stalled |
 | `transitions` | Time-based transitions, evaluated on every run |
-| `label_prefix` | Prefix for provider labels (`Sift/Interview`) |
+| `label_prefix` | Prefix for provider labels (`Bmail/Interview`) |
 
 **Per category**
 
@@ -122,15 +122,15 @@ prototypes:
 Check what a new pack does before trusting it:
 
 ```bash
-sift --pack grant-applications triage --limit 50 --no-llm
-sift --pack grant-applications cases
+bmail --pack grant-applications triage --limit 50 --no-llm
+bmail --pack grant-applications cases
 ```
 
 ## Recipes are separate
 
-Packs declare *what a domain means*. Recipes (`sift/rules/recipes/*.yaml`)
+Packs declare *what a domain means*. Recipes (`bmail/rules/recipes/*.yaml`)
 declare *how a specific sender writes*. A recipe names a category, so it only
-fires for packs that declare that category — `sift templates` reports coverage,
+fires for packs that declare that category — `bmail templates` reports coverage,
 and the test suite fails if a recipe names a category no pack declares.
 
 Adding a recipe for a system you meet is usually the highest-value change you

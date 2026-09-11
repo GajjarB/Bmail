@@ -1,6 +1,6 @@
 # Architecture
 
-Sift is a four-stage pipeline over a single SQLite file. Each stage is allowed
+Bmail is a four-stage pipeline over a single SQLite file. Each stage is allowed
 to settle a message and stop; only what survives reaches the next one. That
 cascade is the whole cost model.
 
@@ -28,11 +28,11 @@ cascade is the whole cost model.
 
 ## Stage 0 — ingest and normalise
 
-`sift/ingest/` holds one connector per provider behind a single interface
+`bmail/ingest/` holds one connector per provider behind a single interface
 (`SourceConnector`). Provider APIs and auth policies churn yearly; assume each
 connector gets rewritten once and keep the rewrite local.
 
-Everything funnels through `sift/ingest/raw.py`, which produces the canonical
+Everything funnels through `bmail/ingest/raw.py`, which produces the canonical
 `Message` — including the API-based connectors, which fetch original MIME
 (Gmail's `format=raw`, Graph's `$value`) rather than a provider's JSON
 projection, so every source is parsed by identical code. Where a provider knows
@@ -51,7 +51,7 @@ Two details in the normaliser are load-bearing:
 
 Attachment payloads are counted, never stored.
 
-## Stage 1 — deterministic (`sift/rules/`)
+## Stage 1 — deterministic (`bmail/rules/`)
 
 The stage most projects skip, and where the throughput comes from.
 
@@ -65,15 +65,15 @@ The stage most projects skip, and where the throughput comes from.
 Order matters: templates run **before** bulk detection, so a recognised ATS mail
 is not misfiled as bulk merely because it carries a `List-Unsubscribe` header.
 
-Recipes are YAML (`sift/rules/recipes/`), matched most-specific-first. The
+Recipes are YAML (`bmail/rules/recipes/`), matched most-specific-first. The
 priority policy is deliberate: every ATS opens its *rejections* with "thank you
 for your interest", so outcome recipes (offer, rejection, interview, assessment,
 documents) rank above vendor acknowledgement recipes.
 
-Run `sift templates` against your own corpus. That coverage number decides how
+Run `bmail templates` against your own corpus. That coverage number decides how
 much model you actually need.
 
-## Stage 2 — classify and route (`sift/classify/`)
+## Stage 2 — classify and route (`bmail/classify/`)
 
 Vectorise `subject + sender + first ~600 characters`, then two heads:
 
@@ -98,7 +98,7 @@ seconds. Packs declare which categories are in the expensive-to-miss set.
 Calibration is not decoration: a head that reports 0.97 for everything cannot
 decide what to escalate, and confidence routing quietly stops working.
 
-## Stage 3 — local extraction (`sift/llm/`)
+## Stage 3 — local extraction (`bmail/llm/`)
 
 Ollama, `format=<JSON Schema>`, temperature 0, two calls per message.
 
@@ -134,7 +134,7 @@ not hypothetical. Three defences:
 Nothing auto-deletes, ever. The worst case for a triage mistake is a wrong row
 in a local database.
 
-## Stage 4 — entities and state (`sift/entities/`)
+## Stage 4 — entities and state (`bmail/entities/`)
 
 What makes this a tracker rather than a summariser.
 
@@ -163,15 +163,15 @@ dedupe, cannot hold a state machine, and cannot tell you what has gone stale.
 
 ## The UI seam
 
-The core is headless and importable. `sift.api` puts a loopback HTTP server in
-front of it and `sift/ui/static` is a page that consumes it; the Tauri shell in
+The core is headless and importable. `bmail.api` puts a loopback HTTP server in
+front of it and `bmail/ui/static` is a page that consumes it; the Tauri shell in
 `desktop/` owns a window and a child process and nothing more.
 
 That server was originally read-only, on the argument that ingest and triage are
 long-running jobs belonging to a scheduler rather than an HTTP handler. The UI
 made that untenable — a person clicking "Triage" should not be told to open a
 terminal — so writes exist now, but never inline: they queue on the single
-worker in `sift.jobs`, and the page polls for progress. One worker, not a pool,
+worker in `bmail.jobs`, and the page polls for progress. One worker, not a pool,
 because the store has one writer and two triage runs at once is never what
 anyone wanted. The handler itself still does nothing slower than a query.
 

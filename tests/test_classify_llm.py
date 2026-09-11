@@ -11,16 +11,16 @@ import json
 
 import pytest
 
-from sift.classify.features import HashingVectoriser, cosine, feature_text
-from sift.classify.model import ClassifierBundle, PrototypeHead
-from sift.classify.stage2 import Classifier
-from sift.errors import LLMError
-from sift.ingest.raw import parse_message
-from sift.llm.client import detect_tier
-from sift.llm.prompts import BEGIN, END, fence
-from sift.llm.schema import ClassifyOut, ExtractOut, classify_schema, extract_schema
-from sift.llm.stage3 import LLMStage, evidence_supported
-from sift.models import Stage, Verdict
+from bmail.classify.features import HashingVectoriser, cosine, feature_text
+from bmail.classify.model import ClassifierBundle, PrototypeHead
+from bmail.classify.stage2 import Classifier
+from bmail.errors import LLMError
+from bmail.ingest.raw import parse_message
+from bmail.llm.client import detect_tier
+from bmail.llm.prompts import BEGIN, END, fence
+from bmail.llm.schema import ClassifyOut, ExtractOut, classify_schema, extract_schema
+from bmail.llm.stage3 import LLMStage, evidence_supported
+from bmail.models import Stage, Verdict
 from tests.conftest import make_raw
 
 # --- Stage 2 ---------------------------------------------------------------- #
@@ -278,7 +278,7 @@ def test_hardware_tiering_is_monotonic():
 
 
 def test_remote_hosts_are_refused():
-    from sift.llm.client import OllamaClient
+    from bmail.llm.client import OllamaClient
 
     with pytest.raises(LLMError):
         OllamaClient("http://mail-ai.example.com:11434")

@@ -6,23 +6,23 @@ from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
-from sift.classify.stage2 import Classifier
-from sift.evaluation import Dataset, evaluate, run_ablations
-from sift.evaluation.metrics import (
+from bmail.classify.stage2 import Classifier
+from bmail.evaluation import Dataset, evaluate, run_ablations
+from bmail.evaluation.metrics import (
     binary_metrics,
     classification_report,
     exact_date_equal,
     fuzzy_equal,
     precision_at_k,
 )
-from sift.ingest import FileSource, ingest
-from sift.outputs.brief import build_brief, render_markdown, render_text
-from sift.outputs.ics import build_calendar, export_ics
-from sift.outputs.labels import plan_labels
-from sift.outputs.tabular import export_csv, export_xlsx, overview
-from sift.pipeline import Pipeline
-from sift.samples import write_mbox
-from sift.store import repo
+from bmail.ingest import FileSource, ingest
+from bmail.outputs.brief import build_brief, render_markdown, render_text
+from bmail.outputs.ics import build_calendar, export_ics
+from bmail.outputs.labels import plan_labels
+from bmail.outputs.tabular import export_csv, export_xlsx, overview
+from bmail.pipeline import Pipeline
+from bmail.samples import write_mbox
+from bmail.store import repo
 
 
 @pytest.fixture()
@@ -94,12 +94,24 @@ def test_brief_json_is_serialisable(triaged):
     assert json.loads(json.dumps(payload))["pack"] == pack.name
 
 
-def test_brief_only_shows_future_deadlines(triaged):
+def test_the_brief_shows_overdue_deadlines_but_not_ancient_ones(triaged):
+    """Overdue is urgent and must appear; three months gone is stale data.
+
+    The previous version of this test asserted deadlines were always in the
+    future, which is wrong for the product and only ever passed because no open
+    case happened to carry a past one.
+    """
+    from bmail.outputs.brief import STALE_DEADLINE_DAYS
+
     conn, pack, _ = triaged
     today = datetime.now(timezone.utc).date()
     brief = build_brief(conn, pack, window_days=400)
-    assert all(item.due is None or item.due >= today - timedelta(days=1)
-               for item in brief.deadlines)
+    for item in brief.deadlines:
+        if item.due is None:
+            continue
+        assert item.due >= today - timedelta(days=STALE_DEADLINE_DAYS), (
+            f"a deadline from {item.due} is stale, not urgent")
+        assert item.due <= today + timedelta(days=14)
 
 
 # --- Exports ------------------------------------------------------------------- #
@@ -142,7 +154,7 @@ def test_ics_is_well_formed(triaged, tmp_path):
 
 
 def test_ics_escapes_special_characters(conn, pack):
-    from sift.models import Case
+    from bmail.models import Case
 
     repo.save_case(
         conn,
@@ -235,10 +247,10 @@ def test_metric_primitives():
 
 
 def test_cli_end_to_end(tmp_path, capsys, monkeypatch):
-    from sift.cli import main
+    from bmail.cli import main
 
     home = tmp_path / "home"
-    monkeypatch.setenv("SIFT_HOME", str(home))
+    monkeypatch.setenv("BMAIL_HOME", str(home))
     common = ["--home", str(home)]
 
     assert main([*common, "init"]) == 0
@@ -275,17 +287,17 @@ def test_cli_end_to_end(tmp_path, capsys, monkeypatch):
 
 
 def test_cli_export_without_a_target_is_an_error(tmp_path, monkeypatch, capsys):
-    from sift.cli import main
+    from bmail.cli import main
 
-    monkeypatch.setenv("SIFT_HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("BMAIL_HOME", str(tmp_path / "home"))
     main(["--home", str(tmp_path / "home"), "init"])
     capsys.readouterr()
     assert main(["--home", str(tmp_path / "home"), "export"]) == 2
 
 
 def test_cli_reports_unknown_packs_cleanly(tmp_path, monkeypatch, capsys):
-    from sift.cli import main
+    from bmail.cli import main
 
-    monkeypatch.setenv("SIFT_HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("BMAIL_HOME", str(tmp_path / "home"))
     assert main(["--home", str(tmp_path / "home"), "--pack", "nope", "cases"]) == 1
     assert "unknown pack" in capsys.readouterr().err

@@ -14,12 +14,12 @@ from pathlib import Path
 
 import pytest
 
-from sift.api import build_server
-from sift.config import Config
-from sift.ingest import FileSource, ingest
-from sift.samples import write_mbox
-from sift.store import repo
-from sift.store.db import connect
+from bmail.api import build_server
+from bmail.config import Config
+from bmail.ingest import FileSource, ingest
+from bmail.samples import write_mbox
+from bmail.store import repo
+from bmail.store.db import connect
 
 playwright_api = pytest.importorskip("playwright.sync_api", reason="playwright not installed")
 
@@ -37,14 +37,14 @@ def _chromium_path() -> str | None:
 
 @pytest.fixture(scope="module")
 def ui(tmp_path_factory):
-    from sift.classify.stage2 import Classifier
-    from sift.packs import load_pack
-    from sift.pipeline import Pipeline
+    from bmail.classify.stage2 import Classifier
+    from bmail.packs import load_pack
+    from bmail.pipeline import Pipeline
 
     tmp_path = tmp_path_factory.mktemp("ui")
     home = tmp_path / "home"
     home.mkdir()
-    config = Config(home=home, db_path=home / "sift.sqlite3")
+    config = Config(home=home, db_path=home / "bmail.sqlite3")
     mbox, _labels = write_mbox(tmp_path, applications=10, noise=12)
 
     conn = connect(config.database)
@@ -90,7 +90,7 @@ def page_factory(ui):
 def test_the_app_boots_and_hides_the_token(page_factory):
     page, errors, _config = page_factory()
     assert "token=" not in page.url, "the token must not stay in the address bar"
-    assert page.evaluate("sessionStorage.getItem('sift.token')")
+    assert page.evaluate("sessionStorage.getItem('bmail.token')")
     assert "messages read" in page.inner_text("#rail-meta")
     assert not errors
     page.close()
@@ -99,7 +99,7 @@ def test_the_app_boots_and_hides_the_token(page_factory):
 def test_the_headline_states_the_true_number(page_factory):
     """The headline is a claim about reality, so it must not be the page size."""
     page, errors, _config = page_factory()
-    page.evaluate("localStorage.setItem('sift.window','3650')")
+    page.evaluate("localStorage.setItem('bmail.window','3650')")
     page.reload(wait_until="networkidle")
     page.wait_for_selector("#shell:not([hidden])")
     headline = page.inner_text(".headline")
@@ -113,7 +113,7 @@ def test_the_headline_states_the_true_number(page_factory):
 
 def test_every_extracted_fact_shows_its_source(page_factory):
     page, errors, _config = page_factory()
-    page.evaluate("localStorage.setItem('sift.window','3650')")
+    page.evaluate("localStorage.setItem('bmail.window','3650')")
     page.reload(wait_until="networkidle")
     page.wait_for_selector("#shell:not([hidden])")
     assert page.locator(".quote").count() > 0, "the evidence quote is the trust device"
@@ -123,7 +123,7 @@ def test_every_extracted_fact_shows_its_source(page_factory):
 
 def test_an_empty_brief_offers_a_way_forward(page_factory):
     page, errors, _config = page_factory()
-    page.evaluate("localStorage.setItem('sift.window','1')")
+    page.evaluate("localStorage.setItem('bmail.window','1')")
     page.reload(wait_until="networkidle")
     page.wait_for_selector("#shell:not([hidden])")
     if page.locator(".bar-row button").count():
@@ -184,7 +184,7 @@ def test_mail_rows_do_not_collide(page_factory):
     """Subject and preview are separate lines, not overlapping text."""
     page, errors, _config = page_factory()
     page.click('[data-tab="mail"]')
-    page.wait_for_selector(".row")
+    page.wait_for_selector('[data-list="mail"] .row')
     overlap = page.evaluate("""() => {
       const row = document.querySelector('.row');
       const t = row.querySelector('.row-title').getBoundingClientRect();
@@ -197,14 +197,21 @@ def test_mail_rows_do_not_collide(page_factory):
 
 
 def test_mail_search_narrows_the_list(page_factory):
+    """Scoped to the mail list: Today's "gone quiet" block also uses `.row`, and
+    selecting on the bare class could measure whichever view was still on
+    screen."""
     page, errors, _config = page_factory()
     page.click('[data-tab="mail"]')
-    page.wait_for_selector(".row")
-    before = page.locator(".row").count()
+    mail_rows = page.locator('[data-list="mail"] .row')
+    page.wait_for_selector('[data-list="mail"] .row')
+    before = mail_rows.count()
+    assert before > 0
     page.fill('input[type="search"]', "Bewerbung")
     page.press('input[type="search"]', "Enter")
-    page.wait_for_timeout(700)
-    assert page.locator(".row").count() <= before
+    page.wait_for_function(
+        "n => document.querySelectorAll('[data-list=\"mail\"] .row').length !== n",
+        arg=before, timeout=10000)
+    assert mail_rows.count() <= before
     assert not errors
     page.close()
 
@@ -212,8 +219,8 @@ def test_mail_search_narrows_the_list(page_factory):
 def test_a_correction_round_trips_to_the_store(page_factory):
     page, errors, config = page_factory()
     page.click('[data-tab="mail"]')
-    page.wait_for_selector(".row")
-    page.locator(".row").first.click()
+    page.wait_for_selector('[data-list="mail"] .row')
+    page.locator('[data-list="mail"] .row').first.click()
     page.wait_for_selector(".aside select")
     message_id = page.evaluate(
         "new URLSearchParams(location.hash.split('?')[1]).get('id')"
@@ -322,7 +329,7 @@ def test_switching_pack_switches_the_data_not_just_the_labels(page_factory):
     """The sidebar once relabelled itself for the new domain while every list
     underneath kept showing the old one's data — a working-looking switcher."""
     page, errors, _config = page_factory()
-    page.evaluate("localStorage.setItem('sift.pack','student-admissions')")
+    page.evaluate("localStorage.setItem('bmail.pack','student-admissions')")
     page.goto(page.url.split("#")[0] + "#/cases")
     page.reload(wait_until="networkidle")
     page.wait_for_selector("#shell:not([hidden])")
@@ -353,7 +360,7 @@ def test_mail_content_can_never_become_markup(page_factory, ui):
     _base, _app, config = ui
     from datetime import datetime, timezone
 
-    from sift.models import EmailAddress, Message
+    from bmail.models import EmailAddress, Message
 
     conn = connect(config.database)
     try:
@@ -371,7 +378,7 @@ def test_mail_content_can_never_become_markup(page_factory, ui):
     dialogs: list[str] = []
     page.on("dialog", lambda d: (dialogs.append(d.message), d.dismiss()))
     page.goto(page.url.split("#")[0] + "#/mail")
-    page.wait_for_selector(".row")
+    page.wait_for_selector('[data-list="mail"] .row')
     page.fill('input[type="search"]', "script")
     page.press('input[type="search"]', "Enter")
     page.wait_for_timeout(800)
@@ -393,7 +400,7 @@ def test_long_subjects_do_not_break_the_layout(page_factory, ui):
     _base, _app, config = ui
     from datetime import datetime, timezone
 
-    from sift.models import EmailAddress, Message
+    from bmail.models import EmailAddress, Message
 
     conn = connect(config.database)
     try:
@@ -409,7 +416,7 @@ def test_long_subjects_do_not_break_the_layout(page_factory, ui):
 
     page, errors, _ = page_factory()
     page.goto(page.url.split("#")[0] + "#/mail")
-    page.wait_for_selector(".row")
+    page.wait_for_selector('[data-list="mail"] .row')
     page.wait_for_timeout(500)
     overflow = page.evaluate(
         "() => document.documentElement.scrollWidth > window.innerWidth + 2")

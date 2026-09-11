@@ -1,4 +1,4 @@
-# Sift
+# Bmail
 
 **A local-first email triage engine.** It reads your mailboxes on your own
 machine, decides what actually needs you, and turns lifecycle email — job
@@ -8,9 +8,9 @@ tracker you never have to type into.
 Nothing leaves your computer. No server, no account, no telemetry.
 
 ```
-$ sift ui        # a window; or `sift brief` for the same thing in the terminal
+$ bmail ui        # a window; or `bmail brief` for the same thing in the terminal
 
-Sift brief · Tue 01 Sep 2026 09:12 UTC · pack: job-seeker
+Bmail brief · Tue 01 Sep 2026 09:12 UTC · pack: job-seeker
 ========================================================================
 4 need you · 2 deadlines · 1 upcoming · 14 stalled · 61 archived
 
@@ -40,7 +40,7 @@ STALLED — worth one follow-up
 | **State** — *"did that company ever reply?"* | A **stateful tracking** problem | Entity resolution and a state machine — not summarisation. |
 
 Nobody solves the third one well. A spreadsheet solves it only for what you
-remember to type in. That is the gap Sift fills.
+remember to type in. That is the gap Bmail fills.
 
 The concrete version: track 90 roles, and each generates two to six emails —
 auto-acknowledgement, portal invite, assessment link, scheduling, rejection.
@@ -66,7 +66,9 @@ See [docs/PRIVACY.md](docs/PRIVACY.md).
 
 ## Install
 
-Python 3.10+. The core needs three packages.
+Python 3.10 or newer — the test suite is run against 3.10, 3.11, 3.12 and 3.13.
+The core needs three packages (plus `tomli` on 3.10, where `tomllib` is not yet
+in the standard library).
 
 ```bash
 git clone https://github.com/GajjarB/Bmail.git
@@ -80,24 +82,24 @@ Optional extras: `pip install -e '.[ml]'` (trainable classifier),
 Microsoft 365), `'.[keyring]'`, `'.[embeddings]'`, or `'.[all]'`.
 
 For Stage 3, install [Ollama](https://ollama.com) and pull the model
-`sift doctor` suggests for your hardware. **Everything except Stage 3 works
-without it** — Sift degrades to rules plus the classifier and says so.
+`bmail doctor` suggests for your hardware. **Everything except Stage 3 works
+without it** — Bmail degrades to rules plus the classifier and says so.
 
 ## Try it in one minute, with no credentials
 
 ```bash
-sift init
-sift samples --out ./sample        # a synthetic EN/DE corpus with ground truth
-sift ingest --path ./sample/sample.mbox --account demo
-sift triage
-sift brief
-sift cases
+bmail init
+bmail samples --out ./sample        # a synthetic EN/DE corpus with ground truth
+bmail ingest --path ./sample/sample.mbox --account demo
+bmail triage
+bmail brief
+bmail cases
 ```
 
 Or open the window:
 
 ```bash
-sift ui                      # opens a browser at a loopback address
+bmail ui                      # opens a browser at a loopback address
 ```
 
 Then point it at real mail. Start with a file — a Gmail Takeout export or any
@@ -106,17 +108,17 @@ Microsoft 365 and any IMAP mailbox are configured in `config.toml`; see
 [docs/PROVIDERS.md](docs/PROVIDERS.md).
 
 ```bash
-sift ingest --path ~/Downloads/takeout/Mail/All\ mail.mbox --account archive
-sift triage && sift brief
+bmail ingest --path ~/Downloads/takeout/Mail/All\ mail.mbox --account archive
+bmail triage && bmail brief
 ```
 
 ## The window
 
-`sift ui` serves the app from the local daemon and opens it. There is also a
+`bmail ui` serves the app from the local daemon and opens it. There is also a
 native shell built on Tauri, for a real desktop window and installers:
 
 ```bash
-cd desktop/src-tauri && cargo build --release && ./target/release/sift-desktop
+cd desktop/src-tauri && cargo build --release && ./target/release/bmail-desktop
 ```
 
 Both run the same page against the same daemon. It is a briefing rather than a
@@ -149,7 +151,7 @@ Three ideas do most of the work:
 
 **Deterministic first.** ATS systems send the same text with three fields
 swapped. Fingerprint the boilerplate once and extraction becomes a regex — no
-model call, milliseconds, deterministic. Run `sift templates` on your own
+model call, milliseconds, deterministic. Run `bmail templates` on your own
 corpus; that number decides how much model you actually need, and it is usually
 higher than people expect.
 
@@ -185,11 +187,11 @@ SQLite is the source of truth; a spreadsheet is an export. It cannot dedupe,
 cannot hold a state machine, and cannot tell you what has gone stale.
 
 ```bash
-sift export --xlsx tracker.xlsx    # Overview / Cases / Timeline / Deadlines / Contacts
-sift export --ics deadlines.ics    # interviews as events, deadlines with alarms
-sift export --csv ./out
-sift labels                        # plan provider labels — writes nothing outward
-sift notion --database <id>        # fill a Notion database you already have
+bmail export --xlsx tracker.xlsx    # Overview / Cases / Timeline / Deadlines / Contacts
+bmail export --ics deadlines.ics    # interviews as events, deadlines with alarms
+bmail export --csv ./out
+bmail labels                        # plan provider labels — writes nothing outward
+bmail notion --database <id>        # fill a Notion database you already have
 ```
 
 ## Evaluation
@@ -197,7 +199,7 @@ sift notion --database <id>        # fill a Notion database you already have
 Built in from the start, because trust is the product.
 
 ```bash
-sift eval labels.jsonl --ablate
+bmail eval labels.jsonl --ablate
 ```
 
 Reports per-class P/R/F1, **recall on `action_required`** as the headline
@@ -219,7 +221,7 @@ not hypothetical:
   prompt: no tracking pixels, no SSRF.
 - **Nothing auto-deletes, ever.** The only outward write is a label, and only
   after you confirm it. Worst case is a wrong row in a local database.
-- Passwords go to the OS keychain, never the config file. `sift doctor` warns if
+- Passwords go to the OS keychain, never the config file. `bmail doctor` warns if
   one ends up there.
 - The local server binds `127.0.0.1` only, on a random port, behind a session
   token, with the `Host` header pinned against DNS rebinding and `Origin`
@@ -232,34 +234,34 @@ not hypothetical:
 
 | Command | What it does |
 |---|---|
-| `sift init` | Create the config and the store |
-| `sift doctor` | Check the environment, models and privacy settings |
-| `sift samples` | Generate a synthetic corpus with ground truth |
-| `sift ingest` | Pull mail from a file, IMAP or Gmail |
-| `sift triage` | Run the pipeline |
-| `sift brief` | What needs you, in one screen (`--format md\|json`) |
-| `sift cases` | The tracker (`--id N` for a full timeline) |
-| `sift review` | Confirm low-confidence verdicts; each answer trains the classifier |
-| `sift templates` | Recipe coverage over your own corpus |
-| `sift search` | Full-text search |
-| `sift export` | Excel, CSV, calendar |
-| `sift labels` | Plan and apply provider labels |
-| `sift eval` | Score the pipeline; `--ablate` for the comparison |
-| `sift packs` | List and describe domain packs |
-| `sift ui` | Open the desktop UI |
-| `sift serve` | Run the local daemon without opening a browser |
+| `bmail init` | Create the config and the store |
+| `bmail doctor` | Check the environment, models and privacy settings |
+| `bmail samples` | Generate a synthetic corpus with ground truth |
+| `bmail ingest` | Pull mail from a file, IMAP or Gmail |
+| `bmail triage` | Run the pipeline |
+| `bmail brief` | What needs you, in one screen (`--format md\|json`) |
+| `bmail cases` | The tracker (`--id N` for a full timeline) |
+| `bmail review` | Confirm low-confidence verdicts; each answer trains the classifier |
+| `bmail templates` | Recipe coverage over your own corpus |
+| `bmail search` | Full-text search |
+| `bmail export` | Excel, CSV, calendar |
+| `bmail labels` | Plan and apply provider labels |
+| `bmail eval` | Score the pipeline; `--ablate` for the comparison |
+| `bmail packs` | List and describe domain packs |
+| `bmail ui` | Open the desktop UI |
+| `bmail serve` | Run the local daemon without opening a browser |
 
 The core is importable and headless — the CLI is a client of it, not a container
 for it:
 
 ```python
-from sift.store.db import connect
-from sift.packs import load_pack
-from sift.classify import Classifier
-from sift.pipeline import Pipeline
-from sift.store import repo
+from bmail.store.db import connect
+from bmail.packs import load_pack
+from bmail.classify import Classifier
+from bmail.pipeline import Pipeline
+from bmail.store import repo
 
-conn = connect("~/.local/share/sift/sift.sqlite3")
+conn = connect("~/.local/share/bmail/bmail.sqlite3")
 pack = load_pack("job-seeker")
 stats = Pipeline(pack, classifier=Classifier(pack), use_llm=False).triage(
     conn, repo.iter_messages(conn, limit=200)
@@ -269,7 +271,7 @@ stats = Pipeline(pack, classifier=Classifier(pack), use_llm=False).triage(
 ## Status and what is deliberately absent
 
 Working today: file/mbox/Maildir, IMAP, Gmail and Microsoft Graph ingest, all
-four stages, four packs, 49 starter template recipes, the Brief, cases and
+four stages, four packs, 50 starter template recipes, the Brief, cases and
 ghosting detection, Excel/CSV/ICS/Notion export, Gmail label and Outlook
 category write-back, the evaluation harness and ablations, the local daemon,
 and the desktop UI in both browser and native-window form.
@@ -277,15 +279,15 @@ and the desktop UI in both browser and native-window form.
 Not built yet: `sqlite-vec` embedding storage, and signed installers — signing
 needs per-developer Apple and Windows certificates that cannot live in a repo.
 
-Not planned: **compose and send.** The moment Sift becomes a mail client the
-project doubles — rendering, offline sync, threading, MIME edge cases. Sift sits
+Not planned: **compose and send.** The moment Bmail becomes a mail client the
+project doubles — rendering, offline sync, threading, MIME edge cases. Bmail sits
 *beside* your mail client and writes back only labels and categories.
 
 ## Development
 
 ```bash
 pip install -e '.[dev,ml,html]'
-pytest -q                  # 178 tests
+pytest -q                  # 207 tests
 ruff check src tests
 
 # The browser tests drive the real UI in Chromium; they skip if it is absent.

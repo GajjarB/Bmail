@@ -5,10 +5,10 @@ you can trust with an interview invitation, and it is the part that makes the
 project defensible as a study.
 
 ```bash
-sift eval labels.jsonl                 # locked test split
-sift eval labels.jsonl --ablate        # the configuration comparison
-sift eval labels.jsonl --describe      # dataset composition only
-sift eval labels.jsonl --out report.json
+bmail eval labels.jsonl                 # locked test split
+bmail eval labels.jsonl --ablate        # the configuration comparison
+bmail eval labels.jsonl --describe      # dataset composition only
+bmail eval labels.jsonl --out report.json
 ```
 
 ## The dataset
@@ -38,7 +38,7 @@ split you will accidentally train on.
 Evaluation runs inside a savepoint that is rolled back, so scoring a
 configuration never contaminates the live store.
 
-`sift samples` writes a synthetic corpus with ground-truth labels, which is
+`bmail samples` writes a synthetic corpus with ground-truth labels, which is
 enough to exercise the harness end to end. It is not a substitute for your own
 mail — real corpora are messier in ways no generator invents.
 
@@ -98,7 +98,7 @@ actual user.
 The harness covers configurations. These need a model and a little scripting:
 
 1. **Model size sweep** — 1B / 4B / 8B / 24B on identical prompts. Set
-   `llm.model` in the config and re-run `sift eval`.
+   `llm.model` in the config and re-run `bmail eval`.
 2. **Quantisation** — Q4_K_M vs Q8 vs FP16. Ask specifically whether Q4 degrades
    *date extraction*, not just the aggregate.
 3. **Constrained decoding on/off** — test on your own domain whether schema

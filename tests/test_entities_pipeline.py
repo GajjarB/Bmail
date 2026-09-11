@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
-from sift.classify.stage2 import Classifier
-from sift.entities.resolve import (
+from bmail.classify.stage2 import Classifier
+from bmail.entities.resolve import (
     case_key,
     is_ats_domain,
     keys_match,
@@ -10,11 +10,11 @@ from sift.entities.resolve import (
     org_key,
     token_set_ratio,
 )
-from sift.entities.stage4 import CaseResolver, refresh_derived
-from sift.ingest.raw import parse_message
-from sift.models import Verdict
-from sift.pipeline import Pipeline
-from sift.store import repo
+from bmail.entities.stage4 import CaseResolver, refresh_derived
+from bmail.ingest.raw import parse_message
+from bmail.models import Verdict
+from bmail.pipeline import Pipeline
+from bmail.store import repo
 from tests.conftest import make_raw
 
 
@@ -167,8 +167,8 @@ def test_ghosting_is_detected_after_the_pack_window(conn, pack):
 
 
 def test_full_pipeline_on_the_sample_corpus(conn, pack, tmp_path):
-    from sift.ingest import FileSource, ingest
-    from sift.samples import write_mbox
+    from bmail.ingest import FileSource, ingest
+    from bmail.samples import write_mbox
 
     mbox, _labels = write_mbox(tmp_path, applications=12, noise=16)
     ingest(conn, FileSource(mbox, name="demo", own_addresses={"you@example.com"}))
@@ -183,8 +183,8 @@ def test_full_pipeline_on_the_sample_corpus(conn, pack, tmp_path):
 
 
 def test_triage_is_idempotent(conn, pack, tmp_path):
-    from sift.ingest import FileSource, ingest
-    from sift.samples import write_mbox
+    from bmail.ingest import FileSource, ingest
+    from bmail.samples import write_mbox
 
     mbox, _ = write_mbox(tmp_path, applications=6, noise=8)
     ingest(conn, FileSource(mbox, name="demo", own_addresses={"you@example.com"}))
@@ -197,9 +197,9 @@ def test_triage_is_idempotent(conn, pack, tmp_path):
 
 def test_a_human_correction_survives_a_re_triage(conn, pack, tmp_path):
     """Re-triaging must not quietly undo an answer someone typed in."""
-    from sift.ingest import FileSource, ingest
-    from sift.models import Stage
-    from sift.samples import write_mbox
+    from bmail.ingest import FileSource, ingest
+    from bmail.models import Stage
+    from bmail.samples import write_mbox
 
     mbox, _ = write_mbox(tmp_path, applications=4, noise=4)
     ingest(conn, FileSource(mbox, name="demo", own_addresses={"you@example.com"}))
@@ -221,8 +221,8 @@ def test_a_human_correction_survives_a_re_triage(conn, pack, tmp_path):
 
 def test_the_correction_reaches_the_case_machinery(conn, pack, tmp_path):
     """Honouring a manual verdict must not skip entity resolution for it."""
-    from sift.ingest import FileSource, ingest
-    from sift.samples import write_mbox
+    from bmail.ingest import FileSource, ingest
+    from bmail.samples import write_mbox
 
     mbox, _ = write_mbox(tmp_path, applications=4, noise=4)
     ingest(conn, FileSource(mbox, name="demo", own_addresses={"you@example.com"}))
@@ -237,9 +237,9 @@ def test_the_correction_reaches_the_case_machinery(conn, pack, tmp_path):
 
 def test_evaluation_ignores_human_corrections(conn, pack, tmp_path):
     """Otherwise the harness would score the labels, not the pipeline."""
-    from sift.evaluation import Dataset, evaluate
-    from sift.ingest import FileSource, ingest
-    from sift.samples import write_mbox
+    from bmail.evaluation import Dataset, evaluate
+    from bmail.ingest import FileSource, ingest
+    from bmail.samples import write_mbox
 
     mbox, labels = write_mbox(tmp_path, applications=4, noise=6)
     ingest(conn, FileSource(mbox, name="demo", own_addresses={"you@example.com"}))
@@ -271,15 +271,15 @@ def _mail(subject, sender, name, body, days_ago, message_id):
 
 
 def _triage_corpus(tmp_path, pack_name, rows):
-    from sift.ingest import FileSource, ingest
-    from sift.packs import load_pack
-    from sift.store.db import connect
+    from bmail.ingest import FileSource, ingest
+    from bmail.packs import load_pack
+    from bmail.store.db import connect
 
     box = tmp_path / f"{pack_name}.mbox"
     with box.open("w", encoding="utf-8") as handle:
         for row in rows:
             message = _mail(*row)
-            handle.write(f"From sift@x {message['Date']}\n{message}\n")
+            handle.write(f"From bmail@x {message['Date']}\n{message}\n")
     conn = connect(tmp_path / f"{pack_name}.sqlite3")
     ingest(conn, FileSource(box, name="t", own_addresses={"you@example.com"}))
     pack = load_pack(pack_name)
@@ -340,8 +340,8 @@ def test_freelance_ops_tracks_invoices(tmp_path):
 
 def test_a_low_confidence_guess_still_never_mints_a_case(conn, pack, tmp_path):
     """The guard's original purpose: a 0.14-confidence guess is not an entity."""
-    from sift.entities.stage4 import MIN_CONFIDENCE_TO_OPEN
-    from sift.models import Verdict
+    from bmail.entities.stage4 import MIN_CONFIDENCE_TO_OPEN
+    from bmail.models import Verdict
 
     message = parse_message(make_raw(sender="jonas@gmx.de", sender_name="Jonas Weber"))
     repo.bulk_upsert(conn, [message])
@@ -354,8 +354,8 @@ def test_a_low_confidence_guess_still_never_mints_a_case(conn, pack, tmp_path):
 
 def test_every_shipped_pack_can_open_a_case_without_a_model(tmp_path):
     """A pack whose opening category always escalates must still work offline."""
-    from sift.entities.stage4 import MIN_CONFIDENCE_TO_OPEN
-    from sift.packs import available_packs, load_pack
+    from bmail.entities.stage4 import MIN_CONFIDENCE_TO_OPEN
+    from bmail.packs import available_packs, load_pack
 
     for name in available_packs():
         pack = load_pack(name)

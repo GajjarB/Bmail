@@ -1,0 +1,110 @@
+# Invoices and client threads. The case is the invoice; the killer output is
+# a chase list of everything overdue.
+name: freelance-ops
+description: Invoices, payments and client threads for independent work.
+language: [en, de]
+entity: invoice
+key: [org_domain, role]
+initial_state: sent
+states: [draft, sent, viewed, overdue, paid, disputed, written_off]
+terminal_states: [paid, written_off]
+stall_days: 14
+
+transitions:
+  overdue:
+    from: [sent, viewed]
+    after_days_silent: 14
+
+categories:
+  invoice_sent:
+    description: An invoice issued to a client, with an amount and a due date.
+    state: sent
+    opens_case: true
+    label: Invoice
+    prototypes:
+      - "Please find attached invoice 2026-014 for EUR 1,250.00, due within 14 days."
+      - "Anbei erhalten Sie die Rechnung 2026-014 über 1.250,00 EUR, zahlbar innerhalb von 14 Tagen."
+
+  payment_confirmation:
+    description: Confirmation that a payment was made or received.
+    state: paid
+    closes_case: true
+    label: Paid
+    prototypes:
+      - "The payment for invoice 2026-014 has been transferred today."
+      - "Die Zahlung der Rechnung 2026-014 wurde heute überwiesen."
+
+  payment_reminder:
+    description: A dunning notice or reminder that an invoice is overdue.
+    action_required: true
+    urgency: this_week
+    next_action: reply
+    high_stakes: true
+    state: overdue
+    label: Overdue
+    prototypes:
+      - "This is a reminder that invoice 2026-014 is now 21 days overdue."
+      - "Zahlungserinnerung: die Rechnung 2026-014 ist seit 21 Tagen überfällig."
+
+  dispute:
+    description: A client questioning or disputing an invoice or deliverable.
+    action_required: true
+    urgency: today
+    next_action: reply
+    high_stakes: true
+    state: disputed
+    label: Dispute
+    prototypes:
+      - "We cannot approve this invoice as the scope does not match the purchase order."
+      - "Wir können die Rechnung so nicht freigeben, der Leistungsumfang weicht ab."
+
+  client_request:
+    description: A client asking for work, changes or a quote.
+    action_required: true
+    urgency: this_week
+    next_action: reply
+    high_stakes: true
+    label: Client
+    prototypes:
+      - "Could you send a quote for extending the project by two sprints?"
+      - "Könnten Sie ein Angebot für eine Verlängerung um zwei Sprints schicken?"
+
+  tax_admin:
+    description: Tax office, accountant or bookkeeping correspondence.
+    action_required: true
+    urgency: this_week
+    next_action: submit_document
+    label: Tax
+    prototypes:
+      - "Please submit your quarterly VAT return by the end of the month."
+      - "Bitte reichen Sie die Umsatzsteuervoranmeldung bis Monatsende ein."
+
+  newsletter:
+    description: Tooling marketing, mailing lists, product announcements.
+    label: Bulk
+    prototypes:
+      - "New features in your accounting tool this month."
+      - "Neuigkeiten aus Ihrer Buchhaltungssoftware."
+
+  admin:
+    description: Banking, platform or account housekeeping mail.
+    label: Admin
+    prototypes:
+      - "Your monthly account statement is ready to download."
+      - "Ihr Kontoauszug steht zum Download bereit."
+
+  personal:
+    description: A person writing to you directly, outside any invoice thread.
+    action_required: true
+    urgency: whenever
+    next_action: reply
+    label: Personal
+    prototypes:
+      - "Good to see you last week — are you around for coffee on Friday?"
+      - "Schön, dich letzte Woche gesehen zu haben. Zeit für einen Kaffee am Freitag?"
+
+  other:
+    description: Anything that does not fit the categories above.
+
+kpis: [outstanding_total, days_sales_outstanding, overdue_count, paid_this_quarter]
+label_prefix: Bmail

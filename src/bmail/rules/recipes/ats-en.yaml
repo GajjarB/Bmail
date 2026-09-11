@@ -1,0 +1,340 @@
+# Applicant tracking systems, English templates.
+#
+# Priority policy — this is the part that matters when several recipes match.
+# An "acknowledgement" is the weakest claim a recipe can make: every ATS opens
+# every mail with "thank you for your interest", including its rejections. So
+# outcome recipes (offer, rejection, interview, assessment, documents) are
+# ranked ABOVE vendor acknowledgement recipes, and vendor acknowledgements are
+# the fallback when no outcome phrase is present.
+#
+#   92 offer / admission      88 interview invite     84 document request
+#   90 rejection              86 assessment           70 vendor acknowledgement
+#
+# These are starter recipes written against the boilerplate these systems are
+# widely known to send. Treat them as a baseline: run `bmail templates check`
+# against your own corpus and tighten the matchers before trusting a recipe on
+# real mail. A recipe that misfires is worse than no recipe.
+
+- id: greenhouse-acknowledgement
+  vendor: Greenhouse
+  category: acknowledgement
+  priority: 70
+  match:
+    from_domain: [greenhouse.io, us.greenhouse-mail.io, greenhouse-mail.io]
+    body_any:
+      - "thank you for applying"
+      - "thanks for applying"
+      - "we have received your application"
+  extract:
+    org:
+      source: body
+      regex: "(?:applying (?:to|at)|your (?:interest in|application to))\\s+([A-Z][\\w&'’-]*(?:\\s+[A-Z][\\w&'’-]*){0,3})"
+      transform: [strip, collapse]
+    role:
+      source: subject
+      regex: "(?:application|applying)\\s+(?:for|to)\\s+(?:the\\s+)?(.{3,80}?)(?:\\s+at\\s+.+)?$"
+      transform: [strip_org_suffix, strip, collapse]
+
+- id: lever-acknowledgement
+  vendor: Lever
+  category: acknowledgement
+  priority: 70
+  match:
+    from_domain: [lever.co, hire.lever.co]
+    body_any:
+      - "thank you for your interest"
+      - "we have received your application"
+      - "thanks for applying"
+  extract:
+    org:
+      source: from_name
+      transform: [strip_via, strip, collapse]
+    role:
+      source: subject
+      regex: "(?:for|to)\\s+(?:the\\s+)?(.{3,80}?)\\s*(?:position|role)?$"
+      transform: [strip_org_suffix, strip, collapse]
+
+- id: workday-acknowledgement
+  vendor: Workday
+  category: acknowledgement
+  priority: 70
+  match:
+    from_domain: [myworkday.com, myworkdayjobs.com, workday.com]
+    body_any:
+      - "thank you for your interest"
+      - "your application has been received"
+      - "we have received your application"
+  extract:
+    org:
+      source: from_name
+      transform: [strip_via, strip, collapse]
+    role:
+      source: subject
+      regex: "(?:application|applying|interest)\\s*(?:for|in|:)\\s*(.{3,80})$"
+      transform: [strip_org_suffix, strip, collapse]
+
+- id: smartrecruiters-acknowledgement
+  vendor: SmartRecruiters
+  category: acknowledgement
+  priority: 70
+  match:
+    from_domain: [smartrecruiters.com, smartrecruiters.net]
+    body_any: ["thank you for applying", "we received your application"]
+  extract:
+    org: {source: from_name, transform: [strip_via, strip, collapse]}
+
+- id: workable-acknowledgement
+  vendor: Workable
+  category: acknowledgement
+  priority: 70
+  match:
+    from_domain: [workable.com, workablemail.com]
+    body_any: ["thank you for applying", "your application was sent"]
+  extract:
+    org: {source: from_name, transform: [strip_via, strip, collapse]}
+
+- id: ashby-acknowledgement
+  vendor: Ashby
+  category: acknowledgement
+  priority: 70
+  match:
+    from_domain: [ashbyhq.com, ashbyhq.io]
+    body_any: ["thank you for applying", "we have received your application"]
+  extract:
+    org: {source: from_name, transform: [strip_via, strip, collapse]}
+
+- id: recruitee-acknowledgement
+  vendor: Recruitee
+  category: acknowledgement
+  priority: 70
+  match:
+    from_domain: [recruitee.com]
+    body_any: ["thank you for applying", "we received your application"]
+  extract:
+    org: {source: from_name, transform: [strip_via, strip, collapse]}
+
+- id: teamtailor-acknowledgement
+  vendor: Teamtailor
+  category: acknowledgement
+  priority: 70
+  match:
+    from_domain: [teamtailor.com, teamtailormail.com]
+    body_any: ["thank you for applying", "application received"]
+  extract:
+    org: {source: from_name, transform: [strip_via, strip, collapse]}
+
+- id: bamboohr-acknowledgement
+  vendor: BambooHR
+  category: acknowledgement
+  priority: 70
+  match:
+    from_domain: [bamboohr.com]
+    body_any: ["thank you for applying", "we have received your application"]
+  extract:
+    org: {source: from_name, transform: [strip_via, strip, collapse]}
+
+- id: icims-acknowledgement
+  vendor: iCIMS
+  category: acknowledgement
+  priority: 70
+  match:
+    from_domain: [icims.com]
+    body_any: ["thank you for your interest", "your application has been received"]
+  extract:
+    org: {source: from_name, transform: [strip_via, strip, collapse]}
+
+- id: taleo-acknowledgement
+  vendor: Taleo
+  category: acknowledgement
+  priority: 70
+  match:
+    from_domain: [taleo.net, oraclecloud.com]
+    body_any: ["thank you for your interest", "application acknowledgement"]
+  extract:
+    org: {source: from_name, transform: [strip_via, strip, collapse]}
+
+- id: successfactors-acknowledgement
+  vendor: SAP SuccessFactors
+  category: acknowledgement
+  priority: 70
+  match:
+    from_domain: [successfactors.com, successfactors.eu, sap.com]
+    body_any: ["thank you for your interest", "we have received your application"]
+  extract:
+    org: {source: from_name, transform: [strip_via, strip, collapse]}
+
+- id: generic-rejection-en
+  vendor: generic
+  description: Rejection wording that is near-universal across English ATS mail.
+  category: rejection
+  priority: 90
+  match:
+    body_any:
+      - "we have decided not to move forward"
+      - "we will not be moving forward"
+      - "decided to move forward with other candidates"
+      - "we have decided to pursue other candidates"
+      - "your application was not successful"
+      - "we regret to inform you that we will not"
+      - "unfortunately, we have decided not to"
+  extract:
+    org: {source: from_domain, transform: [domain_to_org]}
+    role:
+      source: subject
+      regex: "(?i)(?:application\\s+(?:for|to)|assessment\\s+for|invitation\\s*[–—-]|application\\s*[–—-]|position\\s+of)\\s+(?:the\\s+)?(.{2,80}?)(?:\\s+at\\s+.+)?$"
+      transform: [strip_org_suffix, strip, collapse]
+
+- id: generic-interview-invite-en
+  vendor: generic
+  category: interview_invite
+  priority: 88
+  match:
+    body_any:
+      - "we would like to invite you to an interview"
+      - "invite you for an interview"
+      - "would like to schedule a call"
+      - "schedule an interview with"
+      - "book a time slot"
+      - "pick a time that works for you"
+  extract:
+    org: {source: from_domain, transform: [domain_to_org]}
+    role:
+      source: subject
+      regex: "(?i)(?:application\\s+(?:for|to)|assessment\\s+for|invitation\\s*[–—-]|application\\s*[–—-]|position\\s+of)\\s+(?:the\\s+)?(.{2,80}?)(?:\\s+at\\s+.+)?$"
+      transform: [strip_org_suffix, strip, collapse]
+
+- id: generic-assessment-en
+  vendor: generic
+  category: assessment
+  priority: 86
+  match:
+    body_any:
+      - "complete the online assessment"
+      - "online assessment"
+      - "coding challenge"
+      - "take-home assignment"
+      - "technical assessment"
+      - "hackerrank"
+      - "codility"
+      - "testgorilla"
+    body_none:
+      - "we have decided not to move forward"
+      - "we will not be moving forward"
+  extract:
+    org: {source: from_domain, transform: [domain_to_org]}
+    role:
+      source: subject
+      regex: "(?i)(?:application\\s+(?:for|to)|assessment\\s+for|invitation\\s*[–—-]|application\\s*[–—-]|position\\s+of)\\s+(?:the\\s+)?(.{2,80}?)(?:\\s+at\\s+.+)?$"
+      transform: [strip_org_suffix, strip, collapse]
+
+- id: calendly-booking
+  vendor: Calendly
+  category: scheduling
+  priority: 65
+  match:
+    from_domain: [calendly.com]
+  extract:
+    org: {source: from_name, transform: [strip_via, strip]}
+
+- id: microsoft-bookings
+  vendor: Microsoft Bookings
+  category: scheduling
+  priority: 65
+  match:
+    from_domain: [microsoft.com, office.com, outlook.com]
+    subject_any: ["booking confirmation", "appointment confirmation", "your meeting"]
+  extract:
+    org: {source: from_name, transform: [strip_via, strip]}
+
+- id: linkedin-job-alert
+  vendor: LinkedIn
+  category: job_alert
+  priority: 75
+  match:
+    from_domain: [linkedin.com]
+    subject_any: ["job alert", "new jobs", "jobs for you", "hiring now"]
+
+- id: linkedin-application-sent
+  vendor: LinkedIn
+  category: acknowledgement
+  priority: 75
+  match:
+    from_domain: [linkedin.com]
+    subject_any: ["your application was sent", "application sent to"]
+  extract:
+    org:
+      source: subject
+      regex: "application was sent to\\s+(.{2,60})$"
+      transform: [strip, collapse]
+
+- id: indeed-application
+  vendor: Indeed
+  category: acknowledgement
+  priority: 75
+  match:
+    from_domain: [indeed.com, indeedemail.com, indeed.de]
+    subject_any: ["application submitted", "you applied", "indeed application"]
+  extract:
+    org:
+      source: subject
+      regex: "(?:to|at)\\s+(.{2,60})$"
+      transform: [strip, collapse]
+
+- id: indeed-job-alert
+  vendor: Indeed
+  category: job_alert
+  priority: 76
+  match:
+    from_domain: [indeed.com, indeedemail.com, indeed.de]
+    subject_any: ["new jobs", "job alert", "jobs matching", "neue jobs"]
+
+- id: glassdoor-alert
+  vendor: Glassdoor
+  category: job_alert
+  priority: 75
+  match:
+    from_domain: [glassdoor.com, glassdoor.de]
+    subject_any: ["job alert", "new jobs", "jobs for you"]
+
+- id: generic-offer-en
+  vendor: generic
+  description: A concrete job offer or contract to sign.
+  category: offer
+  priority: 92
+  match:
+    body_any:
+      - "we are delighted to offer you"
+      - "we are pleased to offer you the position"
+      - "please find attached your employment contract"
+      - "formal offer of employment"
+  extract:
+    org: {source: from_domain, transform: [domain_to_org]}
+    role:
+      source: subject
+      regex: "(?i)(?:application\\s+(?:for|to)|assessment\\s+for|invitation\\s*[–—-]|application\\s*[–—-]|position\\s+of)\\s+(?:the\\s+)?(.{2,80}?)(?:\\s+at\\s+.+)?$"
+      transform: [strip_org_suffix, strip, collapse]
+
+- id: generic-acknowledgement-en
+  vendor: generic
+  description: >
+    The English counterpart of generic-acknowledgement-de. Without it, a company
+    that sends its own acknowledgement from its own domain — rather than through
+    a named ATS — matches nothing and falls through to the classifier.
+  category: acknowledgement
+  priority: 50
+  match:
+    body_any:
+      - "thank you for applying"
+      - "thanks for applying"
+      - "we have received your application"
+      - "your application has been received"
+      - "we confirm receipt of your application"
+    body_none:
+      - "we have decided not to move forward"
+      - "we will not be moving forward"
+  extract:
+    org: {source: from_domain, transform: [domain_to_org]}
+    role:
+      source: subject
+      regex: "(?i)(?:application\\s+(?:for|to)|assessment\\s+for|invitation\\s*[–—-]|application\\s*[–—-]|position\\s+of)\\s+(?:the\\s+)?(.{2,80}?)(?:\\s+at\\s+.+)?$"
+      transform: [strip_org_suffix, strip, collapse]

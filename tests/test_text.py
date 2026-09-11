@@ -2,10 +2,10 @@ from datetime import date
 
 import pytest
 
-from sift.text.clean import clean_body, detect_language, normalise_subject, redact_urls
-from sift.text.dates import find_dates, find_deadline, find_event
-from sift.text.html import html_to_text
-from sift.text.simhash import hamming, simhash
+from bmail.text.clean import clean_body, detect_language, normalise_subject, redact_urls
+from bmail.text.dates import find_dates, find_deadline, find_event
+from bmail.text.html import html_to_text
+from bmail.text.simhash import hamming, simhash
 
 
 def test_html_drops_script_and_keeps_blocks():

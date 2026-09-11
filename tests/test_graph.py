@@ -12,16 +12,16 @@ from email.message import EmailMessage
 
 import pytest
 
-from sift.errors import IngestError
-from sift.ingest import build_source, ingest
-from sift.ingest.graph import (
+from bmail.errors import IngestError
+from bmail.ingest import build_source, ingest
+from bmail.ingest.graph import (
     GRAPH,
     DeltaExpired,
     GraphHTTP,
     GraphSource,
 )
-from sift.models import Direction
-from sift.store import repo
+from bmail.models import Direction
+from bmail.store import repo
 
 # --------------------------------------------------------------------------- #
 # A fake Graph
@@ -88,7 +88,7 @@ DELTA = f"{GRAPH}/me/mailFolders/inbox/messages/delta"
 
 
 def delta_url(page_size: int = 50) -> str:
-    from sift.ingest.graph import DELTA_SELECT
+    from bmail.ingest.graph import DELTA_SELECT
 
     return f"{DELTA}?$select={DELTA_SELECT}&$top={page_size}"
 
@@ -190,7 +190,7 @@ def test_an_expired_link_mid_run_is_not_swallowed(graph):
 
 
 def test_the_whole_mailbox_can_be_read(graph):
-    from sift.ingest.graph import DELTA_SELECT
+    from bmail.ingest.graph import DELTA_SELECT
 
     url = f"{GRAPH}/me/messages/delta?$select={DELTA_SELECT}&$top=50"
     graph.json_route(url, {"value": [], "@odata.deltaLink": "https://delta/1"})
@@ -241,7 +241,7 @@ def test_items_without_mime_fall_back_to_json(graph):
         delta_url(), {"value": [{"id": "AAA"}], "@odata.deltaLink": "https://delta/1"}
     )
     graph.route(f"{GRAPH}/me/messages/AAA/$value", (404, {}, b"not available"))
-    from sift.ingest.graph import FULL_SELECT
+    from bmail.ingest.graph import FULL_SELECT
 
     graph.json_route(
         f"{GRAPH}/me/messages/AAA?$select={FULL_SELECT}",
@@ -289,7 +289,7 @@ def test_json_fallback_synthesises_a_missing_message_id(graph):
     }
     first = GraphSource.build_message(payload)
     second = GraphSource.build_message(payload)
-    assert first.message_id.startswith("<sift-")
+    assert first.message_id.startswith("<bmail-")
     assert first.message_id == second.message_id  # deterministic, so re-ingest is idempotent
 
 
@@ -366,27 +366,27 @@ def test_a_forbidden_response_explains_the_scope(graph):
 
 def test_categories_are_not_written_without_allow_modify(graph):
     with pytest.raises(IngestError, match="allow_modify"):
-        source(graph).apply_label("AAA", "Sift/Interview")
+        source(graph).apply_label("AAA", "Bmail/Interview")
 
 
 def test_a_category_is_added_to_the_existing_ones(graph):
     graph.json_route(f"{GRAPH}/me/messages/AAA?$select=categories", {"categories": ["Work"]})
-    source(graph, allow_modify=True).apply_label("AAA", "Sift/Interview")
-    assert graph.patched == [{"categories": ["Work", "Sift/Interview"]}]
+    source(graph, allow_modify=True).apply_label("AAA", "Bmail/Interview")
+    assert graph.patched == [{"categories": ["Work", "Bmail/Interview"]}]
 
 
 def test_an_existing_category_is_not_written_twice(graph):
     graph.json_route(
-        f"{GRAPH}/me/messages/AAA?$select=categories", {"categories": ["Sift/Interview"]}
+        f"{GRAPH}/me/messages/AAA?$select=categories", {"categories": ["Bmail/Interview"]}
     )
-    source(graph, allow_modify=True).apply_label("AAA", "Sift/Interview")
+    source(graph, allow_modify=True).apply_label("AAA", "Bmail/Interview")
     assert graph.patched == []
 
 
 def test_commas_are_stripped_from_category_names(graph):
     """Outlook stores categories comma-delimited; a comma would split the name."""
     graph.json_route(f"{GRAPH}/me/messages/AAA?$select=categories", {"categories": []})
-    source(graph, allow_modify=True).apply_label("AAA", "Sift/Offer, signed")
+    source(graph, allow_modify=True).apply_label("AAA", "Bmail/Offer, signed")
     assert "," not in graph.patched[0]["categories"][0]
 
 
@@ -403,7 +403,7 @@ def test_the_registry_builds_a_graph_source(provider):
 
 
 def test_read_only_by_default_and_modify_only_on_request():
-    from sift.ingest.graph import MODIFY_SCOPE, READ_SCOPE
+    from bmail.ingest.graph import MODIFY_SCOPE, READ_SCOPE
 
     assert build_source({"name": "o", "provider": "graph", "client_id": "a"}).scopes == [READ_SCOPE]
     assert build_source(

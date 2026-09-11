@@ -5,10 +5,10 @@ from datetime import datetime, timezone
 
 import pytest
 
-from sift.ingest.raw import parse_message
-from sift.models import Message
-from sift.packs import load_pack
-from sift.store.db import connect
+from bmail.ingest.raw import parse_message
+from bmail.models import Message
+from bmail.packs import load_pack
+from bmail.store.db import connect
 
 
 @pytest.fixture()

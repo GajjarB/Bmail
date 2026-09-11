@@ -3,7 +3,7 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "sift-mail"
+name = "bmail"
 version = "0.1.0"
 description = "Local-first email triage engine: filters, extracts and tracks lifecycle mail without sending anything off the machine."
 readme = "README.md"
@@ -23,6 +23,8 @@ dependencies = [
   "pydantic>=2.6",
   "PyYAML>=6.0",
   "openpyxl>=3.1",
+  # tomllib joined the standard library in 3.11; this is the same parser for 3.10.
+  "tomli>=2.0; python_version < '3.11'",
 ]
 
 [project.optional-dependencies]
@@ -40,7 +42,7 @@ all = [
 ]
 
 [project.scripts]
-sift = "sift.cli:main"
+bmail = "bmail.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/GajjarB/Bmail"
@@ -50,7 +52,7 @@ Source = "https://github.com/GajjarB/Bmail"
 where = ["src"]
 
 [tool.setuptools.package-data]
-sift = ["packs/builtin/*.yaml", "rules/recipes/*.yaml", "store/*.sql", "ui/static/*"]
+bmail = ["packs/builtin/*.yaml", "rules/recipes/*.yaml", "store/*.sql", "ui/static/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

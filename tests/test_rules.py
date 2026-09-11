@@ -1,12 +1,12 @@
 import pytest
 
-from sift.ingest.raw import parse_message
-from sift.models import Lane
-from sift.packs import load_pack
-from sift.rules.engine import RulesEngine, coverage
-from sift.rules.headers import header_signals
-from sift.rules.templates import load_recipes, match_template
-from sift.store import repo
+from bmail.ingest.raw import parse_message
+from bmail.models import Lane
+from bmail.packs import load_pack
+from bmail.rules.engine import RulesEngine, coverage
+from bmail.rules.headers import header_signals
+from bmail.rules.templates import load_recipes, match_template
+from bmail.store import repo
 from tests.conftest import make_raw
 
 
@@ -109,8 +109,8 @@ def test_vendor_domain_never_becomes_the_employer():
 
 
 def test_stage1_resolves_most_of_a_realistic_corpus(conn, pack, tmp_path):
-    from sift.ingest import FileSource, ingest
-    from sift.samples import write_mbox
+    from bmail.ingest import FileSource, ingest
+    from bmail.samples import write_mbox
 
     mbox, _ = write_mbox(tmp_path, applications=12, noise=20)
     ingest(conn, FileSource(mbox, name="demo", own_addresses={"you@example.com"}))
@@ -185,3 +185,71 @@ def test_the_readme_recipe_count_is_accurate():
     stated = re.search(r"(\d+) starter template recipes", readme.read_text(encoding="utf-8"))
     assert stated, "the README should state how many template recipes ship"
     assert int(stated.group(1)) == len(load_recipes())
+
+
+@pytest.mark.parametrize(
+    ("subject", "expected"),
+    [
+        ("Ihre Bewerbung als Backend Developer bei Nordwind Analytics", "Backend Developer"),
+        ("Ihre Bewerbung als Software Engineer (m/w/d)", "Software Engineer (m/w/d)"),
+        ("Online-Test für Ihre Bewerbung als Data Engineer", "Data Engineer"),
+        ("Einladung zum Vorstellungsgespräch – Data Engineer", "Data Engineer"),
+    ],
+)
+def test_german_subjects_yield_the_role(subject, expected):
+    """The role is what separates two applications at the same company."""
+    message = parse_message(make_raw(
+        subject=subject,
+        body="Vielen Dank für Ihre Bewerbung. Wir haben Ihre Bewerbung erhalten.",
+    ))
+    hit = match_template(message)
+    assert hit is not None
+    assert hit.fields.get("role") == expected
+
+
+@pytest.mark.parametrize(
+    ("subject", "body", "expected"),
+    [
+        ("Your application for Platform Engineer at Lumen Mobility",
+         "Thank you for applying to Lumen Mobility.", "Platform Engineer"),
+        ("Update on your application – Machine Learning Engineer",
+         "Unfortunately, we have decided not to move forward with your application.",
+         "Machine Learning Engineer"),
+        ("Next step: online assessment for Backend Developer",
+         "Please complete the online assessment within 5 days.", "Backend Developer"),
+    ],
+)
+def test_english_subjects_yield_the_role(subject, body, expected):
+    message = parse_message(make_raw(subject=subject, body=body))
+    hit = match_template(message)
+    assert hit is not None
+    assert hit.fields.get("role") == expected
+
+
+def test_two_roles_at_one_company_stay_separate(conn, pack, tmp_path):
+    """Without a role the case key collapses to the organisation alone, and
+    every application at that company merges into one — which is exactly the
+    question the tracker exists to answer."""
+    from bmail.classify.stage2 import Classifier
+    from bmail.pipeline import Pipeline
+
+    body = ("Sehr geehrte Bewerberin,\n\nvielen Dank für Ihre Bewerbung. "
+            "Wir haben Ihre Bewerbung erhalten und prüfen Ihre Unterlagen.")
+    messages = [
+        parse_message(make_raw(
+            message_id=f"<role{i}@x>", sender="bewerbung@nordwind-analytics.de",
+            sender_name="Nordwind Analytics", subject=subject, body=body,
+        ))
+        for i, subject in enumerate((
+            "Ihre Bewerbung als Backend Developer bei Nordwind Analytics",
+            "Ihre Bewerbung als Data Engineer bei Nordwind Analytics",
+            "Ihre Bewerbung als Software Engineer (m/w/d)",
+        ))
+    ]
+    repo.bulk_upsert(conn, messages)
+    Pipeline(pack, classifier=Classifier(pack), use_llm=False).triage(conn, messages)
+
+    cases = repo.list_cases(conn, pack.name)
+    roles = {case.role for case in cases}
+    assert len(cases) == 3, f"applications merged: {[(c.org, c.role) for c in cases]}"
+    assert "Backend Developer" in roles and "Data Engineer" in roles

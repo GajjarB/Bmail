@@ -4,12 +4,12 @@ Two ways to run the same application. Both serve the same page from the same
 local daemon; the only difference is what holds the window.
 
 ```bash
-sift ui                 # opens your browser at a loopback address
+bmail ui                 # opens your browser at a loopback address
 ```
 
 ```bash
 cd desktop/src-tauri && cargo build --release
-./target/release/sift-desktop      # a native window
+./target/release/bmail-desktop      # a native window
 ```
 
 ## The idea
@@ -40,8 +40,8 @@ Three rules follow from that, and they are worth keeping:
 - **Applications** — the tracker, named after whatever the active pack tracks:
   applications, programme applications, candidates or invoices. Each case draws
   its own state machine as a rail, live ones first and closed ones receding.
-- **Mail** — everything Sift has read, searchable and filterable, with a detail
-  panel that shows what Sift concluded and why.
+- **Mail** — everything Bmail has read, searchable and filterable, with a detail
+  panel that shows what Bmail concluded and why.
 - **Review** — the uncertain guesses, one at a time. A question, a big *yes*,
   and every alternative offered. Each answer becomes a training row, which is
   what makes the classifier personal within a week.
@@ -58,20 +58,20 @@ runs at once is never what anyone wanted.
 
 ```
   Tauri window  ─┐
-                 ├──▶  http://127.0.0.1:<random>   ──▶  sift.api  ──▶  SQLite
+                 ├──▶  http://127.0.0.1:<random>   ──▶  bmail.api  ──▶  SQLite
   Browser tab   ─┘         (token-gated)                  │
-                                                          └──▶ sift.jobs (1 worker)
+                                                          └──▶ bmail.jobs (1 worker)
 ```
 
 The shell owns a window and a child process and nothing else; all the logic is
 in the Python core. That is deliberate — the core stays importable, scriptable
 and testable on its own, and the UI is a client of it rather than a container
-for it. It is also why `sift ui` works identically with no Rust toolchain
+for it. It is also why `bmail ui` works identically with no Rust toolchain
 anywhere.
 
 The page is vanilla HTML, CSS and JavaScript with no build step, no bundler and
-no framework — around 1,600 lines all told, of which a third is the design
-system. It is served from the machine it runs on and has to
+no framework — about 1,400 lines all told, of which roughly a third is
+the design system. It is served from the machine it runs on and has to
 work with the network unplugged, so there is nothing to fetch and nothing to
 compile — the file you read is the file that runs. A test asserts the page makes
 no external requests at all.
@@ -108,15 +108,15 @@ Requires Rust and, on Linux, WebKitGTK:
 sudo apt install libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev build-essential
 
 cd desktop/src-tauri
-cargo build --release          # ./target/release/sift-desktop
+cargo build --release          # ./target/release/bmail-desktop
 cargo tauri build              # installers, if the Tauri CLI is installed
 ```
 
 macOS and Windows need no extra system packages beyond Xcode command-line tools
 and the MSVC build tools respectively.
 
-The shell finds the engine in this order: a `sift` binary next to itself (a
-bundled sidecar), `$SIFT_BIN`, `sift` on `PATH`, then `python -m sift`. If none
+The shell finds the engine in this order: a `bmail` binary next to itself (a
+bundled sidecar), `$BMAIL_BIN`, `bmail` on `PATH`, then `python -m bmail`. If none
 of them starts, the window shows a page saying so rather than opening blank.
 
 Installers are not signed. Signing needs an Apple Developer ID and a Windows
@@ -125,9 +125,9 @@ committed to a repository.
 
 ## Adding a view
 
-1. Add an endpoint to `SiftApp` in `src/sift/api.py` and route it in
+1. Add an endpoint to `BmailApp` in `src/bmail/api.py` and route it in
    `_route_get`.
-2. Add a `view*` function in `src/sift/ui/static/app.js` and register it in
+2. Add a `view*` function in `src/bmail/ui/static/app.js` and register it in
    `ROUTES`.
 3. Add an entry to the `items` list in `paintNav()`.
 
