@@ -45,11 +45,23 @@ def test_ats_domains_are_recognised():
     assert not is_ats_domain("nordwind-analytics.de")
 
 
-def test_keys_match_on_org_but_tolerate_a_missing_role():
+def test_keys_match_on_org_and_fuzzy_role():
     key_fields = ["org_domain", "role"]
-    with_role = case_key(key_fields, {"org_domain": "Acme GmbH", "role": "Data Engineer"})
-    without = case_key(key_fields, {"org_domain": "acme", "role": ""})
-    assert keys_match(with_role, without)
+    left = case_key(key_fields, {"org_domain": "Acme GmbH", "role": "Data Engineer (m/w/d)"})
+    right = case_key(key_fields, {"org_domain": "acme", "role": "Senior Data Engineer"})
+    assert keys_match(left, right)
+
+
+def test_a_missing_role_does_not_swallow_a_known_one():
+    """The regression that made every application to one employer one case."""
+    key_fields = ["org_domain", "role"]
+    known = case_key(key_fields, {"org_domain": "Acme GmbH", "role": "Data Engineer"})
+    blank = case_key(key_fields, {"org_domain": "acme", "role": ""})
+    other = case_key(key_fields, {"org_domain": "acme", "role": "Backend Developer"})
+    assert not keys_match(known, blank)
+    assert not keys_match(blank, known)
+    assert not keys_match(known, other)
+    assert keys_match(blank, case_key(key_fields, {"org_domain": "acme", "role": None}))
 
 
 def test_different_employers_never_merge():
@@ -365,3 +377,30 @@ def test_every_shipped_pack_can_open_a_case_without_a_model(tmp_path):
         ]
         assert openers, f"pack '{name}' has no category that can open a case"
     assert 0.0 < MIN_CONFIDENCE_TO_OPEN < 1.0
+
+
+def test_three_roles_at_one_employer_stay_three_cases(conn, pack):
+    """Three applications to the same institute, one of them with no role in the
+    mail at all. They must not collapse into a single card."""
+    resolver = CaseResolver(pack)
+    roles = [None, "Backend Developer", "Data Engineer"]
+    cases = []
+    for index, role in enumerate(roles):
+        message = parse_message(
+            make_raw(
+                message_id=f"<apply-{index}@fraunhofer-ipt.de>",
+                sender=f"noreply-{index}@fraunhofer-ipt.de",
+                subject=f"Ihre Bewerbung {index}",
+                body="Vielen Dank für Ihre Bewerbung.",
+            )
+        )
+        repo.bulk_upsert(conn, [message])
+        verdict = Verdict(
+            message_id=message.message_id, pack=pack.name,
+            category="acknowledgement", confidence=0.9,
+            org="Fraunhofer IPT", role=role,
+        )
+        resolved = resolver.resolve(conn, message, verdict)
+        assert resolved.case is not None
+        cases.append(resolved.case.id)
+    assert len(set(cases)) == 3

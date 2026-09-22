@@ -82,6 +82,10 @@
     body_any: ["thank you for applying", "we received your application"]
   extract:
     org: {source: from_name, transform: [strip_via, strip, collapse]}
+    role:
+      source: subject
+      regex: "(?:bewerbung\\s*(?:als|f(?:ü|ue)r|:)|application\\s+(?:for|to)|applying\\s+(?:for|to)|assessment\\s+for|position\\s+of|invitation\\s*[–—-]|application\\s*[–—-]|vorstellungsgespr(?:ä|ae)ch\\s*[–—-]|gespr(?:ä|ae)ch\\s*[–—-]|stelle\\s+als)\\s*(?:the\\s+)?(.{2,80}?)(?:\\s+(?:bei|at)\\s+.+)?$"
+      transform: [strip_org_suffix, strip, collapse]
 
 - id: workable-acknowledgement
   vendor: Workable
@@ -92,6 +96,10 @@
     body_any: ["thank you for applying", "your application was sent"]
   extract:
     org: {source: from_name, transform: [strip_via, strip, collapse]}
+    role:
+      source: subject
+      regex: "(?:bewerbung\\s*(?:als|f(?:ü|ue)r|:)|application\\s+(?:for|to)|applying\\s+(?:for|to)|assessment\\s+for|position\\s+of|invitation\\s*[–—-]|application\\s*[–—-]|vorstellungsgespr(?:ä|ae)ch\\s*[–—-]|gespr(?:ä|ae)ch\\s*[–—-]|stelle\\s+als)\\s*(?:the\\s+)?(.{2,80}?)(?:\\s+(?:bei|at)\\s+.+)?$"
+      transform: [strip_org_suffix, strip, collapse]
 
 - id: ashby-acknowledgement
   vendor: Ashby
@@ -102,6 +110,10 @@
     body_any: ["thank you for applying", "we have received your application"]
   extract:
     org: {source: from_name, transform: [strip_via, strip, collapse]}
+    role:
+      source: subject
+      regex: "(?:bewerbung\\s*(?:als|f(?:ü|ue)r|:)|application\\s+(?:for|to)|applying\\s+(?:for|to)|assessment\\s+for|position\\s+of|invitation\\s*[–—-]|application\\s*[–—-]|vorstellungsgespr(?:ä|ae)ch\\s*[–—-]|gespr(?:ä|ae)ch\\s*[–—-]|stelle\\s+als)\\s*(?:the\\s+)?(.{2,80}?)(?:\\s+(?:bei|at)\\s+.+)?$"
+      transform: [strip_org_suffix, strip, collapse]
 
 - id: recruitee-acknowledgement
   vendor: Recruitee
@@ -112,6 +124,10 @@
     body_any: ["thank you for applying", "we received your application"]
   extract:
     org: {source: from_name, transform: [strip_via, strip, collapse]}
+    role:
+      source: subject
+      regex: "(?:bewerbung\\s*(?:als|f(?:ü|ue)r|:)|application\\s+(?:for|to)|applying\\s+(?:for|to)|assessment\\s+for|position\\s+of|invitation\\s*[–—-]|application\\s*[–—-]|vorstellungsgespr(?:ä|ae)ch\\s*[–—-]|gespr(?:ä|ae)ch\\s*[–—-]|stelle\\s+als)\\s*(?:the\\s+)?(.{2,80}?)(?:\\s+(?:bei|at)\\s+.+)?$"
+      transform: [strip_org_suffix, strip, collapse]
 
 - id: teamtailor-acknowledgement
   vendor: Teamtailor
@@ -122,6 +138,10 @@
     body_any: ["thank you for applying", "application received"]
   extract:
     org: {source: from_name, transform: [strip_via, strip, collapse]}
+    role:
+      source: subject
+      regex: "(?:bewerbung\\s*(?:als|f(?:ü|ue)r|:)|application\\s+(?:for|to)|applying\\s+(?:for|to)|assessment\\s+for|position\\s+of|invitation\\s*[–—-]|application\\s*[–—-]|vorstellungsgespr(?:ä|ae)ch\\s*[–—-]|gespr(?:ä|ae)ch\\s*[–—-]|stelle\\s+als)\\s*(?:the\\s+)?(.{2,80}?)(?:\\s+(?:bei|at)\\s+.+)?$"
+      transform: [strip_org_suffix, strip, collapse]
 
 - id: bamboohr-acknowledgement
   vendor: BambooHR
@@ -132,6 +152,10 @@
     body_any: ["thank you for applying", "we have received your application"]
   extract:
     org: {source: from_name, transform: [strip_via, strip, collapse]}
+    role:
+      source: subject
+      regex: "(?:bewerbung\\s*(?:als|f(?:ü|ue)r|:)|application\\s+(?:for|to)|applying\\s+(?:for|to)|assessment\\s+for|position\\s+of|invitation\\s*[–—-]|application\\s*[–—-]|vorstellungsgespr(?:ä|ae)ch\\s*[–—-]|gespr(?:ä|ae)ch\\s*[–—-]|stelle\\s+als)\\s*(?:the\\s+)?(.{2,80}?)(?:\\s+(?:bei|at)\\s+.+)?$"
+      transform: [strip_org_suffix, strip, collapse]
 
 - id: icims-acknowledgement
   vendor: iCIMS
@@ -142,6 +166,10 @@
     body_any: ["thank you for your interest", "your application has been received"]
   extract:
     org: {source: from_name, transform: [strip_via, strip, collapse]}
+    role:
+      source: subject
+      regex: "(?:bewerbung\\s*(?:als|f(?:ü|ue)r|:)|application\\s+(?:for|to)|applying\\s+(?:for|to)|assessment\\s+for|position\\s+of|invitation\\s*[–—-]|application\\s*[–—-]|vorstellungsgespr(?:ä|ae)ch\\s*[–—-]|gespr(?:ä|ae)ch\\s*[–—-]|stelle\\s+als)\\s*(?:the\\s+)?(.{2,80}?)(?:\\s+(?:bei|at)\\s+.+)?$"
+      transform: [strip_org_suffix, strip, collapse]
 
 - id: taleo-acknowledgement
   vendor: Taleo
@@ -152,6 +180,10 @@
     body_any: ["thank you for your interest", "application acknowledgement"]
   extract:
     org: {source: from_name, transform: [strip_via, strip, collapse]}
+    role:
+      source: subject
+      regex: "(?:bewerbung\\s*(?:als|f(?:ü|ue)r|:)|application\\s+(?:for|to)|applying\\s+(?:for|to)|assessment\\s+for|position\\s+of|invitation\\s*[–—-]|application\\s*[–—-]|vorstellungsgespr(?:ä|ae)ch\\s*[–—-]|gespr(?:ä|ae)ch\\s*[–—-]|stelle\\s+als)\\s*(?:the\\s+)?(.{2,80}?)(?:\\s+(?:bei|at)\\s+.+)?$"
+      transform: [strip_org_suffix, strip, collapse]
 
 - id: successfactors-acknowledgement
   vendor: SAP SuccessFactors
@@ -162,6 +194,10 @@
     body_any: ["thank you for your interest", "we have received your application"]
   extract:
     org: {source: from_name, transform: [strip_via, strip, collapse]}
+    role:
+      source: subject
+      regex: "(?:bewerbung\\s*(?:als|f(?:ü|ue)r|:)|application\\s+(?:for|to)|applying\\s+(?:for|to)|assessment\\s+for|position\\s+of|invitation\\s*[–—-]|application\\s*[–—-]|vorstellungsgespr(?:ä|ae)ch\\s*[–—-]|gespr(?:ä|ae)ch\\s*[–—-]|stelle\\s+als)\\s*(?:the\\s+)?(.{2,80}?)(?:\\s+(?:bei|at)\\s+.+)?$"
+      transform: [strip_org_suffix, strip, collapse]
 
 - id: generic-rejection-en
   vendor: generic
@@ -266,6 +302,10 @@
       source: subject
       regex: "application was sent to\\s+(.{2,60})$"
       transform: [strip, collapse]
+    role:
+      source: subject
+      regex: "(?:bewerbung\\s*(?:als|f(?:ü|ue)r|:)|application\\s+(?:for|to)|applying\\s+(?:for|to)|assessment\\s+for|position\\s+of|invitation\\s*[–—-]|application\\s*[–—-]|vorstellungsgespr(?:ä|ae)ch\\s*[–—-]|gespr(?:ä|ae)ch\\s*[–—-]|stelle\\s+als)\\s*(?:the\\s+)?(.{2,80}?)(?:\\s+(?:bei|at)\\s+.+)?$"
+      transform: [strip_org_suffix, strip, collapse]
 
 - id: indeed-application
   vendor: Indeed
@@ -279,6 +319,10 @@
       source: subject
       regex: "(?:to|at)\\s+(.{2,60})$"
       transform: [strip, collapse]
+    role:
+      source: subject
+      regex: "(?:bewerbung\\s*(?:als|f(?:ü|ue)r|:)|application\\s+(?:for|to)|applying\\s+(?:for|to)|assessment\\s+for|position\\s+of|invitation\\s*[–—-]|application\\s*[–—-]|vorstellungsgespr(?:ä|ae)ch\\s*[–—-]|gespr(?:ä|ae)ch\\s*[–—-]|stelle\\s+als)\\s*(?:the\\s+)?(.{2,80}?)(?:\\s+(?:bei|at)\\s+.+)?$"
+      transform: [strip_org_suffix, strip, collapse]
 
 - id: indeed-job-alert
   vendor: Indeed

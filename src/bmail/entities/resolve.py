@@ -174,7 +174,16 @@ def case_key(pack_key: list[str], values: dict[str, str | None]) -> str:
 def keys_match(left: str, right: str, *, threshold: int = 85) -> bool:
     """Two case keys refer to the same thing if org matches exactly and the
     role is fuzzily the same. Org is never fuzzy-matched — merging two different
-    employers is a far worse error than opening one duplicate card."""
+    employers is a far worse error than opening one duplicate card.
+
+    A blank part only matches another blank part. That is deliberate and it is
+    the whole reason this function is worth reading twice. Vendor mail often
+    arrives with no role in it at all, and treating a blank role as a wildcard
+    made every application to one employer collapse into a single case: four
+    roles at the same institute, one card, one status, three outcomes lost.
+    Under-merging costs a duplicate card the user can merge by hand.
+    Over-merging destroys the record silently, which is far worse.
+    """
     left_parts, right_parts = left.split("|"), right.split("|")
     if not left_parts or not right_parts:
         return False
@@ -186,7 +195,7 @@ def keys_match(left: str, right: str, *, threshold: int = 85) -> bool:
         if a == b:
             continue
         if not a or not b:
-            continue  # a missing role must not block the match
+            return False
         if token_set_ratio(a, b) < threshold:
             return False
     return True

@@ -88,7 +88,10 @@ def build_brief(
             title=title,
             detail=verdict.summary or sender,
             org=case_org or verdict.org or sender,
-            role=case_role or verdict.role,
+            # The message's own role wins over the case's. A case can hold an
+            # older or blanker title than the mail in front of you, and showing
+            # the wrong role next to a real subject line reads as a bug.
+            role=verdict.role or case_role,
             category=verdict.category,
             urgency=verdict.urgency,
             when=verdict.event_datetime,

@@ -50,6 +50,10 @@
       - "your application has been successful"
   extract:
     org: {source: from_domain, transform: [domain_to_org]}
+    role:
+      source: subject
+      regex: "(?:bewerbung\\s*(?:als|f(?:ü|ue)r|:)|application\\s+(?:for|to)|applying\\s+(?:for|to)|assessment\\s+for|position\\s+of|invitation\\s*[–—-]|application\\s*[–—-]|vorstellungsgespr(?:ä|ae)ch\\s*[–—-]|gespr(?:ä|ae)ch\\s*[–—-]|stelle\\s+als)\\s*(?:the\\s+)?(.{2,80}?)(?:\\s+(?:bei|at)\\s+.+)?$"
+      transform: [strip_org_suffix, strip, collapse]
 
 - id: admission-offer-de
   vendor: generic
@@ -63,6 +67,10 @@
       - "sie wurden zum studium zugelassen"
   extract:
     org: {source: from_domain, transform: [domain_to_org]}
+    role:
+      source: subject
+      regex: "(?:bewerbung\\s*(?:als|f(?:ü|ue)r|:)|application\\s+(?:for|to)|applying\\s+(?:for|to)|assessment\\s+for|position\\s+of|invitation\\s*[–—-]|application\\s*[–—-]|vorstellungsgespr(?:ä|ae)ch\\s*[–—-]|gespr(?:ä|ae)ch\\s*[–—-]|stelle\\s+als)\\s*(?:the\\s+)?(.{2,80}?)(?:\\s+(?:bei|at)\\s+.+)?$"
+      transform: [strip_org_suffix, strip, collapse]
 
 - id: admission-rejection-de
   vendor: generic
@@ -75,6 +83,10 @@
       - "ihre bewerbung konnte nicht berücksichtigt werden"
   extract:
     org: {source: from_domain, transform: [domain_to_org]}
+    role:
+      source: subject
+      regex: "(?:bewerbung\\s*(?:als|f(?:ü|ue)r|:)|application\\s+(?:for|to)|applying\\s+(?:for|to)|assessment\\s+for|position\\s+of|invitation\\s*[–—-]|application\\s*[–—-]|vorstellungsgespr(?:ä|ae)ch\\s*[–—-]|gespr(?:ä|ae)ch\\s*[–—-]|stelle\\s+als)\\s*(?:the\\s+)?(.{2,80}?)(?:\\s+(?:bei|at)\\s+.+)?$"
+      transform: [strip_org_suffix, strip, collapse]
 
 - id: waitlist-de
   vendor: generic
@@ -82,6 +94,11 @@
   priority: 87
   match:
     body_any: ["warteliste", "nachrückverfahren", "rangplatz"]
+  extract:
+    role:
+      source: subject
+      regex: "(?:bewerbung\\s*(?:als|f(?:ü|ue)r|:)|application\\s+(?:for|to)|applying\\s+(?:for|to)|assessment\\s+for|position\\s+of|invitation\\s*[–—-]|application\\s*[–—-]|vorstellungsgespr(?:ä|ae)ch\\s*[–—-]|gespr(?:ä|ae)ch\\s*[–—-]|stelle\\s+als)\\s*(?:the\\s+)?(.{2,80}?)(?:\\s+(?:bei|at)\\s+.+)?$"
+      transform: [strip_org_suffix, strip, collapse]
 
 - id: portal-message-notice
   vendor: generic
@@ -106,3 +123,9 @@
       - "semesterbeitrag"
       - "einschreibung"
       - "rückmeldung zum semester"
+  extract:
+    role:
+      source: subject
+      regex: "(?:bewerbung\\s*(?:als|f(?:ü|ue)r|:)|application\\s+(?:for|to)|applying\\s+(?:for|to)|assessment\\s+for|position\\s+of|invitation\\s*[–—-]|application\\s*[–—-]|vorstellungsgespr(?:ä|ae)ch\\s*[–—-]|gespr(?:ä|ae)ch\\s*[–—-]|stelle\\s+als)\\s*(?:the\\s+)?(.{2,80}?)(?:\\s+(?:bei|at)\\s+.+)?$"
+      transform: [strip_org_suffix, strip, collapse]
+

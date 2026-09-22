@@ -36,6 +36,10 @@
       - "we have received your application"
   extract:
     org: {source: from_name, transform: [strip_via, strip, collapse]}
+    role:
+      source: subject
+      regex: "(?:bewerbung\\s*(?:als|f(?:ü|ue)r|:)|application\\s+(?:for|to)|applying\\s+(?:for|to)|assessment\\s+for|position\\s+of|invitation\\s*[–—-]|application\\s*[–—-]|vorstellungsgespr(?:ä|ae)ch\\s*[–—-]|gespr(?:ä|ae)ch\\s*[–—-]|stelle\\s+als)\\s*(?:the\\s+)?(.{2,80}?)(?:\\s+(?:bei|at)\\s+.+)?$"
+      transform: [strip_org_suffix, strip, collapse]
 
 - id: stepstone-application
   vendor: StepStone
@@ -49,6 +53,10 @@
       source: subject
       regex: "(?:bei|an|at)\\s+(.{2,60})$"
       transform: [strip, collapse]
+    role:
+      source: subject
+      regex: "(?:bewerbung\\s*(?:als|f(?:ü|ue)r|:)|application\\s+(?:for|to)|applying\\s+(?:for|to)|assessment\\s+for|position\\s+of|invitation\\s*[–—-]|application\\s*[–—-]|vorstellungsgespr(?:ä|ae)ch\\s*[–—-]|gespr(?:ä|ae)ch\\s*[–—-]|stelle\\s+als)\\s*(?:the\\s+)?(.{2,80}?)(?:\\s+(?:bei|at)\\s+.+)?$"
+      transform: [strip_org_suffix, strip, collapse]
 
 - id: stepstone-job-alert
   vendor: StepStone
@@ -82,6 +90,10 @@
     body_any: ["vielen dank für ihre bewerbung", "thank you for your application"]
   extract:
     org: {source: from_name, transform: [strip_via, strip, collapse]}
+    role:
+      source: subject
+      regex: "(?:bewerbung\\s*(?:als|f(?:ü|ue)r|:)|application\\s+(?:for|to)|applying\\s+(?:for|to)|assessment\\s+for|position\\s+of|invitation\\s*[–—-]|application\\s*[–—-]|vorstellungsgespr(?:ä|ae)ch\\s*[–—-]|gespr(?:ä|ae)ch\\s*[–—-]|stelle\\s+als)\\s*(?:the\\s+)?(.{2,80}?)(?:\\s+(?:bei|at)\\s+.+)?$"
+      transform: [strip_org_suffix, strip, collapse]
 
 - id: generic-rejection-de
   vendor: generic

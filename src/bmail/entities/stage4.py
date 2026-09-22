@@ -139,6 +139,10 @@ class CaseResolver:
             case = repo.find_case_by_message(conn, self.pack.name, reference)
             if case is not None:
                 return case
+        if not message.thread_id:
+            # Without this, every thread-less message matches every other one
+            # ("" = "") and they all pile into whichever case was opened first.
+            return None
         row = conn.execute(
             """
             SELECT c.* FROM cases c
@@ -146,7 +150,7 @@ class CaseResolver:
             JOIN messages m ON m.message_id = cm.message_id
             WHERE c.pack = ? AND m.thread_id = ? LIMIT 1
             """,
-            (self.pack.name, message.thread_id or ""),
+            (self.pack.name, message.thread_id),
         ).fetchone()
         return repo.row_to_case(row) if row else None
 
