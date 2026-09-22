@@ -724,3 +724,224 @@ kbd {
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
 }
+
+/* ========================================================== studio theme === */
+/* A second skin over the same markup, drawn from the Bubblee reference: white
+ * surfaces divided by hairlines, larger radii, roomier rows, a bigger title.
+ *
+ * The thing worth copying from that reference is what it does NOT do. It is
+ * greyscale. The active sidebar item is a light grey pill, not a coloured one;
+ * the primary button is black; the only colour on the screen belongs to
+ * content — an avatar, a highlighter, a third-party logo. Colour stays
+ * available to mean something because it is never spent on chrome.
+ *
+ * Everything below re-parameterises the system above. Same scale, same status
+ * colours, same motion, same classes, same behaviour.
+ */
+
+:root[data-theme="studio"] {
+  --surface:   #FFFFFF;
+  --surface-2: #F4F4F5;   /* active pill, hover, inset */
+  --bg:        #FFFFFF;   /* the sidebar is white too; a hairline divides them */
+  --line:      #E8E8EA;
+  --line-soft: #F0F0F2;
+
+  --ink:       #0E0E10;
+  --ink-2:     #5B5B63;
+  --ink-3:     #8E8E98;
+
+  /* Reserved for focus and selection. Chrome does not get colour. */
+  --accent:    #2F55C4;
+  --accent-bg: #EEF2FD;
+  --on-ink:    #FFFFFF;
+
+  --urgent:    #B7261B;  --urgent-bg: #FCEEEC;
+  --soon:      #97590A;  --soon-bg:   #FBF3E5;
+  --live:      #15764E;  --live-bg:   #E8F3EE;
+  --quiet:     #565A66;  --quiet-bg:  #EFEFF1;
+  --done:      #8E8E98;
+
+  /* One step up: this idiom is read at arm's length, not scanned at speed. */
+  --t-micro: 11px;   --lh-micro: 16px;
+  --t-small: 12px;   --lh-small: 16px;
+  --t-body:  14px;   --lh-body:  20px;
+  --t-lead:  16px;   --lh-lead:  24px;
+  --t-title: 26px;   --lh-title: 32px;
+
+  --r: 9px;
+  --r-lg: 13px;
+  --rail: 240px;
+  --pad: 14px;
+  --shadow: 0 1px 2px rgba(14, 14, 16, .05);
+  --shadow-lift: 0 2px 6px rgba(14, 14, 16, .07), 0 10px 24px -12px rgba(14, 14, 16, .16);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-theme="studio"] {
+    --surface:   #1B1B1E;
+    --surface-2: #262629;
+    --bg:        #1B1B1E;
+    --line:      #2F2F34;
+    --line-soft: #26262A;
+
+    --ink:       #EFEFF1;
+    --ink-2:     #A2A2AC;
+    --ink-3:     #74747E;
+
+    --accent:    #7E9CFF;
+    --accent-bg: #1D2434;
+    --on-ink:    #0E0E10;
+
+    --urgent:    #F0897C;  --urgent-bg: #2C1917;
+    --soon:      #DCA75E;  --soon-bg:   #2A2011;
+    --live:      #6CC29A;  --live-bg:   #12241C;
+    --quiet:     #A4A4B6;  --quiet-bg:  #232329;
+    --done:      #74747E;
+
+    --shadow: 0 1px 2px rgba(0, 0, 0, .35);
+    --shadow-lift: 0 2px 6px rgba(0, 0, 0, .4), 0 12px 28px -14px rgba(0, 0, 0, .7);
+  }
+}
+
+/* -- shell ---------------------------------------------------------------- */
+
+[data-theme="studio"] .rail { background: var(--bg); padding: var(--s4) var(--s3) var(--s3); }
+[data-theme="studio"] .rail-brand { padding: 0 var(--s2) var(--s4); gap: var(--s2); }
+[data-theme="studio"] .rail-brand b { font-size: var(--t-lead); letter-spacing: -.02em; }
+
+/* Search sits at the top of the sidebar with its shortcut on the right, which
+   is where the reference puts it and where anyone who has used one will look. */
+[data-theme="studio"] .find {
+  padding: 9px var(--s3); border-radius: var(--r); margin-bottom: var(--s4);
+  color: var(--ink-3);
+}
+[data-theme="studio"] .find svg { color: var(--ink-3); flex: 0 0 auto; }
+[data-theme="studio"] .find:hover { border-color: var(--ink-3); }
+
+/* Grouped, with a quiet label over each group — the sidebar stops being a
+   list of five things and starts saying what kind of thing each one is. */
+[data-theme="studio"] .nav-group {
+  font: 600 var(--t-micro)/var(--lh-micro) var(--sans);
+  letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3);
+  padding: var(--s3) var(--s3) 6px;
+}
+[data-theme="studio"] .nav-group:first-child { padding-top: 0; }
+[data-theme="studio"] .nav-rule { height: 1px; background: var(--line); margin: var(--s3) var(--s2); }
+
+[data-theme="studio"] .nav a {
+  padding: 10px var(--s3); border-radius: var(--r); gap: var(--s3);
+  color: var(--ink-2); font-size: var(--t-body);
+}
+/* A light grey pill, not a coloured one. The reference is greyscale in the
+   chrome and it is the single reason its content reads so clearly. */
+[data-theme="studio"] .nav a[aria-current="page"] {
+  background: var(--surface-2); color: var(--ink); font-weight: 500; box-shadow: none;
+}
+[data-theme="studio"] .nav a[aria-current="page"] svg { color: var(--ink); }
+[data-theme="studio"] .nav .count {
+  border-radius: 6px; padding: 1px 7px; background: var(--surface-2); color: var(--ink-3);
+}
+
+/* The status block becomes a card pinned to the foot, the way the reference
+   parks the account there. */
+[data-theme="studio"] .rail-foot { gap: var(--s3); }
+[data-theme="studio"] .rail-meta {
+  border: 1px solid var(--line); border-radius: var(--r-lg);
+  padding: var(--s3); background: var(--surface);
+}
+[data-theme="studio"] .keys-hint { padding: 0 var(--s3); }
+
+/* -- page ----------------------------------------------------------------- */
+
+[data-theme="studio"] .main { background: var(--surface); }
+[data-theme="studio"] .page { padding: var(--s6) var(--s7) var(--s8); }
+[data-theme="studio"] .headline { letter-spacing: -.025em; font-weight: 700; }
+[data-theme="studio"] .subhead { font-size: var(--t-body); margin-top: 6px; }
+
+[data-theme="studio"] h2.section {
+  border-bottom: 0; color: var(--ink-2);
+  font: 600 var(--t-small)/var(--lh-small) var(--sans);
+  letter-spacing: .04em; margin: var(--s6) 0 var(--s2); padding: var(--s2) 0;
+}
+[data-theme="studio"] h2.section .n { color: var(--ink-3); }
+
+/* -- records -------------------------------------------------------------- */
+
+[data-theme="studio"] .stack { gap: 6px; }
+[data-theme="studio"] .stack > * + * { border-top: 0; }
+[data-theme="studio"] .card {
+  border: 1px solid var(--line); border-radius: var(--r-lg);
+  padding: var(--pad) var(--pad) var(--pad) var(--s3); margin: 0;
+  grid-template-columns: var(--s3) minmax(140px, 1fr) auto;
+  transition: box-shadow var(--base) var(--ease-soft),
+              border-color var(--base) var(--ease-soft);
+}
+[data-theme="studio"] a.card:hover {
+  background: var(--surface); border-color: var(--ink-3); box-shadow: var(--shadow);
+}
+[data-theme="studio"] .card[aria-selected="true"] {
+  background: var(--surface); border-color: var(--ink);
+}
+[data-theme="studio"] .card::before { margin-top: 8px; box-shadow: 0 0 0 3px var(--surface); }
+
+[data-theme="studio"] .chip { border-radius: 6px; padding: 2px 8px; }
+/* The evidence is the least important line on a card and it was becoming the
+   heaviest thing on it — a filled block the full width of the record, under a
+   title in plain text. It keeps the panel treatment, but recedes: lighter
+   fill, tighter box, and only as wide as the sentence it holds. */
+[data-theme="studio"] .quote {
+  border-left: 0; padding: 5px 10px; margin-top: 7px;
+  background: var(--line-soft); border-radius: 7px;
+  display: inline-block; max-width: 100%;
+}
+[data-theme="studio"] .quote.bad { background: var(--urgent-bg); }
+
+/* The mail list becomes one panel holding its rows. */
+[data-theme="studio"] .rows {
+  border: 1px solid var(--line); border-radius: var(--r-lg);
+  padding: 5px; border-top: 1px solid var(--line);
+}
+[data-theme="studio"] .row {
+  border-bottom: 0; border-radius: var(--r); margin: 0;
+  padding: 9px var(--s3); grid-template-columns: 28px minmax(0,1fr) auto;
+}
+[data-theme="studio"] .row + .row { box-shadow: inset 0 1px 0 var(--line-soft); }
+[data-theme="studio"] .row:hover, [data-theme="studio"] .row:hover + .row,
+[data-theme="studio"] .row[aria-selected="true"],
+[data-theme="studio"] .row[aria-selected="true"] + .row { box-shadow: none; }
+[data-theme="studio"] .avatar {
+  width: 28px; height: 28px; border-radius: 99px;
+  font-size: 11px; border: 1px solid var(--line);
+}
+
+/* -- controls ------------------------------------------------------------- */
+
+[data-theme="studio"] button, [data-theme="studio"] .btn {
+  border-radius: var(--r); padding: 7px 13px; font-weight: 500;
+}
+[data-theme="studio"] button.sm { padding: 5px 10px; }
+/* Black, as in the reference. A primary action is the one thing on the screen
+   that should be unmistakable, and black is unmistakable without being loud. */
+[data-theme="studio"] button.primary,
+[data-theme="studio"] button.on {
+  background: var(--ink); border-color: var(--ink); color: var(--on-ink);
+}
+[data-theme="studio"] input, [data-theme="studio"] select, [data-theme="studio"] textarea {
+  border-radius: var(--r); padding: 7px 11px;
+}
+
+[data-theme="studio"] .panel { border-radius: var(--r-lg); }
+[data-theme="studio"] .panel-pad { padding: var(--s5); }
+[data-theme="studio"] .body-text { border-radius: var(--r); border-color: transparent; }
+[data-theme="studio"] .sheet { border-radius: var(--r-lg); }
+[data-theme="studio"] .sheet-item { border-radius: var(--r); padding: 8px 11px; }
+[data-theme="studio"] .guess { border-radius: var(--r-lg); padding: var(--s3) var(--s4); }
+[data-theme="studio"] .jobbar, [data-theme="studio"] .toast { border-radius: var(--r); }
+[data-theme="studio"] .set-row { border-bottom-color: var(--line); padding: var(--s3) 0; }
+[data-theme="studio"] .card[data-cursor="1"] { box-shadow: inset 3px 0 0 var(--ink), var(--shadow); }
+[data-theme="studio"] .row[data-cursor="1"] { box-shadow: inset 3px 0 0 var(--ink); }
+
+/* The reference runs its sidebar icons noticeably larger than the label's cap
+   height, which is what stops a sidebar of five items reading as a menu. */
+[data-theme="studio"] .nav a svg { width: 17px; height: 17px; }
+[data-theme="studio"] .find svg { width: 16px; height: 16px; }

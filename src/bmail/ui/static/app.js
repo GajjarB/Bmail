@@ -12,6 +12,22 @@
 
 "use strict";
 
+/* Two skins over one set of markup. "studio" is the roomy, panelled idiom;
+ * "compact" is the dense mail-client one. Applied before anything is drawn —
+ * the shell stays hidden until boot finishes, so neither one flashes. */
+const THEMES = { studio: "Studio", compact: "Compact" };
+
+function applyTheme(name) {
+  const theme = THEMES[name] ? name : "studio";
+  document.documentElement.setAttribute("data-theme", theme);
+  try { localStorage.setItem("bmail.theme", theme); } catch { /* private window */ }
+  return theme;
+}
+
+applyTheme((() => {
+  try { return localStorage.getItem("bmail.theme"); } catch { return null; }
+})());
+
 const App = {
   token: null,
   state: null,
@@ -57,6 +73,7 @@ const ICONS = {
   review: ["M10 2.5a7.5 7.5 0 1 0 0 15 7.5 7.5 0 0 0 0-15z",
            "M8 8a2 2 0 1 1 2.6 1.9v1.3", "M10.6 14.2h-.01"],
   setup:  ["M3 5.5h5", "M11 5.5h6", "M3 10h9", "M15 10h2", "M3 14.5h4", "M10 14.5h7"],
+  search: ["M9 15.5a6.5 6.5 0 1 0 0-13 6.5 6.5 0 0 0 0 13z", "m13.8 13.8 3.7 3.7"],
 };
 
 function icon(name, size = 14) {
@@ -849,6 +866,15 @@ function viewSetup() {
         : `${s.llm.model} is not downloaded — run: ollama pull ${s.llm.model}`)
       : "No local model. Rules and the classifier only, which handles most mail."),
 
+    el("h2", { class: "section", text: "Appearance" }),
+    group("Layout",
+      el("select", { onchange: (e) => { applyTheme(e.target.value); render(); } },
+        Object.entries(THEMES).map(([value, label]) =>
+          el("option", { value, selected: value === document.documentElement.dataset.theme },
+            label)))),
+    note("Studio is roomier and easier to read. Compact fits about half again as "
+       + "much on a screen, which starts to matter at ninety applications."),
+
     el("h2", { class: "section", text: "Domain" }),
     group("Pack", packs,
       el("span", { class: "meta",
@@ -1192,22 +1218,32 @@ function paintNav() {
   const review = s.verdicts.needs_review || 0;
   // A badge should mean "something is waiting for you", never "here is a
   // volume". A count of all mail tells nobody anything.
-  const items = [
-    ["today", "Today", s.verdicts.action_required || 0, "urgent"],
-    ["cases", s.entity_plural[0].toUpperCase() + s.entity_plural.slice(1),
-      s.cases.stalled || 0, "quiet"],
-    ["mail", "Mail", 0, null],
-    ["review", "Review", review, "urgent"],
-    ["setup", "Setup", 0, null],
+  const groups = [
+    ["Your mail", [
+      ["today", "Today", s.verdicts.action_required || 0, "urgent"],
+      ["cases", s.entity_plural[0].toUpperCase() + s.entity_plural.slice(1),
+        s.cases.stalled || 0, "quiet"],
+      ["mail", "Mail", 0, null],
+      ["review", "Review", review, "urgent"],
+    ]],
+    ["Settings", [
+      ["setup", "Setup", 0, null],
+    ]],
   ];
-  $("#nav").replaceChildren(...items.map(([route, label, count, flag]) =>
+  const tab = ([route, label, count, flag]) =>
     el("a", {
       href: `#/${route}`, "data-tab": route, "data-flag": count ? flag : null,
       "aria-current": App.route === route ? "page" : null,
     },
       icon(route),
       el("span", { text: label }),
-      count ? el("span", { class: "count", text: String(count) }) : null)));
+      count ? el("span", { class: "count", text: String(count) }) : null);
+
+  $("#nav").replaceChildren(...groups.flatMap(([name, items], index) => [
+    index ? el("div", { class: "nav-rule" }) : null,
+    el("div", { class: "nav-group", text: name }),
+    ...items.map(tab),
+  ].filter(Boolean)));
 }
 
 /* --------------------------------------------------------------- boot --- */
@@ -1255,6 +1291,7 @@ async function boot() {
   $("#btn-find").onclick = () => openPalette();
   $("#btn-keys").onclick = () => openShortcuts();
   $("#find-key").textContent = `${MOD}K`;
+  $("#btn-find").prepend(icon("search", 15));
   document.addEventListener("keydown", onKey);
 
   const jobs = await api("/jobs").catch(() => ({ jobs: [] }));
