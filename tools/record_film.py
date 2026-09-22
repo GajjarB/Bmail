@@ -417,44 +417,48 @@ def film_short(page):
     """Thirty seconds: the three things that are hard to believe without
     seeing them — that it reads a deadline out of the prose, that it tracks
     state across a thread, and that the verdict is inspectable. Everything
-    else is in the long cut."""
+    else is in the long cut.
+
+    Every hold here is about a second shorter than the long cut's. A README
+    video is watched once, with the page half-read; the long cut is watched on
+    purpose, and can breathe."""
     reel = Reel(page)
     hand = reel.hand
 
     reel.title("Bmail", "Email triage that runs on your own laptop")
-    reel.beat(2200)
+    reel.beat(1800)
     reel.drop()
-    reel.beat(800)
+    reel.beat(600)
 
-    reel.line("Everything that needs me today.", 2400)
+    reel.line("Everything that needs me today.", 2000)
 
-    reel.push(".stack > .card", 1.5, 1400, 1)
-    reel.beat(250)
+    reel.push(".stack > .card", 1.5, 1200, 1)
+    reel.beat(200)
     reel.say("It pulled that deadline out of the email, and shows me the line it came from.")
-    hand.at(".quote", 1, ms=750)
-    reel.beat(2900)
+    hand.at(".quote", 1, ms=650)
+    reel.beat(2300)
     reel.hush()
+    reel.beat(250)
+    reel.pull(1000)
     reel.beat(300)
-    reel.pull(1200)
-    reel.beat(400)
 
-    hand.click('[data-tab="cases"]', ms=750, settle=1100)
-    reel.push(".stack > .card", 1.4, 1400, 1)
-    reel.beat(250)
-    reel.line("Every application, and where each one actually got to.", 3000)
-    reel.pull(1200)
-    reel.beat(400)
+    hand.click('[data-tab="cases"]', ms=650, settle=950)
+    reel.push(".stack > .card", 1.4, 1200, 1)
+    reel.beat(200)
+    reel.line("Every application, and where each one actually got to.", 2400)
+    reel.pull(1000)
+    reel.beat(300)
 
-    hand.click('[data-tab="mail"]', ms=750, settle=1000)
-    hand.click('[data-list="mail"] .row', 4, ms=700, settle=1200)
-    reel.push(".aside", 1.5, 1400)
-    reel.beat(250)
-    reel.line("And why it decided that, in full.", 2900)
-    reel.pull(1200)
-    reel.beat(500)
+    hand.click('[data-tab="mail"]', ms=650, settle=850)
+    hand.click('[data-list="mail"] .row', 4, ms=600, settle=1050)
+    reel.push(".aside", 1.5, 1200)
+    reel.beat(200)
+    reel.line("And why it decided that, in full.", 2300)
+    reel.pull(1000)
+    reel.beat(350)
 
     reel.title("Nothing leaves the laptop.", "No cloud, no API keys, no account.")
-    reel.beat(2800)
+    reel.beat(2200)
 
 
 with sync_playwright() as pw:
