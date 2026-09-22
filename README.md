@@ -31,22 +31,15 @@ STALLED — worth one follow-up
 
 ## See it
 
-<div align="center">
-  <video
-    src="https://github.com/GajjarB/Bmail/raw/main/media/bmail-film-30s.mp4"
-    poster="https://github.com/GajjarB/Bmail/raw/main/media/poster.jpg"
-    width="880" controls muted playsinline preload="metadata">
-    <a href="media/bmail-film-30s.mp4"><img src="media/poster.jpg" width="880"
-       alt="Bmail — the product film"></a>
-  </video>
-</div>
+![Bmail — reading a deadline out of the mail, tracking the application, showing its working](media/film.webp)
 
-**[▶ Thirty seconds](media/bmail-film-30s.mp4)** · 1080p, with sound —
-or **[the full 1:29](media/bmail-film.mp4)**, which also covers the command
+*Thirty seconds, silent and looping. With sound:*
+**[the same cut as video](media/bmail-film-30s.mp4)**, or
+**[the full 1:29](media/bmail-film.mp4)**, which also covers the command
 palette, the review queue and the two densities.
 
 Every frame is the running application against the sample corpus; nothing in it
-is a mockup. Both are made by a script rather than by hand, so they can be
+is a mockup. All three are made by a script rather than by hand, so they can be
 remade when the interface moves: see [tools/](tools/).
 
 ## Why this exists

@@ -14,6 +14,23 @@ python tools/compose_score.py 89.3 --out bed.wav
 
 then mux (the ffmpeg line is in the header of `compose_score.py`).
 
+For the README itself the film has to become an **animated image**, because
+GitHub's Markdown sanitiser deletes a `<video>` element and everything inside
+it — the player and any fallback alike. Only `<img>` survives, so motion on a
+README means an animated WebP:
+
+```sh
+ffmpeg -i media/bmail-film-30s.mp4 \
+  -vf "fps=10,scale=1120:-2:flags=lanczos" \
+  -c:v libwebp_anim -lossless 0 -q:v 72 -compression_level 3 -loop 0 -an \
+  media/film.webp
+```
+
+3.9 MB, against 13 MB for the same thing as a 160-colour GIF that also mangles
+13px type. Note ffmpeg can encode animated WebP but cannot decode it, so to
+check the output, parse the RIFF chunks and count `ANMF` frames rather than
+trying to read it back.
+
 Needs Playwright's Chromium (`python -m playwright install chromium`) and, for
 the mux, any ffmpeg with libx264 and aac — `pip install imageio-ffmpeg` brings
 one if the system has none.
