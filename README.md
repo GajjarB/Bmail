@@ -31,7 +31,15 @@ STALLED — worth one follow-up
 
 ## See it
 
-[![Bmail — the product film](media/poster.jpg)](media/bmail-film.mp4)
+<div align="center">
+  <video
+    src="https://github.com/GajjarB/Bmail/raw/main/media/bmail-film.mp4"
+    poster="https://github.com/GajjarB/Bmail/raw/main/media/poster.jpg"
+    width="880" controls muted playsinline preload="metadata">
+    <a href="media/bmail-film.mp4"><img src="media/poster.jpg" width="880"
+       alt="Bmail — the product film"></a>
+  </video>
+</div>
 
 **[▶ Watch the film](media/bmail-film.mp4)** — 1:29, 1080p, with sound.
 
