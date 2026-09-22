@@ -31,16 +31,13 @@ STALLED — worth one follow-up
 
 ## See it
 
-<p align="center">
-  <video src="https://github.com/GajjarB/Bmail/raw/main/media/bmail-film.mp4"
-         poster="https://github.com/GajjarB/Bmail/raw/main/media/poster.jpg"
-         controls muted playsinline width="880"></video>
-</p>
+[![Bmail — the product film](media/poster.jpg)](media/bmail-film.mp4)
 
-[**Watch the film**](media/bmail-film.mp4) — 1:29, 1080p. Every frame is the
-running application against the sample corpus; nothing is a mockup. It is made
-by a script, so it can be remade when the interface changes: see
-[tools/](tools/).
+**[▶ Watch the film](media/bmail-film.mp4)** — 1:29, 1080p, with sound.
+
+Every frame is the running application against the sample corpus; nothing in it
+is a mockup. It is made by a script rather than by hand, so it can be remade
+when the interface moves: see [tools/](tools/).
 
 ## Why this exists
 
