@@ -47,6 +47,10 @@ ap.add_argument("--out", default="film", help="directory for the raw capture")
 ap.add_argument("--width", type=int, default=1920)
 ap.add_argument("--height", type=int, default=1080)
 ap.add_argument(
+    "--cut", choices=("full", "short"), default="full",
+    help="full is the 1:29 film; short is a ~30s version for a README, where "
+         "the file loads on every visit and weight matters more than coverage.")
+ap.add_argument(
     "--raster", type=int, default=3,
     help="device scale factor. The camera is a CSS transform, and Chromium "
          "rasterises a transformed layer once and then scales the texture — so "
@@ -330,8 +334,8 @@ class Reel:
         self.beat(450)
 
 
-def film(page):
-    """The shot list. Re-cutting the film means editing this, nothing else."""
+def film_full(page):
+    """The long shot list. Re-cutting means editing this, nothing else."""
     reel = Reel(page)
     hand = reel.hand
 
@@ -409,6 +413,50 @@ def film(page):
     reel.beat(3400)
 
 
+def film_short(page):
+    """Thirty seconds: the three things that are hard to believe without
+    seeing them — that it reads a deadline out of the prose, that it tracks
+    state across a thread, and that the verdict is inspectable. Everything
+    else is in the long cut."""
+    reel = Reel(page)
+    hand = reel.hand
+
+    reel.title("Bmail", "Email triage that runs on your own laptop")
+    reel.beat(2200)
+    reel.drop()
+    reel.beat(800)
+
+    reel.line("Everything that needs me today.", 2400)
+
+    reel.push(".stack > .card", 1.5, 1400, 1)
+    reel.beat(250)
+    reel.say("It pulled that deadline out of the email, and shows me the line it came from.")
+    hand.at(".quote", 1, ms=750)
+    reel.beat(2900)
+    reel.hush()
+    reel.beat(300)
+    reel.pull(1200)
+    reel.beat(400)
+
+    hand.click('[data-tab="cases"]', ms=750, settle=1100)
+    reel.push(".stack > .card", 1.4, 1400, 1)
+    reel.beat(250)
+    reel.line("Every application, and where each one actually got to.", 3000)
+    reel.pull(1200)
+    reel.beat(400)
+
+    hand.click('[data-tab="mail"]', ms=750, settle=1000)
+    hand.click('[data-list="mail"] .row', 4, ms=700, settle=1200)
+    reel.push(".aside", 1.5, 1400)
+    reel.beat(250)
+    reel.line("And why it decided that, in full.", 2900)
+    reel.pull(1200)
+    reel.beat(500)
+
+    reel.title("Nothing leaves the laptop.", "No cloud, no API keys, no account.")
+    reel.beat(2800)
+
+
 with sync_playwright() as pw:
     browser = pw.chromium.launch(executable_path=EXE, args=["--no-sandbox", "--hide-scrollbars"])
     ctx = browser.new_context(
@@ -426,7 +474,7 @@ with sync_playwright() as pw:
     page.wait_for_timeout(1500)
     page.evaluate(STAGE, [W, H])
     page.wait_for_timeout(700)
-    film(page)
+    (film_short if args.cut == "short" else film_full)(page)
     path = page.video.path()
     ctx.close()
     browser.close()
