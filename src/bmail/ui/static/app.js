@@ -338,7 +338,7 @@ async function viewToday() {
       const tone = toneFor({ due: item.due });
       return el("a", { class: "card", "data-tone": tone, href: `#/cases?id=${item.case_id || ""}` },
         el("div", { class: "card-top" },
-          el("span", { class: "flag", "data-tone": tone, text: overdueWords(item.due) })),
+          el("span", { class: "flag when", "data-tone": tone, text: overdueWords(item.due) })),
         el("div", { class: "card-title", text: item.title }),
         el("div", { class: "card-org", text: dateWords(item.due) }));
     })));
@@ -349,7 +349,7 @@ async function viewToday() {
     nodes.push(el("div", { class: "stack" }, brief.events.map((item) =>
       el("a", { class: "card", "data-tone": "live", href: `#/cases?id=${item.case_id || ""}` },
         el("div", { class: "card-top" },
-          el("span", { class: "flag", "data-tone": "live", text: whenWords(item.when) })),
+          el("span", { class: "flag when", "data-tone": "live", text: whenWords(item.when) })),
         el("div", { class: "card-title", text: item.title }),
         el("div", { class: "card-org", text: dateWords(item.when, true) })))));
   }
@@ -438,8 +438,8 @@ function briefCard(item) {
     href: item.message_id ? `#/mail?id=${encodeURIComponent(item.message_id)}` : `#/cases?id=${item.case_id || ""}`,
   },
     el("div", { class: "card-top" },
-      timing ? el("span", { class: "flag", "data-tone": tone, text: timing }) : null,
-      category ? el("span", { class: "chip", "data-tone": timing ? null : tone, text: category }) : null),
+      category ? el("span", { class: "chip", "data-tone": timing ? null : tone, text: category }) : null,
+      timing ? el("span", { class: "flag when", "data-tone": tone, text: timing }) : null),
     el("div", { class: "card-title", text: item.title }),
     el("div", { class: "card-org", text: org }),
     item.evidence ? el("blockquote", { class: "quote", text: item.evidence }) : null);
