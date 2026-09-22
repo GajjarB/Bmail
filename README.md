@@ -29,6 +29,19 @@ STALLED — worth one follow-up
  · Weser Data GmbH — Data Engineer — silent 27 days · acknowledged
 ```
 
+## See it
+
+<p align="center">
+  <video src="https://github.com/GajjarB/Bmail/raw/main/media/bmail-film.mp4"
+         poster="https://github.com/GajjarB/Bmail/raw/main/media/poster.jpg"
+         controls muted playsinline width="880"></video>
+</p>
+
+[**Watch the film**](media/bmail-film.mp4) — 1:29, 1080p. Every frame is the
+running application against the sample corpus; nothing is a mockup. It is made
+by a script, so it can be remade when the interface changes: see
+[tools/](tools/).
+
 ## Why this exists
 
 "Too many emails" is three problems, and most tools solve one:
@@ -129,10 +142,16 @@ fills only the stages it actually reached. **Mail** is everything, searchable.
 **Review** asks about one uncertain guess at a time, and each answer teaches the
 classifier. Long jobs run in the background with a progress bar.
 
+Two densities ship: **Studio**, roomier and easier to read, and **Compact**,
+which fits about half again as much on a screen. Switch in Setup. Both are
+driven from the keyboard — `j`/`k` move a cursor through the list, `↵` opens,
+`esc` closes, `/` searches, `⌘K` reaches everything from anywhere, and `?`
+lists the rest.
+
 The page is vanilla HTML, CSS and JavaScript with no build step and no
 framework: it is served from your own machine and has to work offline, so there
 is nothing to fetch and nothing to compile. A test asserts it makes no external
-requests at all. See [docs/UI.md](docs/UI.md).
+requests at all. See [docs/UI.md](docs/UI.md) and [the film](#see-it).
 
 ## How it works
 
