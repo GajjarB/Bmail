@@ -40,6 +40,22 @@
 
   --r: 5px;
   --rail: 208px;
+
+  /* Motion. Three durations and two curves, and that is the whole vocabulary.
+     Everything that moves here is reporting a state change — a row taking
+     focus, a panel arriving, a value being saved. Nothing moves to decorate,
+     because in a tool you open forty times a day, decoration becomes noise by
+     the third time you see it.
+
+     The curves are asymmetric on purpose: things that arrive decelerate into
+     place (--ease), things that merely change decelerate less (--ease-soft).
+     Durations stay under a quarter-second so the interface never makes you
+     wait for it to finish being beautiful. */
+  --fast: 110ms;
+  --base: 170ms;
+  --slow: 240ms;
+  --ease:      cubic-bezier(.16, .84, .28, 1);
+  --ease-soft: cubic-bezier(.4, 0, .2, 1);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -65,6 +81,15 @@
     --done:      #767B84;
   }
 }
+
+@keyframes page-in   { from { opacity: 0; transform: translateY(5px); } }
+@keyframes row-in    { from { opacity: 0; transform: translateY(4px); } }
+@keyframes aside-in  { from { opacity: 0; transform: translateX(8px); } }
+@keyframes toast-in  { from { opacity: 0; transform: translate(-50%, 8px); } }
+@keyframes overlay-in{ from { opacity: 0; } }
+@keyframes sheet-in  { from { opacity: 0; transform: translateY(-6px) scale(.985); } }
+@keyframes shimmer   { to   { background-position-x: -200%; } }
+@keyframes spin      { to   { transform: rotate(360deg); } }
 
 * { box-sizing: border-box; }
 html, body { height: 100%; }
@@ -109,6 +134,22 @@ body {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
+/* The palette is the fastest path through the app, so it gets a permanent
+   affordance rather than being a shortcut you have to already know. */
+.find {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  margin: 0 0 10px; padding: 5px 8px; font-size: 13px;
+  color: var(--ink-3); background: var(--surface); border: 1px solid var(--line);
+}
+.find:hover { color: var(--ink-2); }
+.find kbd { margin-left: auto; }
+
+.keys-hint {
+  display: flex; align-items: center; gap: 7px; width: 100%;
+  font-size: 11.5px; color: var(--ink-3); padding: 4px 8px;
+}
+.keys-hint kbd { margin-left: auto; }
+
 .nav { display: flex; flex-direction: column; gap: 1px; }
 .nav a {
   display: flex; align-items: center; gap: 8px;
@@ -116,10 +157,12 @@ body {
   color: var(--ink-2); text-decoration: none; font-size: 13px;
 }
 .nav a svg { flex: 0 0 auto; color: var(--ink-3); }
+.nav a { transition: background var(--fast) var(--ease-soft), color var(--fast) var(--ease-soft); }
 .nav a:hover { background: var(--surface-2); color: var(--ink); }
 .nav a[aria-current="page"] { background: var(--surface); color: var(--ink); font-weight: 500; }
 .nav a[aria-current="page"] svg { color: var(--ink); }
 .nav .count {
+  transition: background var(--base) var(--ease-soft), color var(--base) var(--ease-soft);
   margin-left: auto; font: 500 11px/1.6 var(--sans); font-variant-numeric: tabular-nums;
   color: var(--ink-3); padding: 0 5px; border-radius: 3px; background: var(--line-soft);
 }
@@ -133,7 +176,11 @@ body {
 /* ---------------------------------------------------------------- main --- */
 
 .main { overflow: auto; min-width: 0; background: var(--surface); }
-.page { max-width: 880px; margin: 0 auto; padding: 20px 24px 72px; }
+.page {
+  max-width: 880px; margin: 0 auto; padding: 20px 24px 72px;
+  animation: page-in var(--base) var(--ease) both;
+}
+.page.instant, .page.instant .card, .page.instant .row { animation: none; }
 .page.wide { max-width: 1280px; }
 
 .eyebrow { font-size: 11px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
@@ -146,14 +193,34 @@ body {
 h2.section {
   display: flex; align-items: center; gap: 8px;
   font: 600 11px/1 var(--sans); letter-spacing: .06em; text-transform: uppercase;
-  color: var(--ink-3); margin: 26px 0 0; padding-bottom: 7px;
+  color: var(--ink-3); margin: 26px 0 0; padding: 10px 0 7px;
   border-bottom: 1px solid var(--line);
+  /* Sticky, so that in a long list you always know which group you are in.
+     The background is opaque or rows show through it as they pass under. */
+  position: sticky; top: 0; z-index: 2; background: var(--surface);
 }
 h2.section .n { margin-left: auto; font-variant-numeric: tabular-nums; letter-spacing: 0; }
 
 /* --------------------------------------------------------------- lists --- */
 /* Everything is a list. A record is a line you can scan, not a panel you have
    to read — twenty lines on a screen instead of five. */
+
+/* The stagger is capped at twelve rows and 96ms total. Past that it stops
+   reading as "the list is arriving" and starts reading as "the list is slow". */
+.stack > .card, .rows > .row { animation: row-in var(--base) var(--ease) both; }
+.stack > .card:nth-child(n+13), .rows > .row:nth-child(n+13) { animation-delay: 96ms; }
+.stack > .card:nth-child(1),  .rows > .row:nth-child(1)  { animation-delay: 0ms; }
+.stack > .card:nth-child(2),  .rows > .row:nth-child(2)  { animation-delay: 8ms; }
+.stack > .card:nth-child(3),  .rows > .row:nth-child(3)  { animation-delay: 16ms; }
+.stack > .card:nth-child(4),  .rows > .row:nth-child(4)  { animation-delay: 24ms; }
+.stack > .card:nth-child(5),  .rows > .row:nth-child(5)  { animation-delay: 32ms; }
+.stack > .card:nth-child(6),  .rows > .row:nth-child(6)  { animation-delay: 40ms; }
+.stack > .card:nth-child(7),  .rows > .row:nth-child(7)  { animation-delay: 48ms; }
+.stack > .card:nth-child(8),  .rows > .row:nth-child(8)  { animation-delay: 56ms; }
+.stack > .card:nth-child(9),  .rows > .row:nth-child(9)  { animation-delay: 64ms; }
+.stack > .card:nth-child(10), .rows > .row:nth-child(10) { animation-delay: 72ms; }
+.stack > .card:nth-child(11), .rows > .row:nth-child(11) { animation-delay: 80ms; }
+.stack > .card:nth-child(12), .rows > .row:nth-child(12) { animation-delay: 88ms; }
 
 .stack { display: flex; flex-direction: column; }
 .stack > * + * { border-top: 1px solid var(--line-soft); }
@@ -165,6 +232,7 @@ h2.section .n { margin-left: auto; font-variant-numeric: tabular-nums; letter-sp
   padding: 9px 8px 9px 4px; margin: 0 -8px;
   text-decoration: none; color: inherit; border-radius: var(--r);
 }
+a.card { transition: background var(--fast) var(--ease-soft); }
 a.card:hover { background: var(--surface-2); }
 .card[aria-selected="true"] { background: var(--accent-bg); }
 
@@ -174,6 +242,7 @@ a.card:hover { background: var(--surface-2); }
   content: ""; grid-column: 1; grid-row: 1;
   width: 6px; height: 6px; margin-top: 6px; border-radius: 99px;
   background: var(--line); box-shadow: 0 0 0 2px var(--surface);
+  transition: background var(--base) var(--ease-soft);
 }
 .card[data-tone="urgent"]::before { background: var(--urgent); }
 .card[data-tone="soon"]::before   { background: var(--soon); }
@@ -233,7 +302,11 @@ a.card:hover { background: var(--surface-2); }
 .stages { display: flex; align-items: center; width: 84px; flex: 0 0 auto; }
 .stage { display: flex; align-items: center; flex: 1; min-width: 0; }
 .stage:last-child { flex: 0 0 auto; }
-.stage .pip { width: 5px; height: 5px; border-radius: 99px; flex: 0 0 auto; background: var(--line); }
+.stage .pip {
+  width: 5px; height: 5px; border-radius: 99px; flex: 0 0 auto; background: var(--line);
+  transition: width var(--base) var(--ease), height var(--base) var(--ease),
+              background var(--base) var(--ease-soft);
+}
 .stage .bar { height: 1px; flex: 1; background: var(--line); min-width: 6px; }
 .stage[data-done="1"] .pip { background: var(--ink-3); }
 .stage[data-done="1"] .bar { background: var(--ink-3); opacity: .4; }
@@ -253,7 +326,14 @@ button, .btn {
   border: 1px solid var(--line); background: var(--surface); color: var(--ink);
   cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
 }
+button, .btn {
+  transition: background var(--fast) var(--ease-soft),
+              border-color var(--fast) var(--ease-soft),
+              transform var(--fast) var(--ease-soft),
+              opacity var(--fast) var(--ease-soft);
+}
 button:hover:not(:disabled) { background: var(--surface-2); }
+button:active:not(:disabled) { transform: translateY(.5px); }
 button:disabled { opacity: .4; cursor: not-allowed; }
 button.primary { background: var(--accent); color: var(--on-accent); border-color: transparent; }
 button.primary:hover:not(:disabled) { background: var(--accent); filter: brightness(1.1); }
@@ -268,6 +348,13 @@ input, select, textarea {
   border: 1px solid var(--line); background: var(--surface); color: var(--ink);
   min-width: 0;
 }
+input, select, textarea {
+  transition: border-color var(--fast) var(--ease-soft), box-shadow var(--fast) var(--ease-soft);
+}
+input:focus, textarea:focus {
+  outline: none; border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-bg);
+}
 input[type="search"] { flex: 1; min-width: 160px; }
 label.check { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--ink-2); }
 
@@ -280,6 +367,7 @@ label.check { display: inline-flex; align-items: center; gap: 6px; font-size: 12
   border-bottom: 1px solid var(--line-soft); cursor: pointer;
   text-decoration: none; color: inherit; border-radius: var(--r);
 }
+.row { transition: background var(--fast) var(--ease-soft); }
 .row:hover { background: var(--surface-2); }
 .row[aria-selected="true"] { background: var(--accent-bg); }
 .avatar {
@@ -308,7 +396,10 @@ label.check { display: inline-flex; align-items: center; gap: 6px; font-size: 12
 
 .split { display: grid; grid-template-columns: minmax(0,1fr) minmax(320px, 380px); gap: 20px; align-items: start; }
 @media (max-width: 1080px) { .split { grid-template-columns: 1fr; } }
-.aside { position: sticky; top: 0; max-height: calc(100dvh - 40px); overflow: auto; }
+.aside {
+  position: sticky; top: 0; max-height: calc(100dvh - 40px); overflow: auto;
+  animation: aside-in var(--base) var(--ease) both;
+}
 
 .panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); }
 .panel-pad { padding: 14px; }
@@ -358,8 +449,14 @@ label.check { display: inline-flex; align-items: center; gap: 6px; font-size: 12
   font-size: 11.5px; color: var(--ink-3); margin-bottom: 10px;
   font-variant-numeric: tabular-nums;
 }
-.review-progress .track { flex: 1; height: 2px; background: var(--line); border-radius: 99px; overflow: hidden; }
-.review-progress .fill { height: 100%; background: var(--accent); }
+.review-progress .track {
+  display: block; flex: 1; height: 2px;
+  background: var(--line); border-radius: 99px; overflow: hidden;
+}
+.review-progress .fill {
+  display: block; height: 100%; background: var(--accent);
+  transition: width var(--slow) var(--ease);
+}
 .guess {
   display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
   padding: 8px 10px; background: var(--surface-2);
@@ -384,15 +481,26 @@ label.check { display: inline-flex; align-items: center; gap: 6px; font-size: 12
   border-radius: var(--r); box-shadow: 0 6px 20px -8px rgba(0,0,0,.25);
 }
 .jobbar .label { font-size: 12.5px; font-weight: 500; }
-.jobbar .track { flex: 1; height: 2px; background: var(--line); border-radius: 99px; overflow: hidden; }
-.jobbar .fill { height: 100%; width: 0; background: var(--accent); transition: width .3s ease; }
+.jobbar .track {
+  display: block; flex: 1; height: 2px;
+  background: var(--line); border-radius: 99px; overflow: hidden;
+}
+.jobbar .fill {
+  display: block; height: 100%; width: 0; background: var(--accent);
+  transition: width var(--slow) var(--ease);
+}
 
 .toast {
   position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 40;
   max-width: 420px; padding: 7px 12px; font-size: 12.5px;
   background: var(--ink); color: var(--surface);
   border-radius: var(--r); box-shadow: 0 6px 20px -8px rgba(0,0,0,.35);
+  animation: toast-in var(--base) var(--ease) both;
+  transition: opacity var(--base) var(--ease-soft), transform var(--base) var(--ease-soft);
 }
+/* Leaving is a state, not a removal: the node stays put and fades, so the exit
+   is as smooth as the entrance. */
+.toast.leaving { opacity: 0; transform: translate(-50%, 8px); }
 .toast.error { background: var(--urgent); color: #FFF; }
 
 .set-row {
@@ -418,6 +526,9 @@ kbd {
           border-right: 0; border-bottom: 1px solid var(--line); padding: 6px 8px; }
   .rail-brand { padding: 0 10px 0 0; flex: 0 0 auto; }
   .rail-brand span { display: none; }
+  /* The palette and the shortcut list are keyboard features, and this layout
+     means there is no keyboard. They would only be taking room from the tabs. */
+  .find, .keys-hint { display: none; }
   .nav { flex: 0 0 auto; }
   .nav a { white-space: nowrap; }
   .nav { flex-direction: row; }
@@ -432,6 +543,112 @@ kbd {
   * { transition: none !important; animation: none !important; }
 }
 
+/* ---------------------------------------------------------- skeletons --- */
+/* Every view waits on the daemon. Painting nothing and then painting
+   everything makes a fast app feel slow, because the eye reads the blank
+   frame as latency. These hold the shape of what is coming so the layout
+   never jumps. */
+
+.skel { border-radius: 3px; background: var(--line-soft); }
+.skel.shimmer {
+  background: linear-gradient(90deg, var(--line-soft) 25%, var(--surface-2) 37%, var(--line-soft) 63%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s linear infinite;
+}
+.skel-row { display: grid; grid-template-columns: 8px 1fr auto; gap: 0 10px; padding: 9px 0; }
+.skel-row + .skel-row { border-top: 1px solid var(--line-soft); }
+.skel-row .skel:nth-child(1) { grid-column: 1; width: 6px; height: 6px; border-radius: 99px; margin-top: 5px; }
+.skel-row .skel:nth-child(2) { grid-column: 2; height: 11px; }
+.skel-row .skel:nth-child(3) { grid-column: 3; height: 11px; width: 62px; margin-top: 0; }
+.skel-row .skel:nth-child(4) { grid-column: 2; height: 10px; width: 42%; margin-top: 6px; }
+
+/* ---------------------------------------------------- keyboard cursor --- */
+/* The pointer has hover; the keyboard needs its own mark, and it has to be
+   distinguishable from selection or you cannot tell where Enter will land. */
+
+.row[data-cursor="1"], .card[data-cursor="1"] {
+  background: var(--surface-2);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.row[data-cursor="1"][aria-selected="true"], .card[data-cursor="1"][aria-selected="true"] {
+  background: var(--accent-bg);
+}
+
+/* --------------------------------------------------------- overlays --- */
+
+.scrim {
+  position: fixed; inset: 0; z-index: 50;
+  background: rgba(16, 18, 22, .28); backdrop-filter: blur(2px);
+  animation: overlay-in var(--fast) var(--ease-soft) both;
+  display: grid; align-items: start; justify-items: center;
+  padding: 12vh 16px 16px;
+}
+@media (prefers-color-scheme: dark) { .scrim { background: rgba(0, 0, 0, .5); } }
+
+.sheet {
+  width: 100%; max-width: 560px; background: var(--surface);
+  border: 1px solid var(--line); border-radius: 8px;
+  box-shadow: 0 16px 48px -16px rgba(0,0,0,.4), 0 2px 8px -4px rgba(0,0,0,.2);
+  animation: sheet-in var(--base) var(--ease) both;
+  overflow: hidden; max-height: 76vh; display: flex; flex-direction: column;
+}
+.sheet-input {
+  border: 0; border-bottom: 1px solid var(--line); border-radius: 0;
+  padding: 12px 14px; font-size: 14px; width: 100%;
+}
+.sheet-input:focus { outline: none; box-shadow: none; border-color: var(--line); }
+.sheet-list { overflow: auto; padding: 5px; }
+.sheet-item {
+  display: flex; align-items: baseline; gap: 9px; width: 100%;
+  padding: 5px 9px; border-radius: var(--r); cursor: pointer;
+  text-align: left; border: 0; background: none; color: inherit; font-size: 13px;
+}
+.sheet-item .what { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sheet-item .where { color: var(--ink-3); font-size: 11.5px; white-space: nowrap; }
+.sheet-item[data-cursor="1"] { background: var(--accent-bg); color: var(--ink); }
+.sheet-empty { padding: 22px 14px; text-align: center; color: var(--ink-3); font-size: 12.5px; }
+.sheet-foot {
+  display: flex; gap: 12px; padding: 7px 12px; border-top: 1px solid var(--line);
+  font-size: 11px; color: var(--ink-3); background: var(--surface-2);
+}
+.sheet-group {
+  font: 600 10.5px/1 var(--sans); letter-spacing: .06em; text-transform: uppercase;
+  color: var(--ink-3); padding: 10px 9px 5px;
+}
+.sheet-group:first-child { padding-top: 5px; }
+
+/* The shortcut sheet is a reference, so it is a table, not a list. */
+.keys-grid { display: grid; grid-template-columns: auto 1fr auto 1fr; gap: 6px 10px; padding: 14px; font-size: 12.5px; }
+.keys-grid dt { text-align: right; }
+.keys-grid dd { margin: 0; color: var(--ink-2); }
+@media (max-width: 520px) { .keys-grid { grid-template-columns: auto 1fr; } }
+
+/* ------------------------------------------------------------- helpers --- */
+/* Named rather than inline, because the page runs under `style-src 'self'` and
+   a style attribute is refused by the browser without a word of warning. */
+
+.gap-above { margin-top: 12px; }
+.strong { font-weight: 600; }
+.bar-row.flush { margin: 0 0 2px; }
+.body-text.short { max-height: 190px; }
+.grow-field { flex: 1; max-width: 340px; }
+.skel-title { width: 180px; height: 17px; margin: 2px 0 14px; }
+.choices.gap-above { margin-top: 10px; }
+
 /* Closed cases are history: findable, not competing for attention. */
 .stack.closed .card { color: var(--ink-2); }
 .stack.closed .card .card-title { font-weight: 400; }
+
+
+/* --------------------------------------------------------- scrollbars --- */
+/* Thin and self-coloured. The platform default is heavy enough to compete with
+   13px type for attention. */
+
+* { scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
+::-webkit-scrollbar { width: 9px; height: 9px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--line); border-radius: 99px;
+  border: 2px solid transparent; background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--ink-3); background-clip: content-box; }

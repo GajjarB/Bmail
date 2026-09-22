@@ -79,6 +79,14 @@ def page_factory(ui):
             page = browser.new_page(**kwargs)
             errors: list[str] = []
             page.on("pageerror", lambda exc: errors.append(str(exc)))
+            # Console errors too, not just uncaught exceptions. A Content-Security-
+            # Policy violation is reported here and nowhere else, which is how
+            # eleven dead inline styles sat in the UI without a single test
+            # noticing that the browser was refusing every one of them.
+            page.on(
+                "console",
+                lambda msg: errors.append(msg.text) if msg.type == "error" else None,
+            )
             page.goto(f"{base}/?token={app.token}", wait_until="networkidle")
             page.wait_for_selector("#shell:not([hidden])", timeout=15000)
             return page, errors, config
@@ -431,5 +439,53 @@ def test_it_fits_a_narrow_window(page_factory):
     assert page.locator("#nav a").first.is_visible()
     assert page.evaluate(
         "() => document.documentElement.scrollWidth <= window.innerWidth + 2")
+    assert not errors
+    page.close()
+
+
+def test_the_page_never_violates_its_own_csp(page_factory):
+    """The daemon serves a strict policy; the page has to live inside it.
+
+    `style-src 'self'` refuses style attributes silently — the element simply
+    renders unstyled — so the only way this is ever caught is by watching the
+    console.
+    """
+    page, errors, _config = page_factory()
+    for tab in ("today", "cases", "mail", "review", "setup"):
+        page.click(f'[data-tab="{tab}"]')
+        page.wait_for_timeout(500)
+    page.keyboard.press("Control+k")
+    page.wait_for_selector(".sheet")
+    page.wait_for_timeout(400)
+    page.keyboard.press("Escape")
+    page.keyboard.press("?")
+    page.wait_for_timeout(400)
+    violations = [e for e in errors if "Content Security Policy" in e]
+    assert violations == [], f"the page broke its own CSP: {violations}"
+    assert not errors
+    page.close()
+
+
+def test_progress_bars_actually_draw(page_factory):
+    """Both bars are spans, and width does not apply to an inline box.
+
+    They looked right in a screenshot because an empty 2px track and a track
+    with no fill are the same picture.
+    """
+    page, errors, _config = page_factory()
+    page.click('[data-tab="review"]')
+    page.wait_for_timeout(900)
+    if "Nothing to check" in page.inner_text(".headline"):
+        page.close()
+        return
+    size = page.evaluate("""() => {
+      const fill = document.querySelector('.review-progress .fill');
+      const track = document.querySelector('.review-progress .track');
+      return { fill: fill.getBoundingClientRect().width,
+               track: track.getBoundingClientRect().width };
+    }""")
+    assert size["track"] > 0, "the track has no width"
+    assert size["fill"] > 0, "the fill drew nothing"
+    assert size["fill"] < size["track"], "a queue of one cannot be fully done"
     assert not errors
     page.close()

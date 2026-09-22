@@ -19,6 +19,10 @@ const App = {
   poll: null,
   reviewIndex: 0,
   packChoice: null,   // the pack the user picked, or null for the configured one
+  cursor: -1,         // keyboard position in the current list, -1 for "nowhere"
+  overlay: null,      // the open sheet, if any, and how to close it
+  skeleton: false,    // a placeholder is on screen, so skip the entrance again
+  arriving: false,    // this paint is a new screen, not a redraw of this one
 };
 
 /* ----------------------------------------------------------------- dom --- */
@@ -189,9 +193,19 @@ function toast(message, isError = false) {
   const node = $("#toast");
   node.textContent = message;
   node.classList.toggle("error", Boolean(isError));
+  node.classList.remove("leaving");
   node.hidden = false;
+  // Restart the entrance even when a toast is already up, so a second message
+  // reads as a new event rather than as text quietly changing underneath you.
+  node.style.animation = "none";
+  void node.offsetWidth;
+  node.style.animation = "";
   clearTimeout(toast.timer);
-  toast.timer = setTimeout(() => { node.hidden = true; }, isError ? 8000 : 3600);
+  clearTimeout(toast.gone);
+  toast.timer = setTimeout(() => {
+    node.classList.add("leaving");
+    toast.gone = setTimeout(() => { node.hidden = true; }, 220);
+  }, isError ? 8000 : 3600);
 }
 
 /* ---------------------------------------------------------------- jobs --- */
@@ -246,8 +260,33 @@ function jobWords(job) {
 
 function paint(...nodes) {
   const main = $("#main");
-  main.replaceChildren(el("div", { class: `page${App.route === "mail" ? " wide" : ""}` }, ...nodes));
-  main.scrollTop = 0;
+  const wide = App.route === "mail" ? " wide" : "";
+  // Animate only when a new screen arrives. Selecting a row, running a search
+  // or changing a filter redraws the same screen, and replaying the entrance
+  // for those makes the whole list flinch every time you click something —
+  // motion reporting a change that did not happen.
+  const arriving = App.arriving && !App.skeleton;
+  main.replaceChildren(el("div", { class: `page${wide}${arriving ? "" : " instant"}` }, ...nodes));
+  // Scrolling back to the top belongs to arriving somewhere new. Doing it on a
+  // redraw throws away the place you had scrolled to in order to click.
+  if (arriving) main.scrollTop = 0;
+  App.skeleton = false;
+  App.arriving = false;
+  Keys.rescan();
+}
+
+/* A placeholder in the shape of what is loading. Only shown if the daemon takes
+   long enough for a blank frame to register as latency — below that it would
+   flash, which is worse than the wait it is hiding. */
+function paintSkeleton(route) {
+  const bar = (cls) => el("span", { class: `skel shimmer${cls ? ` ${cls}` : ""}` });
+  const rows = Array.from({ length: route === "mail" ? 12 : 7 }, () =>
+    el("div", { class: "skel-row" }, bar(), bar(), bar(), bar()));
+  App.skeleton = true;
+  const main = $("#main");
+  main.replaceChildren(el("div", { class: `page${route === "mail" ? " wide" : ""}` },
+    el("div", { class: "skel shimmer skel-title" }),
+    ...rows));
 }
 
 const empty = (title, body, action) =>
@@ -269,7 +308,7 @@ async function viewToday() {
 
   // The window picker belongs with the date it qualifies, not stranded at the
   // bottom of the page — it changes everything above it.
-  const header = el("div", { class: "bar-row", style: "margin:0 0 2px" },
+  const header = el("div", { class: "bar-row flush" },
     el("span", { class: "eyebrow", text: today }),
     el("span", { class: "grow" }),
     state.verdicts.total
@@ -336,7 +375,7 @@ async function viewToday() {
 
   if (counts.archived) {
     nodes.push(section("Filed", counts.archived));
-    nodes.push(el("div", { class: "bar-row", style: "margin-top:8px" },
+    nodes.push(el("div", { class: "bar-row" },
       el("span", { class: "meta", text: "Newsletters, alerts and automatic acknowledgements." }),
       el("span", { class: "grow" }),
       el("button", { class: "sm", onclick: () => go("mail") }, "Open")));
@@ -546,10 +585,19 @@ async function caseAside(caseId) {
         el("div", { class: "what", text: entry.subject }),
         entry.evidence ? el("blockquote", { class: "quote", text: entry.evidence }) : null))),
 
-    el("button", { class: "quiet sm", style: "margin-top:14px", onclick: () => go("cases") }, "Close"));
+    el("button", { class: "quiet sm gap-above", onclick: () => go("cases") }, "Close"));
 }
 
 const fact = (key, value) => (value ? [el("dt", { text: key }), el("dd", { text: String(value) })] : null);
+
+/* Set through the CSSOM rather than a style attribute: the page's
+   Content-Security-Policy is `style-src 'self'`, which refuses inline styles
+   outright — silently, which is how eleven of them survived in here unnoticed. */
+function progressFill(fraction) {
+  const node = el("span", { class: "fill" });
+  node.style.width = `${Math.max(0, Math.min(1, fraction)) * 100}%`;
+  return node;
+}
 
 /* --- Mail -------------------------------------------------------------- */
 
@@ -665,13 +713,23 @@ function correctionControls(messageId, verdict) {
   return el("div", {},
     el("div", { class: "setup-row" }, picker,
       el("label", { class: "check" }, action, " needs me"),
-      el("button", { class: "primary sm", onclick: async () => {
+      el("button", { class: "primary sm", onclick: async (event) => {
+        // Answer the click before the round trip. On a local daemon the write
+        // takes a few milliseconds, but "few" is not "none", and a button that
+        // waits to acknowledge you feels broken long before it feels slow.
+        const button = event.currentTarget;
+        button.disabled = true;
+        button.textContent = "Saved";
         try {
           await post(`/correct/${encodeURIComponent(messageId)}`,
             { category: picker.value, action_required: action.checked });
           toast("Saved.");
-          render();
-        } catch (err) { toast(err.message, true); }
+          await refresh();
+        } catch (err) {
+          button.disabled = false;
+          button.textContent = "Save";
+          toast(err.message, true);
+        }
       } }, "Save")));
 }
 
@@ -714,29 +772,27 @@ async function viewReview() {
     el("p", { class: "subhead",
       text: `${total} ${total === 1 ? "message" : "messages"} Bmail was not sure about.` }),
 
-    el("div", { class: "review-progress", style: "margin-top:12px" },
+    el("div", { class: "review-progress gap-above" },
       el("span", { text: `${done + 1} of ${total}` }),
-      el("span", { class: "track" },
-        el("span", { class: "fill", style: `width:${((done + 1) / total) * 100}%` }))),
+      el("span", { class: "track" }, progressFill((done + 1) / total))),
 
-    el("div", { class: "panel panel-pad", style: "margin-top:10px" },
+    el("div", { class: "panel panel-pad gap-above" },
       el("div", { class: "eyebrow", text: `${m.from.name || m.from.address} · ${dateWords(m.date)}` }),
       el("div", { class: "panel-title", text: m.subject || "(no subject)" }),
-      el("div", { class: "body-text", style: "margin-top:10px;max-height:190px",
-        text: m.body_text || "(no text)" })),
+      el("div", { class: "body-text short gap-above", text: m.body_text || "(no text)" })),
 
     el("div", { class: "guess" },
       el("div", {},
         el("span", { class: "meta", text: "Bmail read this as " }),
-        el("span", { style: "font-weight:600", text: humanise(v.category) })),
+        el("span", { class: "strong", text: humanise(v.category) })),
       el("div", { class: "meta", text: `${Math.round((v.confidence || 0) * 100)}%` })),
 
     el("div", { class: "setup-row" },
       el("button", { class: "primary", onclick: () => accept(v.category) }, "Yes, that's right"),
       el("button", { class: "quiet", onclick: next }, "Skip")),
 
-    el("h2", { class: "section", style: "margin-top:20px", text: "Or it is" }),
-    el("div", { class: "choices", style: "margin-top:10px" }, suggestions.map((c) =>
+    el("h2", { class: "section", text: "Or it is" }),
+    el("div", { class: "choices gap-above" }, suggestions.map((c) =>
       el("button", { onclick: () => accept(c.name) }, humanise(c.name))))));
 }
 
@@ -744,7 +800,7 @@ async function viewReview() {
 
 function viewSetup() {
   const s = App.state;
-  const path = el("input", { type: "text", placeholder: "~/mail/archive.mbox", style: "flex:1;max-width:340px" });
+  const path = el("input", { type: "text", class: "grow-field", placeholder: "~/mail/archive.mbox" });
   const account = el("select", {},
     el("option", { value: "" }, "— pick an account —"),
     (s.configured_accounts || []).map((a) =>
@@ -823,6 +879,278 @@ function viewSetup() {
         [el("dt", {}, el("kbd", { text: key })), el("dd", { text: what })])));
 }
 
+/* ------------------------------------------------------------ keyboard --- */
+/* A triage tool is used with both hands on the keys. The pointer gets hover;
+ * the keyboard gets its own cursor, drawn differently from selection so you can
+ * always tell where Enter will land.
+ *
+ * The rule throughout: never swallow a key the browser or the user needs. Any
+ * modifier, or focus inside a field, and this stands down. */
+
+const Keys = {
+  items: [],
+
+  rescan() {
+    this.items = [...document.querySelectorAll(".page .card, .page .row")];
+    if (App.cursor >= this.items.length) App.cursor = this.items.length - 1;
+    this.paint();
+  },
+
+  paint() {
+    this.items.forEach((node, index) => {
+      if (index === App.cursor) node.setAttribute("data-cursor", "1");
+      else node.removeAttribute("data-cursor");
+    });
+  },
+
+  move(step) {
+    if (!this.items.length) return false;
+    const next = App.cursor < 0
+      ? (step > 0 ? 0 : this.items.length - 1)
+      : App.cursor + step;
+    // Stops at the ends rather than wrapping: wrapping in a long list loses
+    // your place, and you cannot feel it happen.
+    App.cursor = Math.max(0, Math.min(this.items.length - 1, next));
+    this.paint();
+    this.items[App.cursor].scrollIntoView({ block: "nearest" });
+    return true;
+  },
+
+  open() {
+    const node = this.items[App.cursor];
+    if (node) node.click();
+    return Boolean(node);
+  },
+
+  reset() { App.cursor = -1; },
+};
+
+/* One place that knows every shortcut, so the help sheet and the handler can
+ * never drift apart. */
+const MOD = /Mac|iPod|iPhone|iPad/.test(navigator.platform || "") ? "⌘" : "Ctrl+";
+
+const SHORTCUTS = [
+  ["1 – 5", "Jump to a section"],
+  ["j / k", "Move down / up the list"],
+  ["↵", "Open what the cursor is on"],
+  ["esc", "Close the panel, or the sheet"],
+  ["/", "Search the mail"],
+  [`${MOD}K`, "Everything, from anywhere"],
+  ["s", "Sort new mail"],
+  ["c", "Check for new mail"],
+  ["r", "Reload"],
+  ["?", "This list"],
+];
+
+function onKey(event) {
+  const typing = event.target.matches("input, select, textarea");
+
+  if (event.key === "Escape") {
+    if (App.overlay) { closeOverlay(); return event.preventDefault(); }
+    if (typing) return event.target.blur();
+    // Escape closes the detail panel before it does anything else: it is the
+    // thing most likely to be open, and the thing you most want gone.
+    const params = here();
+    if (params.id) { delete params.id; go(App.route, params); return event.preventDefault(); }
+    Keys.reset(); Keys.paint();
+    return;
+  }
+
+  if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+    event.preventDefault();
+    return openPalette();
+  }
+  if (typing || event.metaKey || event.ctrlKey || event.altKey) return;
+  if (App.overlay) return;   // the sheet owns the keyboard while it is up
+
+  const routes = { 1: "today", 2: "cases", 3: "mail", 4: "review", 5: "setup" };
+  if (routes[event.key]) { event.preventDefault(); return go(routes[event.key]); }
+
+  switch (event.key) {
+    case "j": case "ArrowDown":
+      if (Keys.move(1)) event.preventDefault(); return;
+    case "k": case "ArrowUp":
+      if (Keys.move(-1)) event.preventDefault(); return;
+    case "Enter":
+      if (Keys.open()) event.preventDefault(); return;
+    case "/":
+      event.preventDefault();
+      if (App.route !== "mail") return go("mail");
+      return $('input[type="search"]')?.focus();
+    case "?":
+      event.preventDefault(); return openShortcuts();
+    case "r": return refresh();
+    case "s": return run("triage", {}, "Sorting new mail");
+    case "c": return run("ingest", {}, "Checking for new mail");
+    default:
+  }
+}
+
+/* ------------------------------------------------------------- sheets --- */
+
+function closeOverlay() {
+  if (!App.overlay) return;
+  const { node, restore } = App.overlay;
+  App.overlay = null;
+  node.remove();
+  // Put the keyboard back where it was. Dropping focus on the body means the
+  // next arrow key scrolls the window instead of moving the list cursor.
+  if (restore && document.contains(restore)) restore.focus();
+}
+
+function openSheet(label, ...children) {
+  const restore = document.activeElement;
+  closeOverlay();
+  const sheet = el("div", {
+    class: "sheet", role: "dialog", "aria-modal": "true", "aria-label": label,
+  }, ...children);
+  const scrim = el("div", {
+    class: "scrim",
+    onclick: (e) => { if (e.target === scrim) closeOverlay(); },
+  }, sheet);
+  document.body.append(scrim);
+  App.overlay = { node: scrim, sheet, restore };
+  return sheet;
+}
+
+function openShortcuts() {
+  openSheet("Keyboard shortcuts",
+    el("dl", { class: "keys-grid" }, SHORTCUTS.map(([key, what]) =>
+      [el("dt", {}, el("kbd", { text: key })), el("dd", { text: what })])),
+    el("div", { class: "sheet-foot" }, el("span", { text: "esc to close" })));
+}
+
+/* --------------------------------------------------------- the palette --- */
+/* One box that reaches everything: the sections, the jobs, and every case and
+ * message by name. It is the difference between an app you learn and an app you
+ * have to remember the layout of. */
+
+/* Subsequence matching, scored so that a hit on a word boundary beats a hit in
+ * the middle of a word — typing "na" should find "Nordwind Analytics" before it
+ * finds "Internal". */
+function fuzzy(needle, haystack) {
+  if (!needle) return 0;
+  const text = haystack.toLowerCase();
+  let score = 0;
+  let at = -1;
+  for (const char of needle.toLowerCase()) {
+    const found = text.indexOf(char, at + 1);
+    if (found === -1) return -1;
+    if (found === at + 1) score += 3;                              // run
+    if (found === 0 || /[\s·—|-]/.test(text[found - 1])) score += 5;  // word start
+    score += 1;
+    at = found;
+  }
+  return score - text.length * 0.02;   // all else equal, the shorter name wins
+}
+
+async function openPalette() {
+  const field = el("input", {
+    class: "sheet-input", type: "text", placeholder: "Search, or jump to…",
+    autocomplete: "off", spellcheck: "false", "aria-label": "Search everything",
+  });
+  const list = el("div", { class: "sheet-list", role: "listbox" });
+  const sheet = openSheet("Search", field, list,
+    el("div", { class: "sheet-foot" },
+      el("span", {}, el("kbd", { text: "↑↓" }), " move"),
+      el("span", {}, el("kbd", { text: "↵" }), " open"),
+      el("span", {}, el("kbd", { text: "esc" }), " close")));
+
+  const noun = App.state.entity_plural;
+  const commands = [
+    ["Go", "Today", () => go("today")],
+    ["Go", noun[0].toUpperCase() + noun.slice(1), () => go("cases")],
+    ["Go", "Mail", () => go("mail")],
+    ["Go", "Review", () => go("review")],
+    ["Go", "Setup", () => go("setup")],
+    ["Do", "Check for new mail", () => run("ingest", {}, "Checking for new mail")],
+    ["Do", "Sort new mail", () => run("triage", {}, "Sorting new mail")],
+    ["Do", "Re-sort everything", () => run("triage", { all: true }, "Sorting everything")],
+    ["Do", "Show what has gone quiet", () => go("cases", { quiet: "1" })],
+    ["Do", "Keyboard shortcuts", () => openShortcuts()],
+  ].map(([group, what, act]) => ({ group, what, where: "", act }));
+
+  let entries = commands;
+  let cursor = 0;
+
+  // Cases and messages are loaded once the sheet is up, so it opens instantly
+  // and fills in — waiting on two requests before showing anything would make
+  // the fastest path in the app the slowest.
+  const draw = () => {
+    const needle = field.value.trim();
+    const hits = entries
+      .map((entry) => ({ entry, score: needle ? fuzzy(needle, `${entry.what} ${entry.where}`) : 0 }))
+      .filter((hit) => hit.score >= 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, needle ? 12 : 10);
+    cursor = Math.min(cursor, Math.max(0, hits.length - 1));
+
+    if (!hits.length) {
+      list.replaceChildren(el("div", { class: "sheet-empty", text: `Nothing matches “${needle}”` }));
+      return;
+    }
+    const nodes = [];
+    let group = null;
+    hits.forEach((hit, index) => {
+      if (!needle && hit.entry.group !== group) {
+        group = hit.entry.group;
+        nodes.push(el("div", { class: "sheet-group", text: group === "Go" ? "Go to" : "Run" }));
+      }
+      nodes.push(el("button", {
+        class: "sheet-item", "data-cursor": index === cursor ? "1" : null,
+        onmousemove: () => { if (cursor !== index) { cursor = index; draw(); } },
+        onclick: () => { closeOverlay(); hit.entry.act(); },
+      },
+        el("span", { class: "what", text: hit.entry.what }),
+        hit.entry.where ? el("span", { class: "where", text: hit.entry.where }) : null));
+    });
+    list.replaceChildren(...nodes);
+    list.querySelector('[data-cursor="1"]')?.scrollIntoView({ block: "nearest" });
+  };
+
+  field.addEventListener("input", () => { cursor = 0; draw(); });
+  field.addEventListener("keydown", (event) => {
+    const step = event.key === "ArrowDown" ? 1 : event.key === "ArrowUp" ? -1 : 0;
+    if (step) {
+      event.preventDefault();
+      const total = list.querySelectorAll(".sheet-item").length;
+      if (total) cursor = (cursor + step + total) % total;
+      return draw();
+    }
+    if (event.key === "Enter") {
+      event.preventDefault();
+      list.querySelectorAll(".sheet-item")[cursor]?.click();
+    }
+  });
+
+  draw();
+  field.focus();
+
+  try {
+    const [cases, mail] = await Promise.all([
+      api("/cases").catch(() => ({ cases: [] })),
+      api("/messages?limit=60").catch(() => ({ messages: [] })),
+    ]);
+    if (App.overlay?.sheet !== sheet) return;   // closed while loading
+    entries = [
+      ...commands,
+      ...(cases.cases || []).map((c) => ({
+        group: "Case",
+        what: [c.org || c.title, c.role].filter(Boolean).join(" — "),
+        where: humanise(c.state),
+        act: () => go("cases", { id: c.id }),
+      })),
+      ...(mail.messages || []).map((m) => ({
+        group: "Mail",
+        what: m.subject || "(no subject)",
+        where: m.from_name || m.from_addr || "",
+        act: () => go("mail", { id: m.message_id }),
+      })),
+    ];
+    draw();
+  } catch { /* the commands alone are still a working palette */ }
+}
+
 /* -------------------------------------------------------------- routing --- */
 
 const here = () => Object.fromEntries(new URLSearchParams(location.hash.split("?")[1] || ""));
@@ -838,15 +1166,24 @@ const ROUTES = { today: viewToday, cases: viewCases, mail: viewMail, review: vie
 async function render() {
   const [path, rawQuery] = location.hash.replace(/^#\/?/, "").split("?");
   const route = ROUTES[path] ? path : "today";
+  const moved = route !== App.route;
   App.route = route;
+  App.arriving = moved;
   if (route !== "review") App.reviewIndex = 0;
+  if (moved) Keys.reset();   // a new screen starts with no cursor on it
   paintNav();
+
+  // 120ms is about where a blank frame stops reading as "instant" and starts
+  // reading as "stalled". Under that, showing a placeholder would flash.
+  const placeholder = setTimeout(() => paintSkeleton(route), 120);
   try {
     await ROUTES[route](new URLSearchParams(rawQuery || ""));
   } catch (err) {
     toast(err.message, true);
-    paint(el("div", { class: "panel" }, empty("That did not load", err.message,
+    paint(el("div", { class: "panel panel-pad" }, empty("That did not load", err.message,
       el("button", { onclick: () => render() }, "Try again"))));
+  } finally {
+    clearTimeout(placeholder);
   }
 }
 
@@ -915,13 +1252,10 @@ async function boot() {
 
   window.addEventListener("hashchange", render);
   $("#btn-sync").onclick = () => run("ingest", {}, "Checking for new mail");
-  document.addEventListener("keydown", (e) => {
-    if (e.target.matches("input, select, textarea") || e.metaKey || e.ctrlKey) return;
-    const keys = { 1: "today", 2: "cases", 3: "mail", 4: "review", 5: "setup" };
-    if (keys[e.key]) go(keys[e.key]);
-    else if (e.key === "r") refresh();
-    else if (e.key === "s") run("triage", {}, "Sorting new mail");
-  });
+  $("#btn-find").onclick = () => openPalette();
+  $("#btn-keys").onclick = () => openShortcuts();
+  $("#find-key").textContent = `${MOD}K`;
+  document.addEventListener("keydown", onKey);
 
   const jobs = await api("/jobs").catch(() => ({ jobs: [] }));
   const running = (jobs.jobs || []).find((j) => ["queued", "running"].includes(j.status));
