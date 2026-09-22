@@ -301,8 +301,13 @@ a.card:hover { background: var(--surface-2); }
   font-size: var(--t-small); line-height: var(--lh-small);
   overflow-wrap: break-word;
 }
+/* The meta column owns its own rows rather than sharing row 1 with the title.
+   When the detail panel narrows the list the chips wrap, and while they sat in
+   row 1 that wrapping pushed the role line down and opened a hole in every
+   record wide enough to notice. */
 .card-top {
-  grid-column: 3; grid-row: 1; display: flex; align-items: baseline; gap: 6px;
+  grid-column: 3; grid-row: 1 / span 3; align-self: start;
+  display: flex; align-items: baseline; gap: 6px;
   justify-content: flex-end; flex-wrap: wrap; padding-top: 2px;
 }
 .card-foot { grid-column: 2; margin-top: 6px; display: flex; gap: var(--s2); flex-wrap: wrap; }
