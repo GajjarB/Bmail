@@ -173,6 +173,15 @@ class Syncer:
         if self._thread is not None:
             self._thread.join(timeout=timeout)
 
+    def accounts_changed(self) -> None:
+        """An account was added or removed: watch the new set, check soon."""
+        with self._lock:
+            names = {str(entry.get("name")) for entry in self.live_accounts()}
+            self.accounts = {n: state for n, state in self.accounts.items() if n in names}
+            if self.running:
+                self._arrange_watchers()
+        self._wake.set()
+
     def poke(self, account: str) -> None:
         """New mail was announced for `account`; check it shortly."""
         with self._lock:

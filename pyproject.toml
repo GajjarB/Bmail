@@ -23,6 +23,9 @@ dependencies = [
   "pydantic>=2.6",
   "PyYAML>=6.0",
   "openpyxl>=3.1",
+  # Passwords for accounts added in the app go to the OS keychain, so it is
+  # not optional for anyone using the app. The [keyring] extra stays, empty.
+  "keyring>=25.0",
   # tomllib joined the standard library in 3.11; this is the same parser for 3.10.
   "tomli>=2.0; python_version < '3.11'",
 ]

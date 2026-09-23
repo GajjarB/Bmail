@@ -16,6 +16,9 @@ import shlex
 import socketserver
 import threading
 from dataclasses import dataclass, field
+from datetime import date, datetime
+from email import message_from_bytes
+from email.utils import parsedate_to_datetime
 
 
 @dataclass
@@ -51,6 +54,7 @@ class FakeImapServer:
         # and some servers refuse it outright. This models those servers.
         self.refuse_status = refuse_status
         self.mailbox = Mailbox()
+        self.missing_folders: set[str] = set()
         self.log: list[str] = []
         self.logins = 0
         server = socketserver.ThreadingTCPServer(("127.0.0.1", 0), _Handler)
@@ -105,6 +109,9 @@ class _Handler(socketserver.StreamRequestHandler):
                 else:
                     self._w(f"{tag} NO [AUTHENTICATIONFAILED] invalid credentials")
             elif command in ("SELECT", "EXAMINE"):
+                if args.strip('"') in fake.missing_folders:
+                    self._w(f"{tag} NO [NONEXISTENT] no such mailbox")
+                    continue
                 with box.changed:
                     self._w(f"* {len(box.messages)} EXISTS")
                     self._w("* 0 RECENT")
@@ -172,10 +179,15 @@ class _Handler(socketserver.StreamRequestHandler):
 
     @staticmethod
     def _search(box: Mailbox, criteria: str) -> list[int]:
-        # Only "UID a:*" is needed. IMAP gives "*" the largest UID in the box,
-        # and a range is unordered, so a:* with a past the end still returns
-        # the last message — the detail naive clients get wrong.
-        spec = criteria.split()[-1]
+        # "UID a:*", optionally with "SINCE dd-Mon-yyyy". IMAP gives "*" the
+        # largest UID in the box, and a range is unordered, so a:* with a past
+        # the end still returns the last message — the detail naive clients get
+        # wrong. SINCE compares dates only, ignoring the time of day.
+        tokens = criteria.split()
+        spec = tokens[tokens.index("UID") + 1] if "UID" in tokens else "1:*"
+        since = None
+        if "SINCE" in tokens:
+            since = datetime.strptime(tokens[tokens.index("SINCE") + 1], "%d-%b-%Y").date()
         low_text, _, high_text = spec.partition(":")
         uids = [uid for uid, _ in box.messages]
         if not uids:
@@ -184,7 +196,9 @@ class _Handler(socketserver.StreamRequestHandler):
         low = int(low_text)
         high = top if high_text == "*" else int(high_text or low_text)
         low, high = min(low, high), max(low, high)
-        return [uid for uid in uids if low <= uid <= high]
+        dated = {uid: _date_of(raw) for uid, raw in box.messages}
+        return [uid for uid in uids if low <= uid <= high
+                and (since is None or dated[uid] is None or dated[uid] >= since)]
 
     @staticmethod
     def _uid_set(text: str) -> set[int]:
@@ -196,3 +210,11 @@ class _Handler(socketserver.StreamRequestHandler):
             elif part:
                 wanted.add(int(part))
         return wanted
+
+
+def _date_of(raw: bytes) -> date | None:
+    header = message_from_bytes(raw).get("Date")
+    try:
+        return parsedate_to_datetime(header).date() if header else None
+    except (TypeError, ValueError):
+        return None

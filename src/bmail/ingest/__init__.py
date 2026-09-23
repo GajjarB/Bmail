@@ -47,6 +47,7 @@ def build_source(
             folder=str(spec.get("folder", "INBOX")),
             own_addresses=own_addresses,
             use_ssl=spec.get("ssl", True) is not False,
+            since_days=int(spec.get("since_days", 0) or 0),
         )
     if provider in ("graph", "outlook", "microsoft", "m365"):
         from bmail.ingest.graph import GraphSource

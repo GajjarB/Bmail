@@ -44,6 +44,28 @@ def set_secret(account: str, password: str) -> str:
     return f"stored in the OS keychain ({backend})"
 
 
+def keychain_status() -> dict[str, object]:
+    """Whether a password can be kept in the OS keychain here, and if not, why.
+
+    keyring always imports; on a machine with no keychain service it quietly
+    selects a backend that refuses every write. Asking first means the app can
+    say so before someone has typed a password into a form that cannot save it.
+    """
+    try:
+        import keyring
+        from keyring.backends import fail
+    except ImportError:
+        return {"available": False, "backend": "",
+                "hint": "install keychain support: pip install keyring"}
+    backend = keyring.get_keyring()
+    name = type(backend).__name__
+    if isinstance(backend, fail.Keyring) or getattr(backend, "priority", 1) <= 0:
+        return {"available": False, "backend": name,
+                "hint": "no keychain service is running. On Linux, install and "
+                        "unlock GNOME Keyring or KWallet, then try again."}
+    return {"available": True, "backend": name, "hint": ""}
+
+
 def delete_secret(account: str) -> bool:
     try:  # pragma: no cover - optional dependency
         import keyring

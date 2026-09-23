@@ -9,7 +9,9 @@ can have, because nothing ever tells you it happened.
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
+from email.utils import format_datetime
 
 import pytest
 
@@ -19,13 +21,16 @@ from bmail.store import repo
 from tests.fake_imap import FakeImapServer
 
 
-def mail(n: int) -> bytes:
+def mail(n: int, *, days_ago: int | None = None) -> bytes:
     message = EmailMessage()
     message["Message-ID"] = f"<m{n}@imap.example>"
     message["Subject"] = f"Message {n}"
     message["From"] = "Recruiter <jobs@acme.example>"
     message["To"] = "me@example.com"
-    message["Date"] = "Mon, 14 Sep 2026 10:00:00 +0200"
+    message["Date"] = (
+        "Mon, 14 Sep 2026 10:00:00 +0200" if days_ago is None
+        else format_datetime(datetime.now(timezone.utc) - timedelta(days=days_ago))
+    )
     message.set_content(f"Body of message {n}.")
     return bytes(message)
 
@@ -143,3 +148,51 @@ def test_ingest_counts_what_is_new_not_what_was_seen(conn, server):
     conn.commit()
     again = ingest(conn, source(server))
     assert (again.fetched, again.new) == (2, 0)
+
+
+# --------------------------------------------------------------------------- #
+# How far back the first sync reads, and the connection test
+# --------------------------------------------------------------------------- #
+
+
+def test_a_first_sync_can_stop_at_a_date(server):
+    """Connecting a ten-year-old mailbox should not mean downloading ten years."""
+    server.mailbox.add(mail(1, days_ago=400))
+    server.mailbox.add(mail(2, days_ago=200))
+    server.mailbox.add(mail(3, days_ago=10))
+    src = source(server, since_days=180)
+    assert subjects(src.fetch()) == ["Message 3"]
+
+
+def test_a_date_limited_first_sync_does_not_pull_the_old_mail_in_later(server):
+    """The date limit applies to the first sync only. If the cursor were left
+    at the first UID, the next sync — which has no limit — would fetch the very
+    mail the first one deliberately skipped."""
+    server.mailbox.add(mail(1, days_ago=400))
+    first = source(server, since_days=180)
+    assert subjects(first.fetch()) == []
+    server.mailbox.add(mail(2, days_ago=0))
+    later = source(server, since_days=180)
+    assert subjects(later.fetch(first.cursor())) == ["Message 2"]
+
+
+def test_the_connection_test_counts_messages_and_reads_none(server):
+    for n in (1, 2, 3):
+        server.mailbox.add(mail(n))
+    assert source(server).probe() == 3
+    assert not any(" FETCH " in line for line in server.log)
+
+
+def test_the_connection_test_names_a_missing_folder(server):
+    with pytest.raises(IngestError, match="no folder"):
+        src = source(server, folder="Nowhere")
+        server.missing_folders = {"Nowhere"}
+        src.probe()
+
+
+def test_a_refused_login_reads_as_words_not_bytes(server):
+    wrong = ImapSource("127.0.0.1", server.user, "not-it", name="imap-test",
+                       port=server.port, use_ssl=False)
+    with pytest.raises(IngestError) as caught:
+        wrong.probe()
+    assert "b'" not in str(caught.value)

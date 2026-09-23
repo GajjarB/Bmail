@@ -31,16 +31,20 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
+from bmail import accounts as mailboxes
+from bmail import secrets as keystore
 from bmail.config import Config
 from bmail.errors import BmailError, SignInRequired
 from bmail.jobs import Job, JobRunner
 from bmail.packs import available_packs, load_pack
 from bmail.store import repo
-from bmail.store.db import connect
+from bmail.store.db import connect, get_meta, set_meta
 from bmail.sync import Syncer
 
 LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1", "[::1]"}
 MAX_BODY = 1 << 20  # 1 MiB is far more than any request here needs
+PACK_KEY = "app.pack"
+SETUP_DONE_KEY = "setup.done"
 
 
 # Whether mimetypes knows .woff2 depends on the Python version and the system's
@@ -76,16 +80,33 @@ class BmailApp:
 
     def __init__(self, config: Config, *, pack: str | None = None) -> None:
         self.config = config
-        self.pack_name = pack or config.pack
         self.jobs = JobRunner()
         self.token = secrets.token_urlsafe(24)
         config.ensure_home()
         connect(config.database).close()  # create and migrate the store up front
+        # What the person chose in the app outranks the config file's default,
+        # and a --pack flag outranks both. Kept in the store, not the browser,
+        # so background sync sorts with the pack the person is looking at.
+        self.pack_name = pack or self._meta(PACK_KEY) or config.pack
         # Built always, started only by `serve`: a server made for a test or a
         # script should not start reaching out to mail servers on its own.
         self.syncer = Syncer(self)
 
     # -- helpers ---------------------------------------------------------------- #
+
+    def _meta(self, key: str) -> str | None:
+        conn = self.read()
+        try:
+            return get_meta(conn, key)
+        finally:
+            conn.close()
+
+    def _set_meta(self, key: str, value: str) -> None:
+        conn = self.write()
+        try:
+            set_meta(conn, key, value)
+        finally:
+            conn.close()
 
     def pack(self, name: str | None = None):
         return load_pack(name or self.pack_name, tuple(self.config.pack_dirs))
@@ -161,10 +182,8 @@ class BmailApp:
                 "stalled": sum(1 for case in cases if case.stalled),
             },
             "accounts": accounts,
-            "configured_accounts": [
-                {k: v for k, v in entry.items() if k != "password"}
-                for entry in self.config.accounts
-            ],
+            "configured_accounts": [mailboxes.public(entry) for entry in self.config.accounts],
+            "setup": self.setup_state(counts["total"]),
             "runs": runs,
             "llm": llm,
             "home": str(self.config.home),
@@ -496,6 +515,77 @@ class BmailApp:
 
         return self.jobs.submit("export", work)
 
+    # -- accounts and first run ------------------------------------------------------ #
+
+    def setup_state(self, messages: int | None = None) -> dict[str, Any]:
+        """First run means nothing has been read and nothing connected yet, and
+        the person has not finished (or skipped) the welcome."""
+        if messages is None:
+            conn = self.read()
+            try:
+                messages = repo.count_messages(conn)["total"]
+            finally:
+                conn.close()
+        done = self._meta(SETUP_DONE_KEY) == "1"
+        return {
+            "done": done,
+            "first_run": not done and not messages and not self.config.accounts,
+            "pack": self.pack_name,
+        }
+
+    def setup(self, body: dict[str, Any]) -> dict[str, Any]:
+        if body.get("pack"):
+            name = str(body["pack"])
+            if name not in available_packs(self.config.pack_dirs):
+                raise ApiError(f"unknown pack '{name}'")
+            self._set_meta(PACK_KEY, name)
+            self.pack_name = name
+        if body.get("done"):
+            self._set_meta(SETUP_DONE_KEY, "1")
+        return self.setup_state()
+
+    def list_accounts(self) -> dict[str, Any]:
+        return {
+            "accounts": [mailboxes.public(entry) for entry in self.config.accounts],
+            "presets": mailboxes.presets(),
+            "since_choices": list(mailboxes.SINCE_CHOICES),
+            "default_since": mailboxes.DEFAULT_SINCE,
+            "keychain": keystore.keychain_status(),
+        }
+
+    def check_account(self, body: dict[str, Any]) -> dict[str, Any]:
+        # Inline rather than a job: it is one sign-in with a 20-second timeout,
+        # and the person is waiting on the answer with the form still open. A
+        # job would queue it behind whatever long import is already running.
+        return mailboxes.check(body)
+
+    def add_account(self, body: dict[str, Any]) -> dict[str, Any]:
+        added = mailboxes.add(self.config, body)
+        self.syncer.accounts_changed()
+        # The first import starts straight away, as an ordinary check of this
+        # account: fetch, then sort, on one progress bar.
+        job = self.start_ingest({"account": added["account"]["name"]})
+        return {**added, "job": job.as_dict()}
+
+    def remove_account(self, name: str) -> dict[str, Any]:
+        mailboxes.remove(self.config, name)
+        self.syncer.accounts_changed()
+        return {"ok": True, "removed": name}
+
+    def start_samples(self, body: dict[str, Any]) -> Job:
+        """Read a generated mailbox, for trying Bmail before connecting a real one."""
+        from bmail.samples import write_mbox
+
+        directory = self.config.home / "samples"
+
+        def work(job: Job) -> dict[str, Any]:
+            job.update(step="writing sample mail", progress=0.01)
+            mbox, _labels = write_mbox(directory)
+            return self.sync(job, [{"name": "sample", "provider": "file", "path": str(mbox)}],
+                             use_llm=not bool(body.get("no_llm")))
+
+        return self.jobs.submit("ingest", work)
+
     def sync_settings(self, body: dict[str, Any]) -> dict[str, Any]:
         if "interval" in body:
             self.syncer.set_interval(body["interval"])
@@ -682,6 +772,10 @@ class _Handler(BaseHTTPRequestHandler):
             return app.stats(query)
         if path == "/api/sync":
             return app.syncer.status()
+        if path == "/api/accounts":
+            return app.list_accounts()
+        if path == "/api/setup":
+            return app.setup_state()
         if path == "/api/jobs":
             return {"jobs": [job.as_dict() for job in app.jobs.list()]}
         if path.startswith("/api/jobs/"):
@@ -701,6 +795,16 @@ class _Handler(BaseHTTPRequestHandler):
             return app.start_export(body).as_dict()
         if path == "/api/sync":
             return app.sync_settings(body)
+        if path == "/api/setup":
+            return app.setup(body)
+        if path == "/api/samples":
+            return app.start_samples(body).as_dict()
+        if path == "/api/accounts/check":
+            return app.check_account(body)
+        if path == "/api/accounts":
+            return app.add_account(body)
+        if path.startswith("/api/accounts/") and path.endswith("/remove"):
+            return app.remove_account(_tail(path[: -len("/remove")], "/api/accounts/"))
         if path.startswith("/api/correct/"):
             return app.correct(_tail(path, "/api/correct/"), body)
         if path.startswith("/api/jobs/") and path.endswith("/cancel"):

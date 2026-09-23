@@ -7,6 +7,7 @@ environment, and `bmail doctor` will tell you if you have put one in the file.
 
 from __future__ import annotations
 
+import json
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -103,6 +104,7 @@ class Config:
         config_path = Path(path).expanduser() if path else base / "config.toml"
         config = cls(home=base)
         if not config_path.exists():
+            config.accounts = read_app_accounts(config.home)
             return config
         try:
             data = tomllib.loads(config_path.read_text(encoding="utf-8"))
@@ -138,6 +140,12 @@ class Config:
             accept_threshold=float(classifier.get("accept_threshold", 0.72)),
             distil_after_backfill=bool(classifier.get("distil_after_backfill", True)),
         )
+        # Accounts added in the app live beside the config, never in it: the
+        # file you wrote by hand is not rewritten behind your back. On a name
+        # clash the hand-written one wins.
+        written = {str(a.get("name")) for a in config.accounts}
+        config.accounts += [a for a in read_app_accounts(config.home)
+                            if str(a.get("name")) not in written]
         return config
 
     def account(self, name: str) -> dict[str, Any]:
@@ -216,3 +224,18 @@ def write_template(path: Path) -> Path:
         except OSError:  # pragma: no cover
             pass
     return path
+
+
+APP_ACCOUNTS_FILE = "accounts.json"
+
+
+def read_app_accounts(home: Path) -> list[dict[str, Any]]:
+    """Accounts added from the app. Never holds a password: those are in the
+    OS keychain. A damaged file costs the list, not the start-up."""
+    path = Path(home) / APP_ACCOUNTS_FILE
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    entries = data.get("accounts", []) if isinstance(data, dict) else []
+    return [dict(entry, added_by="app") for entry in entries if isinstance(entry, dict)]

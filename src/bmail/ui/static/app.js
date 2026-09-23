@@ -388,9 +388,11 @@ const Sync = {
     const s = this.status;
     if (!s || !s.accounts.length) {
       list.replaceChildren(el("li", { class: "meta" },
-        "No mail account yet. Add Gmail, Outlook or IMAP to config.toml and Bmail keeps it current while it's open."));
+        "No mailbox connected yet. Add one and Bmail keeps it current while it's open."));
       return;
     }
+    const known = Object.fromEntries(((App.state && App.state.configured_accounts) || [])
+      .map((a) => [a.name, a]));
     list.replaceChildren(...s.accounts.map((a) => {
       let words;
       let tone = "";
@@ -400,11 +402,27 @@ const Sync = {
       else if (a.mode === "poll") {
         words = `Every ${everyWords(s.interval)}${a.last_ok ? ` · checked ${ago(a.last_ok)}` : ""}`;
       } else words = "Only when you check";
+      const entry = known[a.name] || {};
+      const remove = entry.removable
+        ? el("button", { class: "quiet sm", "aria-label": `Remove ${a.name}`, onclick: async () => {
+            const sure = await confirmSheet(`Stop reading ${a.name}?`,
+              "Mail already read stays in Bmail. The password is removed from your keychain.",
+              "Remove mailbox");
+            if (!sure) return;
+            try {
+              await post(`/accounts/${encodeURIComponent(a.name)}/remove`, {});
+              toast(`${a.name} removed. Its mail stays.`);
+              await refresh();
+              Sync.poll();
+            } catch (err) { toast(err.message, true); }
+          } }, "Remove")
+        : null;
       return el("li", { class: "sync-acct", "data-tone": tone },
         el("span", { class: "pulse", "aria-hidden": "true" }),
         el("b", { text: a.name }),
-        el("span", { class: "meta", text: PROVIDERS[a.provider] || a.provider }),
-        el("span", { class: "sync-state", text: words }));
+        el("span", { class: "meta", text: entry.label || PROVIDERS[a.provider] || a.provider }),
+        el("span", { class: "sync-state", text: words }),
+        remove);
     }));
   },
 };
@@ -953,26 +971,337 @@ async function viewReview() {
       el("button", { onclick: () => accept(c.name) }, humanise(c.name))))));
 }
 
+/* --- Connecting a mailbox ------------------------------------------------ */
+/* One form, used by the first-run wizard and by Setup → Add a mailbox. It
+ * recognises the provider from the address as you type, says what that
+ * provider needs (usually an app password), and saves nothing until a sign-in
+ * has worked. The password leaves this page once, to the engine, which puts it
+ * in the system keychain. */
+
+const SINCE_WORDS = { 90: "Last 3 months", 180: "Last 6 months", 365: "Last year", 0: "Everything" };
+
+function detectPreset(address, presets) {
+  const domain = (address.split("@")[1] || "").trim().toLowerCase();
+  return presets.find((p) => p.domains.includes(domain))
+    || { key: "custom", label: domain || "Other", host: domain ? `imap.${domain}` : "",
+         port: 993, kind: "imap", password_label: "Password", help: "", help_url: "" };
+}
+
+async function connectForm({ onConnected, submitLabel = "Connect" }) {
+  const info = await api("/accounts");
+  const address = el("input", { type: "email", autocomplete: "email", spellcheck: "false",
+    placeholder: "you@example.com", "aria-label": "E-mail address" });
+  const password = el("input", { type: "password", autocomplete: "off",
+    "aria-label": "Password" });
+  const host = el("input", { type: "text", spellcheck: "false", "aria-label": "Server" });
+  const port = el("input", { type: "number", min: "1", max: "65535", value: "993",
+    "aria-label": "Port" });
+  const folder = el("input", { type: "text", value: "INBOX", "aria-label": "Folder" });
+  const plain = el("input", { type: "checkbox" });
+  const since = el("select", { "aria-label": "Read mail from" },
+    info.since_choices.map((d) =>
+      el("option", { value: d, selected: d === info.default_since }, SINCE_WORDS[d] || `${d} days`)));
+  const provider = el("div", { class: "form-provider" });
+  const status = el("p", { class: "form-status", role: "status" });
+  const passwordLabel = el("span", { text: "Password" });
+  const connect = el("button", { class: "primary", type: "submit", text: submitLabel });
+  const check = el("button", { type: "button", text: "Test connection" });
+  const secretRow = el("label", { class: "form-row" }, passwordLabel, password);
+  let hostTouched = false;
+  host.addEventListener("input", () => { hostTouched = true; });
+
+  const say = (text, tone) => {
+    status.textContent = text;
+    status.dataset.tone = tone || "";
+  };
+
+  const refreshPreset = () => {
+    const preset = detectPreset(address.value, info.presets);
+    const microsoft = preset.kind === "microsoft";
+    if (!hostTouched) host.value = preset.host || "";
+    passwordLabel.textContent = preset.password_label || "Password";
+    secretRow.hidden = microsoft;
+    connect.disabled = microsoft || !info.keychain.available;
+    check.disabled = microsoft;
+    provider.replaceChildren();
+    if (!address.value.includes("@")) return;
+    // Through el(), which drops empty parts: append() writes null as "null".
+    provider.append(...el("div", {},
+      el("div", { class: "form-provider-name" },
+        el("b", { text: preset.key === "custom" ? "IMAP" : preset.label }),
+        preset.host ? el("span", { class: "meta", text: preset.host }) : null),
+      preset.help ? el("p", { class: "form-help", text: preset.help }) : null,
+      preset.help_url
+        ? el("a", { href: preset.help_url, target: "_blank", rel: "noopener noreferrer",
+            class: "form-link", text: microsoft ? "How to connect Outlook" : "Where to get it" })
+        : null).childNodes);
+  };
+  address.addEventListener("input", refreshPreset);
+
+  const fields = () => ({
+    address: address.value.trim(), password: password.value, host: host.value.trim(),
+    port: Number(port.value) || 993, folder: folder.value.trim() || "INBOX",
+    since_days: Number(since.value), ...(plain.checked ? { ssl: false } : {}),
+  });
+
+  const busy = (on, text) => {
+    connect.disabled = on || !info.keychain.available;
+    check.disabled = on;
+    if (on) say(text, "busy");
+  };
+
+  check.onclick = async () => {
+    busy(true, "Signing in…");
+    try {
+      const result = await post("/accounts/check", fields());
+      say(`Signed in. ${result.messages.toLocaleString()} messages in ${result.folder}.`, "ok");
+    } catch (err) { say(err.message, "error"); }
+    finally { busy(false); refreshPreset(); }
+  };
+
+  const form = el("form", { class: "connect-form", onsubmit: async (event) => {
+    event.preventDefault();
+    busy(true, "Signing in…");
+    try {
+      const result = await post("/accounts", fields());
+      password.value = "";   // do not keep it on the page a moment longer
+      say(`Connected. ${result.messages.toLocaleString()} messages in ${fields().folder}.`, "ok");
+      await onConnected(result);
+    } catch (err) {
+      say(err.message, "error");
+    } finally { busy(false); refreshPreset(); }
+  } },
+    el("label", { class: "form-row" }, el("span", { text: "E-mail address" }), address),
+    provider,
+    secretRow,
+    el("label", { class: "form-row" }, el("span", { text: "Read mail from" }), since),
+    el("details", { class: "form-more" },
+      el("summary", { text: "Server settings" }),
+      el("label", { class: "form-row" }, el("span", { text: "IMAP server" }), host),
+      el("div", { class: "form-pair" },
+        el("label", { class: "form-row" }, el("span", { text: "Port" }), port),
+        el("label", { class: "form-row" }, el("span", { text: "Folder" }), folder)),
+      el("label", { class: "check form-plain" }, plain,
+        " No encryption: only for a bridge on this computer, such as Proton Mail Bridge")),
+    info.keychain.available ? null
+      : el("p", { class: "form-status", "data-tone": "error",
+          text: `Bmail keeps passwords in your system keychain, and it cannot reach one: ${info.keychain.hint}` }),
+    status,
+    el("div", { class: "form-actions" }, connect, check),
+    el("p", { class: "meta form-privacy" }, icon("shield", 13),
+      " The password goes to your system keychain. Nothing is sent anywhere but your mail server."));
+  refreshPreset();
+  setTimeout(() => address.focus(), 50);
+  return form;
+}
+
+function openAddAccount() {
+  connectForm({
+    submitLabel: "Connect and read",
+    onConnected: async (result) => {
+      closeOverlay();
+      const label = `Reading ${result.account.address}`;
+      paintJob(result.job, label);
+      watchJob(result.job.id, label);
+      Sync.poll();
+    },
+  }).then((form) => openSheet("Add a mailbox",
+    el("div", { class: "sheet-head" },
+      el("h2", { text: "Add a mailbox" }),
+      el("button", { class: "quiet sm", onclick: closeOverlay, "aria-label": "Close" }, icon("close", 14))),
+    el("div", { class: "sheet-body" }, form)))
+    .catch((err) => toast(err.message, true));
+}
+
+/* --- Welcome (first run) ---------------------------------------------------- */
+/* Four steps, one question each: what to track, where the mail is, reading it,
+ * and what it found. Shown instead of Today until something has been read or
+ * the person skips it; everything here can be changed later in Setup. */
+
+const PACK_WORDS = {
+  "job-seeker": ["Job applications", "Interviews, assessments, rejections, and who has gone quiet."],
+  "student-admissions": ["University applications", "Deadlines, missing documents and decisions."],
+  "hr-recruiter": ["Candidates", "Hiring pipelines, replies and response times."],
+  "freelance-ops": ["Invoices", "What is due, what is overdue, and who to chase."],
+};
+
+const Wizard = { step: "track", job: null, source: "" };
+
+function wizardSteps(current) {
+  const steps = [["track", "What to track"], ["connect", "Your mail"], ["read", "Reading"], ["done", "Ready"]];
+  const at = steps.findIndex(([key]) => key === current);
+  return el("ol", { class: "wizard-steps", "aria-label": "Setup steps" },
+    steps.map(([key, label], index) => el("li", {
+      "data-state": index < at ? "done" : index === at ? "now" : null,
+      "aria-current": index === at ? "step" : null,
+    }, el("span", { class: "wizard-dot" }, index < at ? icon("check", 11) : String(index + 1)),
+      el("span", { text: label }))));
+}
+
+async function finishSetup() {
+  try { await post("/setup", { done: true }); } catch { /* the next start asks again */ }
+  Wizard.step = "track";
+  Wizard.job = null;
+  await refresh();
+  Sync.poll();
+  location.hash = "#/today";
+}
+
+async function startReading(job, source) {
+  Wizard.job = job;
+  Wizard.source = source;
+  Wizard.step = "read";
+  render();
+}
+
+async function viewWelcome() {
+  const s = App.state;
+  const page = (...nodes) => paint(el("div", { class: "wizard" }, wizardSteps(Wizard.step), ...nodes));
+
+  if (Wizard.step === "track") {
+    const choice = async (pack) => {
+      try {
+        await post("/setup", { pack });
+        localStorage.removeItem("bmail.pack");   // the engine keeps the choice now
+        App.packChoice = null;
+        Wizard.step = "connect";
+        await refresh();
+      } catch (err) { toast(err.message, true); }
+    };
+    return page(
+      el("h1", { class: "headline", text: "Let's set up Bmail" }),
+      el("p", { class: "subhead",
+        text: "It reads your mail on this computer and keeps track of what needs you. Nothing leaves this machine." }),
+      el("h2", { class: "wizard-q", text: "What do you want to keep track of?" }),
+      // The packs this build knows best first, in a fixed order; any others after.
+      el("div", { class: "choice-grid" }, [...(s.packs || [])].sort((a, b) =>
+        ((Object.keys(PACK_WORDS).indexOf(a) + 1) || 99)
+        - ((Object.keys(PACK_WORDS).indexOf(b) + 1) || 99)).map((pack) => {
+        const [title, blurb] = PACK_WORDS[pack] || [humanise(pack), ""];
+        return el("button", { class: "choice", "data-pack": pack,
+          "aria-pressed": pack === s.pack ? "true" : "false", onclick: () => choice(pack) },
+          el("b", { text: title }), blurb ? el("span", { text: blurb }) : null);
+      })),
+      el("div", { class: "wizard-foot" },
+        el("button", { class: "quiet sm", onclick: finishSetup }, "Skip setup")));
+  }
+
+  if (Wizard.step === "connect") {
+    const form = await connectForm({
+      onConnected: (result) => startReading(result.job, result.account.address),
+    });
+    const path = el("input", { type: "text", class: "grow-field",
+      placeholder: "~/Downloads/Takeout/Mail/All mail.mbox", "aria-label": "Export file" });
+    return page(
+      el("h1", { class: "headline", text: "Connect your mailbox" }),
+      el("p", { class: "subhead",
+        text: "Bmail signs in to read your mail, and never sends, moves or deletes anything." }),
+      el("div", { class: "panel panel-pad" }, form),
+      el("h2", { class: "wizard-q", text: "Or start without signing in" }),
+      el("div", { class: "wizard-alt" },
+        el("div", { class: "wizard-alt-row" },
+          el("div", {}, el("b", { text: "Read an export file" }),
+            el("p", { class: "meta", text: "An mbox or Maildir, such as a Gmail Takeout export." })),
+          el("div", { class: "setup-row" }, path,
+            el("button", { onclick: async () => {
+              if (!path.value.trim()) return toast("Give me a path first", true);
+              try {
+                const job = await post("/ingest", { path: path.value.trim(), account: "archive" });
+                startReading(job, "the export file");
+              } catch (err) { toast(err.message, true); }
+            } }, "Read"))),
+        el("div", { class: "wizard-alt-row" },
+          el("div", {}, el("b", { text: "Try it with sample mail" }),
+            el("p", { class: "meta", text: "A made-up job search in English and German, to see how it works first." })),
+          el("button", { onclick: async () => {
+            try { startReading(await post("/samples", {}), "the sample mail"); }
+            catch (err) { toast(err.message, true); }
+          } }, "Use sample mail"))),
+      el("div", { class: "wizard-foot" },
+        el("button", { class: "quiet sm", onclick: () => { Wizard.step = "track"; render(); } },
+          icon("back", 13), " Back"),
+        el("span", { class: "grow" }),
+        el("button", { class: "quiet sm", onclick: finishSetup }, "Skip for now")));
+  }
+
+  if (Wizard.step === "read") {
+    const fill = el("span", { class: "fill" });
+    const stepText = el("p", { class: "meta wizard-progress-step", text: "Starting…" });
+    const node = el("div", { class: "wizard-progress" },
+      el("span", { class: "track" }, fill), stepText);
+    page(
+      el("h1", { class: "headline", text: "Reading your mail" }),
+      el("p", { class: "subhead", text: `From ${Wizard.source}. This runs on your computer and can take a few minutes.` }),
+      node);
+    const tick = async () => {
+      if (App.route !== "welcome" || Wizard.step !== "read" || !Wizard.job) return;
+      let job;
+      try { job = await api(`/jobs/${Wizard.job.id}`); } catch { return setTimeout(tick, 1000); }
+      fill.style.width = `${Math.round((job.progress || 0) * 100)}%`;
+      stepText.textContent = humanise(job.step || "working");
+      if (job.status === "done") {
+        Wizard.job = job;
+        Wizard.step = "done";
+        await refresh();
+        return;
+      }
+      if (job.status === "error" || job.status === "cancelled") {
+        node.replaceChildren(
+          el("p", { class: "form-status", "data-tone": "error",
+            text: job.error || "Stopped before it finished." }),
+          el("button", { onclick: () => { Wizard.step = "connect"; render(); } }, "Back"));
+        return;
+      }
+      setTimeout(tick, 500);
+    };
+    tick();
+    return undefined;
+  }
+
+  // done
+  const result = (Wizard.job && Wizard.job.result) || {};
+  const read = Object.values(result.new || {}).reduce((a, b) => a + b, 0);
+  const needs = s.needs_you || 0;
+  return page(
+    el("h1", { class: "headline", text: needs
+      ? `${needs} ${needs === 1 ? "thing needs" : "things need"} you` : "You're set up" }),
+    el("p", { class: "subhead", text: `Read ${read.toLocaleString()} messages and found ${s.cases.total} ${s.entity_plural}.` }),
+    el("ul", { class: "wizard-facts" },
+      el("li", {}, icon("sync", 14), el("span", { text: (s.configured_accounts || []).length
+        ? "New mail is read while Bmail is open. Change how often in Setup."
+        : "Connect a mailbox in Setup whenever you like." })),
+      el("li", {}, icon("review", 14), el("span", {
+        text: "Review asks about anything it was unsure of. Each answer makes it better." })),
+      el("li", {}, icon("shield", 14), el("span", {
+        text: "Everything stays in the folder shown in Setup. Nothing is uploaded." }))),
+    el("div", { class: "wizard-foot" },
+      el("button", { class: "primary", onclick: finishSetup }, "Open Today ", icon("arrow", 14))));
+}
+
 /* --- Setup -------------------------------------------------------------- */
 
 function viewSetup() {
   const s = App.state;
   const path = el("input", { type: "text", class: "grow-field", placeholder: "~/mail/archive.mbox" });
-  const account = el("select", {},
-    el("option", { value: "" }, "Pick an account"),
-    (s.configured_accounts || []).map((a) =>
-      el("option", { value: a.name }, `${a.name} · ${a.provider}`)));
-  const packs = el("select", { onchange: (e) => {
-    localStorage.setItem("bmail.pack", e.target.value);
-    // Filters name states of the pack that is leaving; drop them with it.
-    location.hash = "#/today";
-    location.reload();
-  } }, (s.packs || []).map((p) => el("option", { value: p, selected: p === s.pack }, p)));
+  const packs = el("select", { onchange: async (e) => {
+    // The engine keeps the choice, so background sync sorts with it too.
+    try {
+      await post("/setup", { pack: e.target.value });
+      localStorage.removeItem("bmail.pack");
+      // Filters name states of the pack that is leaving; drop them with it.
+      location.hash = "#/today";
+      location.reload();
+    } catch (err) { toast(err.message, true); }
+  } }, (s.packs || []).map((p) =>
+    el("option", { value: p, selected: p === s.pack }, (PACK_WORDS[p] || [p])[0])));
   const current = Sync.status;
   // Filled now rather than after paint: paint may run inside a view
   // transition, after this function has returned.
   const accounts = el("ul", { class: "sync-accts", id: "sync-accounts" });
   Sync.paintAccounts(accounts);
+  // The status in hand may predate an account added a moment ago; ask again
+  // and let the list redraw itself when the answer comes.
+  Sync.poll();
   const interval = el("select", { "aria-label": "Check automatically", onchange: async (e) => {
     const minutes = Number(e.target.value);
     try {
@@ -1002,12 +1331,12 @@ function viewSetup() {
     el("h1", { class: "headline", text: "Setup" }),
     el("p", { class: "subhead", text: "Everything here happens on this computer." }),
 
-    section("Mail", null, "mail"),
-    group("Configured account", account,
-      el("button", { onclick: () => run("ingest", { account: account.value || null }, "Collecting mail") },
-        "Collect")),
-    group("Check automatically", interval),
+    section("Mailboxes", null, "mail"),
     accounts,
+    el("div", { class: "bar-row" },
+      el("button", { class: "primary", onclick: openAddAccount }, "Add a mailbox"),
+      el("button", { onclick: () => run("ingest", {}, "Checking for new mail") }, "Check all now")),
+    group("Check automatically", interval),
     group("File on this machine", path,
       el("button", { onclick: () => path.value.trim()
         ? run("ingest", { path: path.value.trim(), account: "local" }, "Reading file")
@@ -1199,6 +1528,27 @@ function openSheet(label, ...children) {
   return sheet;
 }
 
+/* A question with two answers, asked in the page's own voice rather than
+ * the browser's: a native confirm() looks foreign here and may not be allowed
+ * at all inside the desktop window. */
+function confirmSheet(title, body, action) {
+  return new Promise((resolve) => {
+    const answer = (value) => { closeOverlay(); resolve(value); };
+    const sheet = openSheet(title,
+      el("div", { class: "sheet-body" },
+        el("h2", { class: "sheet-title", text: title }),
+        el("p", { class: "meta", text: body }),
+        el("div", { class: "form-actions" },
+          el("button", { class: "primary", onclick: () => answer(true) }, action),
+          el("button", { onclick: () => answer(false) }, "Cancel"))));
+    // Escape or a click outside closes the sheet: that is a "no".
+    const observer = new MutationObserver(() => {
+      if (!document.contains(sheet)) { observer.disconnect(); resolve(false); }
+    });
+    observer.observe(document.body, { childList: true });
+  });
+}
+
 function openShortcuts() {
   openSheet("Keyboard shortcuts",
     el("dl", { class: "keys-grid" }, SHORTCUTS.map(([key, what]) =>
@@ -1348,11 +1698,20 @@ function go(route, params = {}) {
   location.hash = `#/${route}${query.toString() ? `?${query}` : ""}`;
 }
 
-const ROUTES = { today: viewToday, cases: viewCases, mail: viewMail, review: viewReview, setup: viewSetup };
+const ROUTES = {
+  today: viewToday, cases: viewCases, mail: viewMail, review: viewReview, setup: viewSetup,
+  welcome: viewWelcome,
+};
 
 async function render() {
   const [path, rawQuery] = location.hash.replace(/^#\/?/, "").split("?");
-  const route = ROUTES[path] ? path : "today";
+  let route = ROUTES[path] ? path : "today";
+  // A new install has nothing to show on any screen yet; the welcome is the
+  // only useful place to be until something has been read or it is skipped.
+  if (App.state && App.state.setup && App.state.setup.first_run && route !== "welcome") {
+    route = "welcome";
+    history.replaceState(null, "", "#/welcome");
+  }
   const moved = route !== App.route;
   App.route = route;
   App.arriving = moved;

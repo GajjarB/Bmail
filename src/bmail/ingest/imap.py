@@ -14,6 +14,7 @@ from __future__ import annotations
 import imaplib
 import ssl
 from collections.abc import Iterator
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from bmail.errors import IngestError
@@ -38,6 +39,8 @@ class ImapSource:
         folder: str = "INBOX",
         own_addresses: set[str] | None = None,
         use_ssl: bool = True,
+        since_days: int = 0,
+        timeout: float = 60.0,
     ) -> None:
         if not password:
             raise IngestError(
@@ -56,6 +59,12 @@ class ImapSource:
         self.username, self.password = username, password
         self.name, self.folder = name, folder
         self.use_ssl = use_ssl
+        # The first sync reads only this far back (0 = everything). Later syncs
+        # follow the cursor and are unaffected.
+        self.since_days = max(0, int(since_days or 0))
+        # Per socket operation, not per sync: a wrong host or a dead network
+        # fails in a minute instead of hanging the worker for ever.
+        self.timeout = timeout
         self.own_addresses = own_addresses or {username.lower()}
         self._cursor: dict[str, Any] = {}
 
@@ -63,14 +72,36 @@ class ImapSource:
         try:
             if self.use_ssl:
                 conn: imaplib.IMAP4 = imaplib.IMAP4_SSL(
-                    self.host, self.port, ssl_context=ssl.create_default_context()
+                    self.host, self.port, ssl_context=ssl.create_default_context(),
+                    timeout=self.timeout,
                 )
             else:  # loopback only, enforced in __init__
-                conn = imaplib.IMAP4(self.host, self.port)
+                conn = imaplib.IMAP4(self.host, self.port, timeout=self.timeout)
             conn.login(self.username, self.password)
             return conn
         except (imaplib.IMAP4.error, OSError, ssl.SSLError) as exc:
-            raise IngestError(f"IMAP login to {self.host} failed: {exc}") from exc
+            raise IngestError(f"IMAP login to {self.host} failed: {_plain(exc)}") from exc
+
+    def probe(self) -> int:
+        """Sign in, open the folder, and say how many messages it holds.
+
+        What "Test connection" runs: it proves the address, password and server
+        all work before anything is saved, and reads no mail.
+        """
+        conn = self._connect()
+        try:
+            status, data = conn.select(_quoted(self.folder), readonly=True)
+            if status != "OK":
+                raise IngestError(f"signed in, but there is no folder called {self.folder!r}")
+            try:
+                return int((data[0] or b"0").decode())
+            except (ValueError, AttributeError):
+                return 0
+        finally:
+            try:
+                conn.logout()
+            except Exception:  # pragma: no cover - best effort
+                pass
 
     def fetch(
         self, cursor: dict[str, Any] | None = None, *, limit: int | None = None
@@ -88,11 +119,17 @@ class ImapSource:
             else:
                 cursor = {}  # UIDVALIDITY changed: every stored UID is now meaningless
 
-            status, data = conn.uid("SEARCH", None, f"UID {start_uid}:*")
+            criteria = f"UID {start_uid}:*"
+            dated = not cursor and self.since_days > 0
+            if dated:
+                since = datetime.now(timezone.utc) - timedelta(days=self.since_days)
+                criteria += f" SINCE {since.strftime('%d-%b-%Y')}"
+            status, data = conn.uid("SEARCH", None, criteria)
             if status != "OK":
                 raise IngestError(f"UID SEARCH failed: {data!r}")
             uids = [u.decode() for u in (data[0] or b"").split()]
             uids = [u for u in uids if int(u) >= start_uid]
+            truncated = bool(limit) and len(uids) > limit
             if limit:
                 uids = uids[:limit]
 
@@ -122,7 +159,13 @@ class ImapSource:
                         folder=self.folder,
                         own_addresses=self.own_addresses,
                     )
-            self._cursor = {"uidvalidity": validity, "uidnext": highest + 1}
+            uidnext = highest + 1
+            if dated and not truncated:
+                # A date-limited first sync skipped the older mail on purpose.
+                # Resume from where the folder stood, or the next sync — which
+                # has no date limit — would read everything this one left out.
+                uidnext = max(uidnext, _uidnext(conn))
+            self._cursor = {"uidvalidity": validity, "uidnext": uidnext}
         finally:
             try:
                 conn.logout()
@@ -165,6 +208,23 @@ class ImapSource:
 
     def cursor(self) -> dict[str, Any]:
         return self._cursor
+
+
+def _uidnext(conn: imaplib.IMAP4) -> int:
+    """UIDNEXT from the SELECT that just ran: the UID the next message will get."""
+    _, found = conn.response("UIDNEXT")
+    try:
+        return int(found[0]) if found and found[0] else 0
+    except (TypeError, ValueError):
+        return 0
+
+
+def _plain(exc: BaseException) -> str:
+    """imaplib reports a refused login as b'[AUTHENTICATIONFAILED] ...'."""
+    text = str(exc)
+    if text.startswith(("b'", 'b"')) and text.endswith(("'", '"')):
+        text = text[2:-1]
+    return text
 
 
 def _quoted(folder: str) -> str:
