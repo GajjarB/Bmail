@@ -177,6 +177,27 @@ changes `UIDVALIDITY`, every stored UID is meaningless and the folder is
 re-scanned — silently ignoring that is the most common way naive IMAP sync loses
 mail.
 
+A bridge on this machine — Proton Mail Bridge, DavMail — can be reached without
+TLS by adding `ssl = false`. That is refused for any host other than `127.0.0.1`
+or `localhost`, because plain IMAP sends the password in the clear.
+
+## Staying up to date
+
+While Bmail is open it checks every live account on its own — every 5 minutes by
+default; change it or turn it off under **Setup → Check automatically**. The
+setting is kept in the database and survives a restart. Files are never polled.
+
+IMAP accounts whose server supports IDLE (almost all do) are **live**: Bmail
+keeps one connection per account parked in IDLE, the server says the moment mail
+lands, and it is fetched and sorted within seconds. The connection is renewed
+every 20 minutes, well inside the 30 the RFC allows, and mail that arrives while
+it reconnects is still noticed. Gmail and Outlook are checked on the interval.
+
+Nothing is checked while Bmail is closed, and a background check never opens a
+sign-in window. If a Gmail or Outlook token can no longer be refreshed silently,
+the account is marked **needs you to sign in** in the sidebar; press **Check for
+new mail** to do it.
+
 ## Writing labels back
 
 The only thing Bmail ever writes to a provider is a label. Never a delete, never

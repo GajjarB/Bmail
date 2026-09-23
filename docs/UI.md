@@ -55,9 +55,16 @@ sorts it.
 job. If one account fails — an expired sign-in, a server that is down — the
 others still sync and the toast names the one that did not.
 
-Long jobs — ingest, triage, export — run on a single background worker with a
-progress bar. One at a time, because the store has one writer and two triage
-runs at once is never what anyone wanted.
+It also happens on its own while the app is open: on an interval set in Setup,
+and within seconds for IMAP servers that push new mail. The line under the
+button says when the last check was — a breathing dot means the server is
+pushing — or which account needs attention. The page asks the engine every 15
+seconds and redraws only when something new actually arrived. See
+[PROVIDERS.md](PROVIDERS.md#staying-up-to-date).
+
+Long jobs — ingest, triage, export, background checks — run on a single
+background worker with a progress bar. One at a time, because the store has one
+writer and two triage runs at once is never what anyone wanted.
 
 ## Architecture
 

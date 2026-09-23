@@ -442,3 +442,25 @@ def test_the_daemon_exits_when_its_parent_does(tmp_path):
         time.sleep(0.5)
     os.kill(pid, 9)
     raise AssertionError("the daemon outlived the process that started it")
+
+
+# --------------------------------------------------------------------------- #
+# Background sync settings
+# --------------------------------------------------------------------------- #
+
+
+def test_sync_status_and_interval(live):
+    base, app, _config, _ = live
+    status = get(base, app, "/api/sync")
+    assert status["interval"] == 5 and status["enabled"] is True
+    assert status["running"] is False, "a server built outside `serve` must not sync on its own"
+    changed = request(base, "/api/sync", token=app.token, method="POST", body={"interval": 15})[1]
+    assert changed["interval"] == 15
+    assert get(base, app, "/api/sync")["interval"] == 15
+
+
+def test_a_bad_sync_interval_is_refused(live):
+    base, app, _config, _ = live
+    with pytest.raises(urllib.error.HTTPError) as caught:
+        request(base, "/api/sync", token=app.token, method="POST", body={"interval": 7})
+    assert caught.value.code == 400

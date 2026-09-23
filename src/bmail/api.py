@@ -32,11 +32,12 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from bmail.config import Config
-from bmail.errors import BmailError
+from bmail.errors import BmailError, SignInRequired
 from bmail.jobs import Job, JobRunner
 from bmail.packs import available_packs, load_pack
 from bmail.store import repo
 from bmail.store.db import connect
+from bmail.sync import Syncer
 
 LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1", "[::1]"}
 MAX_BODY = 1 << 20  # 1 MiB is far more than any request here needs
@@ -80,6 +81,9 @@ class BmailApp:
         self.token = secrets.token_urlsafe(24)
         config.ensure_home()
         connect(config.database).close()  # create and migrate the store up front
+        # Built always, started only by `serve`: a server made for a test or a
+        # script should not start reaching out to mail servers on its own.
+        self.syncer = Syncer(self)
 
     # -- helpers ---------------------------------------------------------------- #
 
@@ -328,10 +332,13 @@ class BmailApp:
                     "no mail account set up yet: add one to config.toml "
                     "(see docs/PROVIDERS.md), or read a file from Setup"
                 )
-            return self.sync(
+            outcome = self.sync(
                 job, specs, limit=int(limit) if limit else None, reset=reset,
                 sort=sort, use_llm=use_llm,
             )
+            if not path:
+                self.syncer.record(outcome, kind="ingest")
+            return outcome
 
         return self.jobs.submit("ingest", work)
 
@@ -345,12 +352,15 @@ class BmailApp:
         reset: bool = False,
         sort: bool = True,
         use_llm: bool = True,
+        strict: bool = True,
     ) -> dict[str, Any]:
         """Fetch from each account, then sort what is new. Runs inside a job.
 
         One account failing — an expired sign-in, a server that is down — does
         not stop the others: its error is reported against its name and the
-        rest still sync. Only when every account fails does the job fail.
+        rest still sync. When every account fails the job fails too, unless
+        `strict` is off, which the background sync uses so it can still show
+        each account's error against its name.
         """
         from bmail.ingest import build_source, ingest
 
@@ -360,6 +370,7 @@ class BmailApp:
             fetched: dict[str, int] = {}
             new: dict[str, int] = {}
             errors: dict[str, str] = {}
+            sign_in: list[str] = []
             fetch_share = 0.5 if sort else 1.0
             for index, spec in enumerate(specs):
                 job.raise_if_cancelled()
@@ -368,19 +379,25 @@ class BmailApp:
                 try:
                     source = build_source(spec, own_addresses=own, interactive=interactive)
                     result = ingest(conn, source, limit=limit, resume=not reset)
+                except SignInRequired as exc:
+                    conn.rollback()
+                    errors[name] = str(exc)
+                    sign_in.append(name)
+                    continue
                 except BmailError as exc:
                     conn.rollback()
                     errors[name] = str(exc)
                     continue
                 fetched[name] = result.fetched
                 new[name] = result.new
-            if errors and not fetched:
+            if strict and errors and not fetched:
                 raise ApiError("; ".join(f"{name}: {error}" for name, error in errors.items()))
 
             outcome: dict[str, Any] = {
                 "fetched": fetched,
                 "new": new,
                 "errors": errors,
+                "sign_in": sign_in,
                 "store": repo.count_messages(conn),
             }
             if sort:
@@ -472,7 +489,13 @@ class BmailApp:
 
         return self.jobs.submit("export", work)
 
+    def sync_settings(self, body: dict[str, Any]) -> dict[str, Any]:
+        if "interval" in body:
+            self.syncer.set_interval(body["interval"])
+        return self.syncer.status()
+
     def shutdown(self) -> None:
+        self.syncer.stop()
         self.jobs.shutdown()
 
 
@@ -650,6 +673,8 @@ class _Handler(BaseHTTPRequestHandler):
             return app.message(_tail(path, "/api/messages/"), query)
         if path == "/api/stats":
             return app.stats(query)
+        if path == "/api/sync":
+            return app.syncer.status()
         if path == "/api/jobs":
             return {"jobs": [job.as_dict() for job in app.jobs.list()]}
         if path.startswith("/api/jobs/"):
@@ -667,6 +692,8 @@ class _Handler(BaseHTTPRequestHandler):
             return app.start_ingest(body).as_dict()
         if path == "/api/export":
             return app.start_export(body).as_dict()
+        if path == "/api/sync":
+            return app.sync_settings(body)
         if path.startswith("/api/correct/"):
             return app.correct(_tail(path, "/api/correct/"), body)
         if path.startswith("/api/jobs/") and path.endswith("/cancel"):
@@ -793,6 +820,7 @@ def serve(
         print("ctrl-c to stop", flush=True)
     if open_browser:
         webbrowser.open(url)
+    app.syncer.start()
     try:
         server.serve_forever()
     except KeyboardInterrupt:

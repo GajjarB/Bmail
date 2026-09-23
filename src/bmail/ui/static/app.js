@@ -265,10 +265,11 @@ function watchJob(jobId, label) {
   App.poll = setInterval(async () => {
     let job;
     try { job = await api(`/jobs/${jobId}`); }
-    catch { clearInterval(App.poll); return; }
+    catch { clearInterval(App.poll); App.poll = null; return; }
     paintJob(job, label);
     if (!["done", "error", "cancelled"].includes(job.status)) return;
     clearInterval(App.poll);
+    App.poll = null;
     if (job.status === "error") toast(job.error, true);
     else if (job.status === "cancelled") toast("Stopped.");
     else toast(jobWords(job), Object.keys(job.result?.errors || {}).length > 0);
@@ -298,6 +299,115 @@ function mailWords(result) {
   if (failed.length) words += ` Couldn't check ${failed.join(", ")}.`;
   return words;
 }
+
+/* ---------------------------------------------------------------- sync --- */
+/* While the app is open the engine checks for mail on its own — on a timer,
+ * and for IMAP servers that support it, the moment the server says mail
+ * landed. The page asks how that is going every 15 seconds (every 2 while a
+ * check is running) and redraws when the answer says something arrived. */
+
+const PROVIDERS = { imap: "IMAP", gmail: "Gmail", graph: "Outlook", outlook: "Outlook",
+                    microsoft: "Outlook", m365: "Outlook" };
+
+const everyWords = (minutes) => (minutes === 60 ? "hour" : `${minutes} min`);
+
+function ago(iso) {
+  if (!iso) return "";
+  const then = new Date(iso);
+  const seconds = (Date.now() - then) / 1000;
+  if (seconds < 45) return "just now";
+  if (seconds < 3600) return `${Math.round(seconds / 60)} min ago`;
+  const time = then.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return then.toDateString() === new Date().toDateString()
+    ? `at ${time}` : `${then.toLocaleDateString()} ${time}`;
+}
+
+const Sync = {
+  status: null,
+  generation: null,
+  timer: null,
+  deferred: false,   // mail arrived while someone was typing; redraw later
+
+  async poll() {
+    clearTimeout(this.timer);
+    let s = null;
+    try { s = await api("/sync"); } catch { /* the next poll tries again */ }
+    if (s) {
+      const arrived = this.generation !== null && s.generation > this.generation;
+      this.generation = s.generation;
+      this.status = s;
+      this.paint();
+      // A check someone started by hand reports through its own job; only
+      // the ones that happened on their own need announcing here.
+      if (arrived && s.last_kind === "sync") {
+        toast(mailWords({ new: { all: s.last.new }, sorted: s.last.sorted }));
+        this.deferred = true;
+      }
+      // Redrawing under someone mid-sentence would take their text away.
+      const typing = document.activeElement?.matches("input, textarea, select");
+      if (this.deferred && !typing) {
+        this.deferred = false;
+        await refresh().catch(() => {});
+      }
+    }
+    if (!document.hidden) {
+      this.timer = setTimeout(() => this.poll(), s && s.checking ? 2000 : 15000);
+    }
+  },
+
+  paint() {
+    const s = this.status;
+    const line = $("#sync-line");
+    if (!s || !s.accounts.length) { line.hidden = true; this.paintAccounts(); return; }
+    // The icon turns for a background check too, unless a job someone
+    // started is already driving it.
+    if (!App.poll) $("#btn-sync").classList.toggle("busy", Boolean(s.checking));
+    const trouble = s.accounts.find((a) => a.status === "sign-in")
+      || s.accounts.find((a) => a.status === "error");
+    const live = s.accounts.some((a) => a.mode === "push");
+    let text;
+    let tone = "";
+    if (!s.enabled) text = "Automatic checks off";
+    else if (s.checking) text = "Checking…";
+    else if (trouble) {
+      text = trouble.status === "sign-in"
+        ? `${trouble.name} needs you to sign in` : `Couldn't check ${trouble.name}`;
+      tone = "soon";
+    } else text = s.last_run ? `Checked ${ago(s.last_run)}` : `Checks every ${everyWords(s.interval)}`;
+    if (s.enabled && !trouble && live) tone = "live";
+    line.hidden = false;
+    line.dataset.tone = tone;
+    line.title = trouble ? trouble.error
+      : live ? "Your mail server tells Bmail the moment something arrives." : "";
+    line.replaceChildren(el("span", { class: "pulse", "aria-hidden": "true" }), el("span", { text }));
+    this.paintAccounts();
+  },
+
+  paintAccounts(list = $("#sync-accounts")) {
+    if (!list) return;
+    const s = this.status;
+    if (!s || !s.accounts.length) {
+      list.replaceChildren(el("li", { class: "meta" },
+        "No mail account yet. Add Gmail, Outlook or IMAP to config.toml and Bmail keeps it current while it's open."));
+      return;
+    }
+    list.replaceChildren(...s.accounts.map((a) => {
+      let words;
+      let tone = "";
+      if (a.status === "sign-in") { words = "Needs you to sign in — press Check for new mail"; tone = "soon"; }
+      else if (a.status === "error") { words = `Couldn't check: ${a.error}`; tone = "urgent"; }
+      else if (a.mode === "push") { words = "Live — new mail shows up within seconds"; tone = "live"; }
+      else if (a.mode === "poll") {
+        words = `Every ${everyWords(s.interval)}${a.last_ok ? ` · checked ${ago(a.last_ok)}` : ""}`;
+      } else words = "Only when you check";
+      return el("li", { class: "sync-acct", "data-tone": tone },
+        el("span", { class: "pulse", "aria-hidden": "true" }),
+        el("b", { text: a.name }),
+        el("span", { class: "meta", text: PROVIDERS[a.provider] || a.provider }),
+        el("span", { class: "sync-state", text: words }));
+    }));
+  },
+};
 
 /* --------------------------------------------------------------- views --- */
 
@@ -867,6 +977,24 @@ function viewSetup() {
     location.hash = "#/today";
     location.reload();
   } }, (s.packs || []).map((p) => el("option", { value: p, selected: p === s.pack }, p)));
+  const current = Sync.status;
+  // Filled now rather than after paint: paint may run inside a view
+  // transition, after this function has returned.
+  const accounts = el("ul", { class: "sync-accts", id: "sync-accounts" });
+  Sync.paintAccounts(accounts);
+  const interval = el("select", { "aria-label": "Check automatically", onchange: async (e) => {
+    const minutes = Number(e.target.value);
+    try {
+      Sync.status = await post("/sync", { interval: minutes });
+      Sync.paint();
+      toast(minutes ? `Checking every ${everyWords(minutes)} while Bmail is open.`
+        : "Automatic checks off. Check by hand from the sidebar.");
+      // IMAP connections take a moment to go live; ask again shortly.
+      setTimeout(() => Sync.poll(), 1500);
+    } catch (err) { toast(err.message, true); }
+  } }, ((current && current.choices) || [0, 2, 5, 15, 30, 60]).map((n) =>
+    el("option", { value: n, selected: Boolean(current) && n === current.interval },
+      n ? `Every ${everyWords(n)}` : "Off")));
   const formats = ["xlsx", "csv", "ics"].map((kind) =>
     el("label", { class: "check" },
       el("input", { type: "checkbox", value: kind, checked: kind === "xlsx" }), " ", kind));
@@ -887,6 +1015,8 @@ function viewSetup() {
     group("Configured account", account,
       el("button", { onclick: () => run("ingest", { account: account.value || null }, "Collecting mail") },
         "Collect")),
+    group("Check automatically", interval),
+    accounts,
     group("File on this machine", path,
       el("button", { onclick: () => path.value.trim()
         ? run("ingest", { path: path.value.trim(), account: "local" }, "Reading file")
@@ -940,7 +1070,7 @@ function viewSetup() {
     section("Keys", null, "keys"),
     el("dl", { class: "facts set-facts" },
       [["1", "Today"], ["2", "Cases"], ["3", "Mail"], ["4", "Review"], ["5", "Setup"],
-       ["r", "Reload"], ["s", "Sort new mail"]].map(([key, what]) =>
+       ["r", "Reload"], ["c", "Check for new mail"], ["s", "Sort new mail"]].map(([key, what]) =>
         [el("dt", {}, el("kbd", { text: key })), el("dd", { text: what })])));
 }
 
@@ -1329,7 +1459,7 @@ async function refresh() {
 
   $("#rail-pack").textContent = state.pack;
   $("#rail-meta").replaceChildren(
-    el("div", { text: `${state.messages.total} messages read` }),
+    el("div", { text: `${state.messages.total} message${state.messages.total === 1 ? "" : "s"} read` }),
     el("div", { text: `${state.cases.total} ${state.entity_plural} tracked` }),
     el("div", {}, el("span", { class: "dot", text: "●" }), " ",
       state.llm.available && state.llm.pulled ? state.llm.model : "rules + classifier"));
@@ -1352,7 +1482,7 @@ async function boot() {
     document.createTextNode(message), el("code", { text: "bmail ui" }));
 
   if (!App.token) return fail("This page needs a session key. Start Bmail with:");
-  try { await refresh(); }
+  try { await Sync.poll(); await refresh(); }
   catch (err) { return fail(`The engine did not answer (${err.message}). Start it with:`); }
 
   $("#boot").hidden = true;
@@ -1377,6 +1507,8 @@ async function boot() {
     resizing = requestAnimationFrame(() => NavPill.follow(true));
   });
   document.addEventListener("keydown", onKey);
+  // A hidden tab stops asking; coming back asks straight away.
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) Sync.poll(); });
 
   const jobs = await api("/jobs").catch(() => ({ jobs: [] }));
   const running = (jobs.jobs || []).find((j) => ["queued", "running"].includes(j.status));

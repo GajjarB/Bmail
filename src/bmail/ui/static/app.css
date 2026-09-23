@@ -250,6 +250,49 @@ button, input, select, textarea { font-family: inherit; font-feature-settings: i
   padding: var(--s2) var(--s2) 0; border-top: 1px solid var(--line);
 }
 .rail-meta .dot { color: var(--live); font-size: 8px; vertical-align: 1px; }
+/* The engine checks for mail on its own; this says when it last did. A dot
+   that breathes means the server pushes new mail, not that Bmail is busy. */
+.sync-line {
+  display: flex; align-items: center; gap: 7px; min-height: 16px;
+  padding: 0 var(--s2); font-size: var(--t-micro); line-height: var(--lh-micro);
+  color: var(--ink-3); cursor: default;
+}
+.sync-line span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pulse {
+  flex: none; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--ink-3); opacity: .55;
+}
+[data-tone="live"] > .pulse {
+  background: var(--live); opacity: 1; animation: breathe 2.8s var(--ease-soft) infinite;
+}
+[data-tone="soon"] > .pulse { background: var(--soon); opacity: 1; }
+[data-tone="urgent"] > .pulse { background: var(--urgent); opacity: 1; }
+.sync-line[data-tone="soon"] { color: var(--soon); }
+@keyframes breathe {
+  0%, 100% { box-shadow: 0 0 0 0 var(--live-bg); }
+  50%      { box-shadow: 0 0 0 4px var(--live-bg); }
+}
+
+.sync-accts {
+  list-style: none; margin: 0; padding: var(--s1) 0 var(--s2);
+  border-bottom: 1px solid var(--line-soft);
+}
+.sync-accts:empty { display: none; }
+[data-theme="studio"] .sync-accts { border-bottom-color: var(--line); }
+.sync-acct {
+  display: grid; grid-template-columns: 6px auto auto minmax(0, 1fr); gap: var(--s2);
+  align-items: center; padding: 6px 0; font-size: var(--t-small);
+}
+.sync-acct .meta { font-size: var(--t-micro); }
+.sync-acct .sync-state { color: var(--ink-2); justify-self: end; text-align: right; }
+.sync-acct[data-tone="soon"] .sync-state { color: var(--soon); }
+.sync-acct[data-tone="urgent"] .sync-state { color: var(--urgent); }
+.sync-acct[data-tone="live"] .sync-state { color: var(--live); }
+@media (max-width: 560px) {
+  .sync-acct { grid-template-columns: 6px auto minmax(0, 1fr); }
+  .sync-acct .sync-state { grid-column: 2 / -1; justify-self: start; text-align: left; }
+}
+
 .keys-hint {
   display: flex; align-items: center; gap: var(--s2); width: 100%;
   font-size: var(--t-micro); color: var(--ink-3); padding: 3px var(--s2);
@@ -767,7 +810,7 @@ kbd {
   .nav a { white-space: nowrap; }
   .nav a .count { margin-left: var(--s1); }
   .rail-foot { margin: 0 0 0 auto; flex-direction: row; align-items: center; }
-  .rail-meta { display: none; }
+  .rail-meta, .sync-line { display: none; }
   .page { padding: var(--s3) var(--s3) var(--s7); }
   .jobbar { left: var(--s3); right: var(--s3); width: auto; }
 }
@@ -901,7 +944,7 @@ kbd {
   border: 1px solid var(--line); border-radius: var(--r-lg);
   padding: var(--s3); background: var(--surface);
 }
-[data-theme="studio"] .keys-hint { padding: 0 var(--s3); }
+[data-theme="studio"] .keys-hint, [data-theme="studio"] .sync-line { padding: 0 var(--s3); }
 
 /* -- page ----------------------------------------------------------------- */
 
@@ -981,6 +1024,9 @@ kbd {
 [data-theme="studio"] input, [data-theme="studio"] select, [data-theme="studio"] textarea {
   border-radius: var(--r); padding: 7px 11px;
 }
+/* The padding above is more specific than the select's own, and without this
+   the chevron sits on top of the last letter. */
+[data-theme="studio"] select { padding-right: 32px; }
 
 [data-theme="studio"] .panel { border-radius: var(--r-lg); }
 [data-theme="studio"] .panel-pad { padding: var(--s5); }
@@ -1115,6 +1161,7 @@ input[type="checkbox"] { accent-color: var(--ink); width: 15px; height: 15px; ma
     animation: none !important;
   }
   #btn-sync.busy svg { animation: none; }
+  [data-tone="live"] > .pulse { animation: none; }
 }
 
 /* ---- a field with its icon inside ----------------------------------------- */

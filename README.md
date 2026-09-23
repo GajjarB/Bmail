@@ -118,7 +118,9 @@ bmail ui                      # opens a browser at a loopback address
 Then point it at real mail. Start with a file — a Gmail Takeout export or any
 `.mbox` — because it needs no OAuth and no rate limits. Gmail, Outlook /
 Microsoft 365 and any IMAP mailbox are configured in `config.toml`; see
-[docs/PROVIDERS.md](docs/PROVIDERS.md).
+[docs/PROVIDERS.md](docs/PROVIDERS.md). Once they are, the app keeps them
+current while it is open: IMAP within seconds of mail landing, Gmail and Outlook
+every few minutes, each check fetching and sorting in one go.
 
 ```bash
 bmail ingest --path ~/Downloads/takeout/Mail/All\ mail.mbox --account archive
@@ -289,7 +291,8 @@ stats = Pipeline(pack, classifier=Classifier(pack), use_llm=False).triage(
 
 ## Status and what is deliberately absent
 
-Working today: file/mbox/Maildir, IMAP, Gmail and Microsoft Graph ingest, all
+Working today: file/mbox/Maildir, IMAP, Gmail and Microsoft Graph ingest,
+background sync while the app is open (IMAP IDLE push, interval polling), all
 four stages, four packs, 50 starter template recipes, the Brief, cases and
 ghosting detection, Excel/CSV/ICS/Notion export, Gmail label and Outlook
 category write-back, the evaluation harness and ablations, the local daemon,

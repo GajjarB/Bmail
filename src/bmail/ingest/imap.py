@@ -21,6 +21,7 @@ from bmail.ingest.raw import parse_message
 from bmail.models import Message
 
 _BATCH = 200
+LOOPBACK = {"127.0.0.1", "localhost", "::1"}
 
 
 class ImapSource:
@@ -43,6 +44,14 @@ class ImapSource:
                 f"no password for IMAP account '{name}'. Most providers now require an "
                 "app password with two-factor authentication enabled."
             )
+        if not use_ssl and host not in LOOPBACK:
+            # Plain IMAP sends the password in the clear. That is acceptable only
+            # to a bridge on this machine (Proton Mail Bridge, DavMail), never
+            # across a network.
+            raise IngestError(
+                f"IMAP account '{name}': ssl = false is only allowed for a server on "
+                "this machine (127.0.0.1 or localhost)"
+            )
         self.host, self.port = host, port
         self.username, self.password = username, password
         self.name, self.folder = name, folder
@@ -56,7 +65,7 @@ class ImapSource:
                 conn: imaplib.IMAP4 = imaplib.IMAP4_SSL(
                     self.host, self.port, ssl_context=ssl.create_default_context()
                 )
-            else:  # only for a local test server; never for a real provider
+            else:  # loopback only, enforced in __init__
                 conn = imaplib.IMAP4(self.host, self.port)
             conn.login(self.username, self.password)
             return conn
