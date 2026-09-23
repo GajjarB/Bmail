@@ -211,9 +211,12 @@ def cmd_triage(args: argparse.Namespace) -> int:
 
     _out(f"triaging {len(messages)} messages with pack '{pack.name}'…")
     width = 40
+    # A bar is for a person watching a terminal. Piped into a log or run from
+    # cron it is one carriage-return frame per message, all on one line.
+    draw = not args.quiet and sys.stderr.isatty()
 
     def progress(index: int, total: int, _message: Any) -> None:
-        if args.quiet:
+        if not draw:
             return
         filled = int(width * index / total)
         sys.stderr.write(f"\r  [{'#' * filled}{'.' * (width - filled)}] {index}/{total}")
