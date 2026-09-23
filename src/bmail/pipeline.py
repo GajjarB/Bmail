@@ -20,7 +20,7 @@ from bmail.errors import LLMError
 from bmail.llm.stage3 import LLMStage
 from bmail.models import Message, Stage, Verdict
 from bmail.packs import Pack
-from bmail.rules.engine import RulesEngine
+from bmail.rules.engine import RulesEngine, Stage1Result
 from bmail.store import repo
 
 ProgressHook = Callable[[int, int, Message], None]
@@ -116,6 +116,8 @@ class Pipeline:
                         stats.errors.append(str(exc))
                 else:
                     verdict.needs_review = True
+                if verdict.stage is Stage.classifier:
+                    self._when_unsure(stage1, verdict)
             # Feed the settled answer forward so later duplicates inherit it.
             self.rules.remember(message, verdict)
             if self.distil and verdict.stage is Stage.llm and not verdict.needs_review:
@@ -132,6 +134,36 @@ class Pipeline:
         repo.save_verdict(conn, verdict)
         self._settle(conn, message, verdict, stats)
         return verdict
+
+    # Below this machine score, a message reads as written by a person.
+    HUMAN_BELOW = 0.3
+
+    def _when_unsure(self, stage1: Stage1Result, verdict: Verdict) -> None:
+        """Nothing settled this message; fail towards showing it to you.
+
+        With no local model — the default install — an unsure classifier guess
+        used to be the final answer. On day one that guess comes from a handful
+        of prototype sentences, so a friend asking "coffee on Friday?" was filed
+        as an automatic acknowledgement and never shown: the one outcome the
+        asymmetric-routing rule exists to prevent. A message a person wrote,
+        which the classifier cannot place with confidence and would otherwise
+        file as needing nothing, is surfaced as personal mail instead. It stays
+        in the review queue, so the correction still teaches the classifier.
+        """
+        if verdict.action_required or "personal" not in self.pack.categories:
+            return
+        if stage1.headers.score >= self.HUMAN_BELOW:
+            return
+        guessed = verdict.category
+        spec = self.pack.spec("personal")
+        verdict.category = "personal"
+        verdict.action_required = spec.action_required
+        verdict.urgency = spec.urgency
+        verdict.next_action = spec.next_action
+        verdict.needs_review = True
+        verdict.reasons.append(
+            f"written by a person and the guess '{guessed}' is unsure: shown, not filed"
+        )
 
     def _settle(
         self,

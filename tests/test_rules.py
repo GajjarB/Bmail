@@ -68,6 +68,24 @@ def test_vendor_recipe_still_fires_without_an_outcome_phrase():
     assert hit is not None and hit.recipe.category == "acknowledgement"
 
 
+def test_an_english_request_for_missing_documents_is_recognised():
+    """Only the German wording had a recipe, so an English "your application is
+    incomplete" fell to the classifier and lost its deadline to "acknowledgement"."""
+    message = parse_message(
+        make_raw(
+            sender="admissions@rug-example.nl",
+            subject="Your application to MSc Computer Science",
+            body=(
+                "Dear applicant, Your application for MSc Computer Science is incomplete. "
+                "Please upload your certified transcript no later than 14 September 2026."
+            ),
+        )
+    )
+    hit = match_template(message)
+    assert hit is not None and hit.recipe.id == "generic-document-request-en"
+    assert hit.fields.get("role") == "MSc Computer Science"
+
+
 def test_body_none_vetoes_a_recipe():
     message = parse_message(
         make_raw(

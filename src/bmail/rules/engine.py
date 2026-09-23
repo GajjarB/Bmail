@@ -185,7 +185,7 @@ class RulesEngine:
         for candidate in row:
             if hamming(candidate["simhash"], fingerprint) <= self.dedupe_radius:
                 stored = repo.get_verdict(conn, candidate["message_id"], self.pack.name)
-                if stored is not None:
+                if stored is not None and _settled(stored):
                     self._seen[fingerprint] = (candidate["message_id"], stored)
                     return candidate["message_id"], stored
         return None
@@ -280,3 +280,16 @@ def coverage(results: list[Stage1Result]) -> dict[str, float | int]:
         "candidates": sum(1 for r in results if not r.resolved),
         "resolved_fraction": round(resolved / total, 3),
     }
+
+
+def _settled(verdict: Verdict) -> bool:
+    """Whether a verdict from an earlier run is safe for a repeat to copy.
+
+    A human correction or a confident answer, yes. An unsure guess still
+    waiting in the review queue, no: copying it made every repeat inherit the
+    mistake, and because the store was consulted on every run, re-sorting
+    could never clear it — each message found the other's stale answer. A
+    repeat of an unsure message is classified in its own right instead, which
+    costs a millisecond.
+    """
+    return verdict.stage is Stage.manual or not verdict.needs_review

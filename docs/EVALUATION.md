@@ -75,23 +75,29 @@ cost is half a comparison.
 | 4. LLM on everything | The naive baseline most projects build first — compared on cost as well as accuracy |
 | 5. German only / English only | Multilingual degradation, which is real and under-reported |
 
-Sample output on the synthetic corpus, rules and classifier only:
+Sample output on the synthetic corpus, rules and classifier only (no local
+model), on the locked test split:
 
 ```
 configuration                   acc  macroF1  act.recall  missed   p50ms   p95ms  calls
 ---------------------------------------------------------------------------------------
-1. rules only                 0.818    0.809       0.600       4       0       1      0
-2. rules + classifier         0.879    0.829       0.600       4       0       2      0
-5. full · de only             0.765    0.733       0.333       4       0       1      0
-5. full · en only             1.000    1.000       1.000       0       0       3      0
+1. rules only                 0.923    0.889       0.818       2       1       2      0
+2. rules + classifier         1.000    1.000       1.000       0       1       1      0
+5. full · de only             1.000    1.000       1.000       0       1       2      0
+5. full · en only             1.000    1.000       1.000       0       0       1      0
 ```
 
-The last two rows are the point of building this. The German subset performs
-materially worse than the English one on the same pipeline — exactly the failure
-a product built and tested in English ships without noticing. Much of a German
-job-search corpus is `"leider müssen wir Ihnen mitteilen"`; a system that is
-excellent on English rejections and mediocre on that one is broken for its
-actual user.
+It was not always this: an earlier run read 0.727 action recall, and the
+harness showed why. Every personal message was filed as an automatic
+acknowledgement — with no local model, an unsure day-one guess was final — and
+an English "your application is incomplete" had no template, while the German
+one did. Both are fixed, and each fix has a test.
+
+Treat a perfect score on the synthetic corpus as the floor, not the finish. It
+is generated from the same patterns the rules were written against; your own
+mail is the real test. Label a hundred of your own messages and run the harness
+on those — the language split in the last two rows is where a system built and
+tested in English quietly fails its German-speaking user.
 
 ## Ablations worth running by hand
 
@@ -105,6 +111,8 @@ The harness covers configurations. These need a model and a little scripting:
    enforcement helps validity but costs value accuracy.
 
 ## Reading the report
+
+For example:
 
 ```
 ACTION REQUIRED  (the headline number: recall)

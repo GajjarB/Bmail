@@ -404,3 +404,72 @@ def test_three_roles_at_one_employer_stay_three_cases(conn, pack):
         assert resolved.case is not None
         cases.append(resolved.case.id)
     assert len(set(cases)) == 3
+
+
+# --------------------------------------------------------------------------- #
+# When nothing settles a message
+# --------------------------------------------------------------------------- #
+
+
+def _coffee(message_id="<coffee@gmx.de>"):
+    return parse_message(make_raw(
+        subject="Kaffee am Freitag?", sender="jonas.weber@gmx.de", sender_name="Jonas Weber",
+        body="Hallo, schön, dich letzte Woche getroffen zu haben. "
+             "Hast du am Freitag Zeit für einen Kaffee?",
+        message_id=message_id,
+    ), own_addresses={"you@example.com"})
+
+
+def test_an_unsure_guess_about_a_persons_mail_is_shown_not_filed(conn, pack):
+    """With no local model, the day-one classifier guessed "acknowledgement"
+    at p=0.14 for a friend's question, and that guess was final — so the one
+    message that most needed a reply was filed as needing nothing."""
+    message = _coffee()
+    repo.bulk_upsert(conn, [message])
+    stats = Pipeline(pack, classifier=Classifier(pack), use_llm=False).triage(conn, [message])
+    verdict = repo.get_verdict(conn, message.message_id, pack.name)
+    assert verdict.category == "personal"
+    assert verdict.action_required
+    assert verdict.needs_review, "it must still reach the review queue, to teach the classifier"
+    assert stats.processed == 1
+
+
+def test_an_unsure_guess_about_machine_mail_is_left_alone(conn, pack):
+    message = parse_message(make_raw(
+        subject="Your weekly digest", sender="noreply@updates.example.com",
+        sender_name="Updates",
+        body="Here is what happened this week on the platform.",
+        extra={"List-Unsubscribe": "<mailto:unsub@updates.example.com>",
+               "Precedence": "bulk", "Auto-Submitted": "auto-generated"},
+        message_id="<digest@updates.example.com>",
+    ))
+    repo.bulk_upsert(conn, [message])
+    Pipeline(pack, classifier=Classifier(pack), use_llm=False).triage(conn, [message])
+    assert repo.get_verdict(conn, message.message_id, pack.name).category != "personal"
+
+
+def test_a_repeat_does_not_inherit_an_unsure_answer_from_an_earlier_run(conn, pack):
+    """Near-duplicates copy the verdict of what they repeat. Copying an unsure
+    guess from the store made every repeat inherit the mistake — and because
+    each re-sort found the other's stale answer, re-sorting never cleared it."""
+    first, repeat = _coffee("<coffee-1@gmx.de>"), _coffee("<coffee-2@gmx.de>")
+    repo.bulk_upsert(conn, [first, repeat])
+    stale = Verdict(message_id=first.message_id, pack=pack.name, category="acknowledgement",
+                    confidence=0.14, needs_review=True)
+    repo.save_verdict(conn, stale)
+    conn.commit()
+    Pipeline(pack, classifier=Classifier(pack), use_llm=False).triage(conn, [repeat])
+    assert repo.get_verdict(conn, repeat.message_id, pack.name).category == "personal"
+
+
+def test_a_repeat_still_inherits_a_human_correction(conn, pack):
+    from bmail.models import Stage
+
+    first, repeat = _coffee("<coffee-1@gmx.de>"), _coffee("<coffee-2@gmx.de>")
+    repo.bulk_upsert(conn, [first, repeat])
+    corrected = Verdict(message_id=first.message_id, pack=pack.name, category="other",
+                        confidence=1.0, stage=Stage.manual)
+    repo.save_verdict(conn, corrected)
+    conn.commit()
+    Pipeline(pack, classifier=Classifier(pack), use_llm=False).triage(conn, [repeat])
+    assert repo.get_verdict(conn, repeat.message_id, pack.name).category == "other"

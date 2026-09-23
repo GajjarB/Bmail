@@ -263,6 +263,34 @@
       regex: "(?i)(?:application\\s+(?:for|to)|assessment\\s+for|invitation\\s*[–—-]|application\\s*[–—-]|position\\s+of)\\s+(?:the\\s+)?(.{2,80}?)(?:\\s+at\\s+.+)?$"
       transform: [strip_org_suffix, strip, collapse]
 
+- id: generic-document-request-en
+  vendor: generic
+  description: >-
+    "Your application is incomplete" — the English twin of the German recipe.
+    Without it these fell to the classifier, which on day one reads them as an
+    acknowledgement and files a deadline as needing nothing.
+  category: document_request
+  priority: 84
+  match:
+    body_any:
+      - "your application is incomplete"
+      - "your application is not yet complete"
+      - "we are still missing"
+      - "please upload your"
+      - "please submit the following documents"
+      - "the following documents are missing"
+      - "outstanding documents"
+    body_none:
+      - "we have decided not to move forward"
+      - "we will not be moving forward"
+      - "your application was not successful"
+  extract:
+    org: {source: from_domain, transform: [domain_to_org]}
+    role:
+      source: subject
+      regex: "(?i)(?:application\\s+(?:for|to)|assessment\\s+for|invitation\\s*[–—-]|application\\s*[–—-]|position\\s+of)\\s+(?:the\\s+)?(.{2,80}?)(?:\\s+at\\s+.+)?$"
+      transform: [strip_org_suffix, strip, collapse]
+
 - id: calendly-booking
   vendor: Calendly
   category: scheduling
