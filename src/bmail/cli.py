@@ -36,10 +36,14 @@ def _err(text: str) -> None:
     print(text, file=sys.stderr)
 
 
+def _config(args: argparse.Namespace) -> Config:
+    """Every command reads its config here, so `--home` means the same thing to
+    all of them: that directory's config.toml, and that directory's store."""
+    return Config.load(getattr(args, "config", None), home=getattr(args, "home", None))
+
+
 def _load(args: argparse.Namespace) -> tuple[Config, Pack, sqlite3.Connection]:
-    config = Config.load(getattr(args, "config", None))
-    if getattr(args, "home", None):
-        config.home = Path(args.home).expanduser()
+    config = _config(args)
     if getattr(args, "db", None):
         config.db_path = Path(args.db).expanduser()
     config.ensure_home()
@@ -57,9 +61,7 @@ def _own_addresses(config: Config, conn: sqlite3.Connection) -> set[str]:
 
 
 def cmd_init(args: argparse.Namespace) -> int:
-    config = Config.load(getattr(args, "config", None))
-    if args.home:
-        config.home = Path(args.home).expanduser()
+    config = _config(args)
     config.ensure_home()
     path = write_template(config.config_path)
     conn = connect(config.database)
@@ -77,7 +79,7 @@ def cmd_init(args: argparse.Namespace) -> int:
 def cmd_doctor(args: argparse.Namespace) -> int:
     from bmail.llm.client import DEFAULT_HOST, OllamaClient, detect_tier, has_gpu
 
-    config = Config.load(getattr(args, "config", None))
+    config = _config(args)
     _out(f"bmail {__version__}   python {sys.version.split()[0]}   {sys.platform}")
     _out("")
 
@@ -99,6 +101,8 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         ("sklearn", "calibrated logistic regression"),
         ("selectolax", "faster, more robust HTML extraction"),
         ("sentence_transformers", "stronger multilingual embeddings"),
+        ("googleapiclient", "Gmail API client"),
+        ("google_auth_oauthlib", "Gmail sign-in"),
         ("msal", "Microsoft Graph sign-in"),
         ("keyring", "passwords in the OS keychain"),
     ):
@@ -107,6 +111,22 @@ def cmd_doctor(args: argparse.Namespace) -> int:
             _out(f"  present  {module:24} {purpose}")
         except ImportError:
             _out(f"  missing  {module:24} {purpose}")
+
+    # A missing extra only matters when an account needs it — and then it is
+    # the reason that account never syncs, so say so by name.
+    needs = {"gmail": ("googleapiclient", "gmail"), "graph": ("msal", "graph"),
+             "outlook": ("msal", "graph"), "microsoft": ("msal", "graph"),
+             "m365": ("msal", "graph")}
+    for account in config.accounts:
+        provider = str(account.get("provider", "")).lower()
+        if provider not in needs:
+            continue
+        module, extra = needs[provider]
+        try:
+            __import__(module)
+        except ImportError:
+            _out(f"  WARNING  account '{account.get('name', provider)}' needs "
+                 f"pip install 'bmail[{extra}]' — it cannot sync without it")
 
     _out("")
     _out("local model")
@@ -405,7 +425,7 @@ def cmd_search(args: argparse.Namespace) -> int:
 
 
 def cmd_packs(args: argparse.Namespace) -> int:
-    config = Config.load(getattr(args, "config", None))
+    config = _config(args)
     packs = available_packs(config.pack_dirs)
     if args.name:
         pack = load_pack(args.name, tuple(config.pack_dirs))
@@ -566,7 +586,7 @@ def cmd_eval(args: argparse.Namespace) -> int:
 def cmd_accounts(args: argparse.Namespace) -> int:
     from bmail.secrets import env_hint, set_secret
 
-    config = Config.load(getattr(args, "config", None))
+    config = _config(args)
     if args.set_password:
         import getpass
 
@@ -596,9 +616,7 @@ def cmd_accounts(args: argparse.Namespace) -> int:
 def cmd_serve(args: argparse.Namespace) -> int:
     from bmail.api import serve
 
-    config = Config.load(getattr(args, "config", None))
-    if getattr(args, "home", None):
-        config.home = Path(args.home).expanduser()
+    config = _config(args)
     return serve(config, host=args.host, port=args.port, pack=args.pack,
                  open_browser=False, machine_readable=args.json,
                  exit_with_parent=args.exit_with_parent)
@@ -608,9 +626,7 @@ def cmd_ui(args: argparse.Namespace) -> int:
     """Start the daemon and open the desktop UI in the default browser."""
     from bmail.api import serve
 
-    config = Config.load(getattr(args, "config", None))
-    if getattr(args, "home", None):
-        config.home = Path(args.home).expanduser()
+    config = _config(args)
     return serve(
         config,
         host="127.0.0.1",

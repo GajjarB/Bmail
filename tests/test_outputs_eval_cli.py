@@ -286,6 +286,55 @@ def test_cli_end_to_end(tmp_path, capsys, monkeypatch):
     assert "nothing leaves this machine" in output
 
 
+def test_doctor_names_an_account_its_missing_extra_would_break(tmp_path, monkeypatch, capsys):
+    """A Gmail account without the Gmail extra never syncs, and the only trace
+    used to be an error in the app. Doctor now names the account and the fix."""
+    import builtins
+
+    from bmail.cli import main
+
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "config.toml").write_text(
+        '[[accounts]]\nname = "work"\nprovider = "gmail"\n'
+        'client_secret_file = "c.json"\ntoken_file = "t.json"\n', encoding="utf-8")
+    real_import = builtins.__import__
+
+    def without_google(name, *args, **kwargs):
+        if name.startswith("google"):
+            raise ImportError(name)
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setenv("BMAIL_HOME", str(tmp_path / "elsewhere"))  # --home must win
+    monkeypatch.setattr(builtins, "__import__", without_google)
+    assert main(["--home", str(home), "doctor"]) == 0
+    assert "account 'work' needs pip install 'bmail[gmail]'" in capsys.readouterr().out
+
+
+def test_home_selects_the_config_as_well_as_the_store(tmp_path, monkeypatch, capsys):
+    """`--home` used to be applied after the config was read from the default
+    home: accounts came from one directory and the store from another, and
+    several commands ignored the flag altogether."""
+    from bmail.cli import main
+    from bmail.config import Config
+
+    default, chosen = tmp_path / "default", tmp_path / "chosen"
+    for home, name in ((default, "from-default"), (chosen, "from-chosen")):
+        home.mkdir()
+        (home / "config.toml").write_text(
+            f'[[accounts]]\nname = "{name}"\nprovider = "file"\npath = "x.mbox"\n',
+            encoding="utf-8")
+    monkeypatch.setenv("BMAIL_HOME", str(default))
+
+    config = Config.load(home=chosen)
+    assert [a["name"] for a in config.accounts] == ["from-chosen"]
+    assert config.database.parent == chosen
+
+    assert main(["--home", str(chosen), "accounts"]) == 0
+    listed = capsys.readouterr().out
+    assert "from-chosen" in listed and "from-default" not in listed
+
+
 def test_cli_export_without_a_target_is_an_error(tmp_path, monkeypatch, capsys):
     from bmail.cli import main
 

@@ -95,10 +95,13 @@ class Config:
     # -- loading ---------------------------------------------------------------- #
 
     @classmethod
-    def load(cls, path: str | Path | None = None) -> Config:
-        home = default_home()
-        config_path = Path(path).expanduser() if path else home / "config.toml"
-        config = cls(home=home)
+    def load(cls, path: str | Path | None = None, *, home: str | Path | None = None) -> Config:
+        """Read the config. `home` is an explicit data directory (`--home`): its
+        config.toml is the one read, and it outranks a `home` set inside it."""
+        explicit = Path(home).expanduser() if home else None
+        base = explicit or default_home()
+        config_path = Path(path).expanduser() if path else base / "config.toml"
+        config = cls(home=base)
         if not config_path.exists():
             return config
         try:
@@ -106,7 +109,7 @@ class Config:
         except (OSError, tomllib.TOMLDecodeError) as exc:
             raise ConfigError(f"cannot read {config_path}: {exc}") from exc
 
-        if home_value := data.get("home"):
+        if (home_value := data.get("home")) and explicit is None:
             config.home = Path(str(home_value)).expanduser()
         if db_value := data.get("database"):
             config.db_path = Path(str(db_value)).expanduser()
