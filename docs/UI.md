@@ -48,7 +48,12 @@ Three rules follow from that, and they are worth keeping:
 - **Setup** — collect mail, sort it, switch pack, export, and see where things
   live on disk.
 
-Keyboard: `1`–`5` switch surface, `r` reloads, `s` sorts new mail.
+Keyboard: `1`–`5` switch surface, `r` reloads, `c` checks for new mail, `s`
+sorts it.
+
+**Check for new mail** fetches from every account and sorts what arrived, in one
+job. If one account fails — an expired sign-in, a server that is down — the
+others still sync and the toast names the one that did not.
 
 Long jobs — ingest, triage, export — run on a single background worker with a
 progress bar. One at a time, because the store has one writer and two triage

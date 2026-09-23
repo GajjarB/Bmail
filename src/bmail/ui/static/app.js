@@ -252,7 +252,10 @@ function paintJob(job, label) {
   $("#btn-sync").classList.toggle("busy", running);
   if (!running) { bar.hidden = true; return; }
   bar.hidden = false;
-  $("#job-label").textContent = label || job.kind;
+  // Checking for mail sorts what arrived in the same job; the label follows
+  // the stage it is in, so a long sort does not read as a slow download.
+  const sorting = job.kind === "ingest" && /^(sorting|training)/.test(job.step || "");
+  $("#job-label").textContent = sorting ? "Sorting new mail" : (label || job.kind);
   $("#job-fill").style.width = `${Math.round((job.progress || 0) * 100)}%`;
   $("#job-cancel").onclick = () => post(`/jobs/${job.id}/cancel`).catch(() => {});
 }
@@ -268,7 +271,7 @@ function watchJob(jobId, label) {
     clearInterval(App.poll);
     if (job.status === "error") toast(job.error, true);
     else if (job.status === "cancelled") toast("Stopped.");
-    else toast(jobWords(job));
+    else toast(jobWords(job), Object.keys(job.result?.errors || {}).length > 0);
     await refresh();
   }, 500);
 }
@@ -278,12 +281,22 @@ function jobWords(job) {
   if (job.kind === "triage") {
     return result.processed ? `Sorted ${result.processed} messages.` : "Nothing new to sort.";
   }
-  if (job.kind === "ingest") {
-    const total = Object.values(result.fetched || {}).reduce((a, b) => a + b, 0);
-    return total ? `${total} new messages.` : "No new mail.";
-  }
+  if (job.kind === "ingest") return mailWords(result);
   if (job.kind === "export") return `Written to ${result.directory}`;
   return "Done.";
+}
+
+function mailWords(result) {
+  const sum = (counts) => Object.values(counts || {}).reduce((a, b) => a + b, 0);
+  // Older servers reported only `fetched`; everything since reports `new`.
+  const fresh = result.new ? sum(result.new) : sum(result.fetched);
+  const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+  let words = fresh ? `${plural(fresh, "new message")}` : "No new mail";
+  if (fresh && result.sorted) words += result.sorted >= fresh ? ", sorted" : `, ${result.sorted} sorted`;
+  words += ".";
+  const failed = Object.keys(result.errors || {});
+  if (failed.length) words += ` Couldn't check ${failed.join(", ")}.`;
+  return words;
 }
 
 /* --------------------------------------------------------------- views --- */

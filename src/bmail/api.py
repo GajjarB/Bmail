@@ -289,76 +289,154 @@ class BmailApp:
         retriage = bool(body.get("all"))
 
         def work(job: Job) -> dict[str, Any]:
-            from bmail.pipeline import build_pipeline
-
-            pack = self.pack(pack_name)
             conn = self.write()
             try:
-                pipeline, notes = build_pipeline(conn, pack, self.config, use_llm=use_llm)
-                job.update(step="loading messages", progress=0.02)
-                messages = repo.iter_messages(
-                    conn,
-                    limit=int(limit) if limit else None,
-                    only_untriaged_for=None if retriage else pack.name,
+                return self._sort(
+                    conn, job, pack_name,
+                    limit=int(limit) if limit else None, use_llm=use_llm, retriage=retriage,
                 )
-                if not messages:
-                    return {"processed": 0, "notes": [*notes, "nothing new to triage"]}
-
-                total = len(messages)
-
-                def progress(index: int, _total: int, _message: Any) -> None:
-                    job.raise_if_cancelled()
-                    job.update(progress=index / total, step=f"{index} of {total}")
-
-                stats = pipeline.triage(conn, messages, progress=progress)
-                job.update(step="training the classifier", progress=0.99)
-                trained: dict[str, Any] = {}
-                if pipeline.classifier is not None and self.config.classifier.distil_after_backfill:
-                    trained = pipeline.classifier.train(conn)
-                    if trained.get("trained"):
-                        pipeline.classifier.save(str(self.config.model_path))
-                return {**stats.as_dict(), "notes": notes, "classifier": trained}
             finally:
                 conn.close()
 
         return self.jobs.submit("triage", work)
 
     def start_ingest(self, body: dict[str, Any]) -> Job:
+        """Check for new mail, and sort whatever arrived, as one job.
+
+        Sorting is on by default because fetching alone leaves new mail sitting
+        unsorted until someone thinks to press a second button. `sort: false`
+        keeps the old fetch-only behaviour.
+        """
         account = body.get("account")
         path = body.get("path")
         limit = body.get("limit")
         reset = bool(body.get("reset"))
+        sort = body.get("sort", True) is not False
+        use_llm = not bool(body.get("no_llm"))
 
         def work(job: Job) -> dict[str, Any]:
-            from bmail.ingest import build_source, ingest
-
-            conn = self.write()
-            try:
-                own = set(self.config.owner_addresses) | repo.own_addresses(conn)
-                if path:
-                    specs = [{"name": account or "local", "provider": "file", "path": path}]
-                elif account:
-                    specs = [self.config.resolved_account(self.config.account(str(account)))]
-                else:
-                    specs = [self.config.resolved_account(e) for e in self.config.accounts]
-                if not specs:
-                    raise ApiError("no account configured and no path given")
-
-                fetched: dict[str, int] = {}
-                for index, spec in enumerate(specs, start=1):
-                    job.raise_if_cancelled()
-                    name = str(spec.get("name", "?"))
-                    job.update(step=f"reading {name}", progress=index / (len(specs) + 1))
-                    source = build_source(spec, own_addresses=own)
-                    result = ingest(
-                        conn, source, limit=int(limit) if limit else None, resume=not reset
-                    )
-                    fetched[name] = result.fetched
-                return {"fetched": fetched, "store": repo.count_messages(conn)}
-            finally:
-                conn.close()
+            # Resolved inside the job, like every other request error here: the
+            # handler only queues, and the job reports what went wrong.
+            if path:
+                specs = [{"name": account or "local", "provider": "file", "path": path}]
+            elif account:
+                specs = [self.config.resolved_account(self.config.account(str(account)))]
+            else:
+                specs = [self.config.resolved_account(e) for e in self.config.accounts]
+            if not specs:
+                raise ApiError(
+                    "no mail account set up yet: add one to config.toml "
+                    "(see docs/PROVIDERS.md), or read a file from Setup"
+                )
+            return self.sync(
+                job, specs, limit=int(limit) if limit else None, reset=reset,
+                sort=sort, use_llm=use_llm,
+            )
 
         return self.jobs.submit("ingest", work)
+
+    def sync(
+        self,
+        job: Job,
+        specs: list[dict[str, Any]],
+        *,
+        interactive: bool = True,
+        limit: int | None = None,
+        reset: bool = False,
+        sort: bool = True,
+        use_llm: bool = True,
+    ) -> dict[str, Any]:
+        """Fetch from each account, then sort what is new. Runs inside a job.
+
+        One account failing — an expired sign-in, a server that is down — does
+        not stop the others: its error is reported against its name and the
+        rest still sync. Only when every account fails does the job fail.
+        """
+        from bmail.ingest import build_source, ingest
+
+        conn = self.write()
+        try:
+            own = set(self.config.owner_addresses) | repo.own_addresses(conn)
+            fetched: dict[str, int] = {}
+            new: dict[str, int] = {}
+            errors: dict[str, str] = {}
+            fetch_share = 0.5 if sort else 1.0
+            for index, spec in enumerate(specs):
+                job.raise_if_cancelled()
+                name = str(spec.get("name", "?"))
+                job.update(step=f"checking {name}", progress=fetch_share * index / len(specs))
+                try:
+                    source = build_source(spec, own_addresses=own, interactive=interactive)
+                    result = ingest(conn, source, limit=limit, resume=not reset)
+                except BmailError as exc:
+                    conn.rollback()
+                    errors[name] = str(exc)
+                    continue
+                fetched[name] = result.fetched
+                new[name] = result.new
+            if errors and not fetched:
+                raise ApiError("; ".join(f"{name}: {error}" for name, error in errors.items()))
+
+            outcome: dict[str, Any] = {
+                "fetched": fetched,
+                "new": new,
+                "errors": errors,
+                "store": repo.count_messages(conn),
+            }
+            if sort:
+                sorted_ = self._sort(
+                    conn, job, self.pack_name, use_llm=use_llm, span=(fetch_share, 1.0)
+                )
+                outcome["sorted"] = int(sorted_.get("processed", 0))
+                outcome["triage"] = sorted_
+            return outcome
+        finally:
+            conn.close()
+
+    def _sort(
+        self,
+        conn: sqlite3.Connection,
+        job: Job,
+        pack_name: str,
+        *,
+        limit: int | None = None,
+        use_llm: bool = True,
+        retriage: bool = False,
+        span: tuple[float, float] = (0.0, 1.0),
+    ) -> dict[str, Any]:
+        """Run the pipeline over messages this pack has not seen, inside a job.
+
+        `span` is the slice of the job's progress bar this stage owns, so a
+        job that fetches first and sorts second fills one bar, not two.
+        """
+        from bmail.pipeline import build_pipeline
+
+        low, high = span
+        pack = self.pack(pack_name)
+        job.update(step="loading messages", progress=low + 0.02 * (high - low))
+        messages = repo.iter_messages(
+            conn, limit=limit, only_untriaged_for=None if retriage else pack.name
+        )
+        if not messages:
+            # Checked before the pipeline is built: building it loads the model
+            # and asks the local LLM what it is, which a quiet sync can skip.
+            return {"processed": 0, "notes": ["nothing new to triage"]}
+        pipeline, notes = build_pipeline(conn, pack, self.config, use_llm=use_llm)
+
+        total = len(messages)
+
+        def progress(index: int, _total: int, _message: Any) -> None:
+            job.raise_if_cancelled()
+            job.update(progress=low + (high - low) * index / total, step=f"sorting {index} of {total}")
+
+        stats = pipeline.triage(conn, messages, progress=progress)
+        job.update(step="training the classifier", progress=low + 0.99 * (high - low))
+        trained: dict[str, Any] = {}
+        if pipeline.classifier is not None and self.config.classifier.distil_after_backfill:
+            trained = pipeline.classifier.train(conn)
+            if trained.get("trained"):
+                pipeline.classifier.save(str(self.config.model_path))
+        return {**stats.as_dict(), "notes": notes, "classifier": trained}
 
     def start_export(self, body: dict[str, Any]) -> Job:
         kinds = [str(k) for k in (body.get("kinds") or ["xlsx"])]

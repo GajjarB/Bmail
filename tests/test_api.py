@@ -302,10 +302,61 @@ def test_ingest_runs_as_a_job(live, tmp_path):
     base, app, _config, _ = live
     mbox, _ = write_mbox(tmp_path / "more", applications=2, noise=2, seed=99)
     started = request(base, "/api/ingest", token=app.token, method="POST",
-                      body={"path": str(mbox), "account": "second"})[1]
+                      body={"path": str(mbox), "account": "second", "no_llm": True})[1]
     job = _await_job(base, app, started["id"])
     assert job["status"] == "done", job.get("error")
-    assert sum(job["result"]["fetched"].values()) > 0
+    result = job["result"]
+    assert sum(result["fetched"].values()) > 0
+
+
+def test_checking_for_mail_also_sorts_what_arrived(live, tmp_path):
+    """Fetching alone left new mail unsorted until someone pressed a second
+    button. One job now does both, and says how many of each."""
+    base, app, config, _ = live
+    mbox, _ = write_mbox(tmp_path / "more", applications=2, noise=2, seed=99)
+    started = request(base, "/api/ingest", token=app.token, method="POST",
+                      body={"path": str(mbox), "account": "second", "no_llm": True})[1]
+    result = _await_job(base, app, started["id"])["result"]
+    assert result["new"]["second"] > 0
+    assert result["sorted"] == result["new"]["second"]
+    conn = connect(config.database)
+    try:
+        assert repo.iter_messages(conn, only_untriaged_for="job-seeker") == []
+    finally:
+        conn.close()
+
+    again = request(base, "/api/ingest", token=app.token, method="POST",
+                    body={"path": str(mbox), "account": "second", "no_llm": True})[1]
+    quiet = _await_job(base, app, again["id"])["result"]
+    assert (quiet["new"]["second"], quiet["sorted"]) == (0, 0)
+
+
+def test_fetch_only_is_still_possible(live, tmp_path):
+    base, app, _config, _ = live
+    mbox, _ = write_mbox(tmp_path / "more", applications=1, noise=1, seed=7)
+    started = request(base, "/api/ingest", token=app.token, method="POST",
+                      body={"path": str(mbox), "account": "third", "sort": False})[1]
+    result = _await_job(base, app, started["id"])["result"]
+    assert result["new"]["third"] > 0
+    assert "sorted" not in result
+
+
+def test_one_failing_account_does_not_stop_the_others(live, tmp_path):
+    from bmail.jobs import Job
+
+    _base, app, _config, _ = live
+    mbox, _ = write_mbox(tmp_path / "more", applications=1, noise=1, seed=5)
+    specs = [
+        {"name": "down", "provider": "imap", "host": "127.0.0.1", "port": 1,
+         "username": "me", "password": "x"},
+        {"name": "fine", "provider": "file", "path": str(mbox)},
+    ]
+    result = app.sync(Job(id="t", kind="ingest"), specs, use_llm=False)
+    assert "down" in result["errors"]
+    assert result["new"]["fine"] > 0
+
+    with pytest.raises(BmailError, match="down"):
+        app.sync(Job(id="t2", kind="ingest"), specs[:1], use_llm=False)
 
 
 def test_export_runs_as_a_job(live, tmp_path):
