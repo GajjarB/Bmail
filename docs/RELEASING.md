@@ -18,8 +18,9 @@ suite fails if the files disagree with each other, so the number the app reports
 is always the number it was released as.
 
 To try the build without releasing anything, run **release** from the Actions
-tab: the same installers land on a draft release named after the current
-version.
+tab, or push to the `release` branch (`git push origin main:release`), useful
+where tags cannot be pushed. The same installers land on a draft release named
+after the current version; publishing that draft creates its tag.
 
 ## What gets built
 

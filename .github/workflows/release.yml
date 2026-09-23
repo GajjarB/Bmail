@@ -3,13 +3,17 @@ name: release
 # Push a tag like v0.2.0 (after `python packaging/set_version.py 0.2.0`) and
 # this builds installers for macOS, Windows and Linux and attaches them to a
 # draft GitHub Release. Nothing is published until the draft is published by
-# hand. Run it from the Actions tab to try a build without tagging.
+# hand. Run it from the Actions tab, or push to the `release` branch, to build
+# without tagging.
 #
 # Signing is optional and switched on by secrets; see docs/RELEASING.md.
 
 on:
   push:
     tags: ["v*"]
+    # Also a push to the `release` branch, for where tags cannot be pushed:
+    # `git push origin main:release` builds the same draft release.
+    branches: [release]
   workflow_dispatch:
 
 permissions:
