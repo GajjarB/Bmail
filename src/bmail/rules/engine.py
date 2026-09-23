@@ -11,6 +11,7 @@ is a model call that never happens.
 
 from __future__ import annotations
 
+import re
 import sqlite3
 import time
 from dataclasses import dataclass, field
@@ -237,12 +238,48 @@ class RulesEngine:
 # --------------------------------------------------------------------------- #
 
 
+_GREETING = re.compile(
+    r"^(dear|hi|hello|hey|good (morning|afternoon|evening)|hallo|liebe[rs]?|"
+    r"sehr geehrte[rs]?|guten (tag|morgen|abend)|moin|servus)\b",
+    re.IGNORECASE,
+)
+_SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
+
+
 def _first_line(message: Message, limit: int = 120) -> str:
+    """The first sentence that says something: the summary under a Brief entry.
+
+    It used to be the first line over fifteen characters, which in formal mail
+    is the greeting — "Sehr geehrte Bewerberin, sehr geehrter Bewerber," told
+    you nothing about what the university wanted.
+    """
     for line in message.body_text.split("\n"):
-        stripped = line.strip()
+        stripped = " ".join(line.split())
+        # "Hi Anna, could you send…" keeps what follows the greeting; a line
+        # that is only greetings ("Sehr geehrte Bewerberin, sehr geehrter
+        # Bewerber,") is skipped whole.
+        while _GREETING.match(stripped):
+            head, _, rest = stripped.partition(",")
+            if len(head) >= 60:
+                break
+            stripped = rest.strip()
         if len(stripped) > 15:
-            return stripped[:limit]
-    return (message.subject or "")[:limit]
+            # A short opening sentence rarely carries the ask; take the next
+            # one too while there is room.
+            summary = ""
+            for sentence in _SENTENCE_END.split(stripped):
+                if summary and (len(summary) >= 50 or len(summary) + len(sentence) >= limit):
+                    break
+                summary = f"{summary} {sentence}".strip()
+            return _clip(summary, limit)
+    return _clip(message.subject or "", limit)
+
+
+def _clip(text: str, limit: int) -> str:
+    if len(text) <= limit:
+        return text
+    cut = text[:limit].rsplit(" ", 1)[0]
+    return cut.rstrip(",;:") + "…"
 
 
 def _sentence_around(text: str, span: tuple[int, int]) -> str:

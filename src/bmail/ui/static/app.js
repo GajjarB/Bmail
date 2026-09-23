@@ -470,20 +470,10 @@ async function viewToday() {
   const today = new Date().toLocaleDateString(undefined,
     { weekday: "long", day: "numeric", month: "long" });
 
-  // The window picker belongs with the date it qualifies, not stranded at the
-  // bottom of the page — it changes everything above it.
   const header = el("div", { class: "bar-row flush" },
-    el("span", { class: "eyebrow", text: today }),
-    el("span", { class: "grow" }),
-    state.verdicts.total
-      ? el("select", { onchange: (e) => {
-          localStorage.setItem("bmail.window", e.target.value); render();
-        } },
-        [[1, "Today"], [7, "Last 7 days"], [30, "Last 30 days"], [3650, "Everything"]]
-          .map(([value, label]) => el("option", { value, selected: value === days }, label)))
-      : null);
+    el("span", { class: "eyebrow", text: today }));
 
-  const nodes = [header, ...headlineFor(counts, days, state)];
+  const nodes = [header, ...headlineFor(counts, state)];
 
   if (brief.needs_you.length) {
     const more = (counts.needs_you || 0) - brief.needs_you.length;
@@ -537,11 +527,18 @@ async function viewToday() {
     }
   }
 
-  if (counts.archived) {
-    nodes.push(section("Filed", counts.archived, "archive"));
+  // Needs you is everything still open, whenever it arrived. The period only
+  // decides how far back "filed" looks, so its picker lives here, with it.
+  if (state.verdicts.total) {
+    nodes.push(section("Filed", counts.archived || 0, "archive"));
     nodes.push(el("div", { class: "bar-row" },
       el("span", { class: "meta", text: "Newsletters, alerts and automatic acknowledgements." }),
       el("span", { class: "grow" }),
+      el("select", { "aria-label": "Filed in", onchange: (e) => {
+          localStorage.setItem("bmail.window", e.target.value); render();
+        } },
+        [[1, "Today"], [7, "Last 7 days"], [30, "Last 30 days"], [3650, "Everything"]]
+          .map(([value, label]) => el("option", { value, selected: value === days }, label))),
       el("button", { class: "sm", onclick: () => go("mail") }, "Open")));
   }
 
@@ -554,7 +551,7 @@ const section = (label, count, glyph) =>
     el("span", { text: label }),
     count != null ? el("span", { class: "n", text: String(count) }) : null);
 
-function headlineFor(counts, days, state) {
+function headlineFor(counts, state) {
   const needs = counts.needs_you || 0;
   if (!state.verdicts.total) {
     return [
@@ -574,17 +571,6 @@ function headlineFor(counts, days, state) {
         el("span", { class: "n", text: String(needs) }),
         needs === 1 ? " needs you" : " need you"),
       extra.length ? el("p", { class: "subhead", text: extra.join(" · ") }) : null,
-    ];
-  }
-  const outstanding = state.verdicts.action_required || 0;
-  if (outstanding && days < 3650) {
-    return [
-      el("h1", { class: "headline", text: "Clear for this window" }),
-      el("p", { class: "subhead", text: `${outstanding} open across everything Bmail has read.` }),
-      el("div", { class: "bar-row" },
-        el("button", { class: "sm", onclick: () => {
-          localStorage.setItem("bmail.window", "3650"); render();
-        } }, "Show everything")),
     ];
   }
   return [
@@ -607,7 +593,12 @@ function briefCard(item) {
       timing ? el("span", { class: "flag when", "data-tone": tone, text: timing }) : null),
     el("div", { class: "card-title", text: item.title }),
     el("div", { class: "card-org", text: org }),
-    item.evidence ? el("blockquote", { class: "quote", text: item.evidence }) : null);
+    // The quoted source sentence when a fact was extracted; otherwise what the
+    // mail says. A personal note has no date to quote, and a card with only a
+    // subject line made you open it to find out what was being asked.
+    item.evidence ? el("blockquote", { class: "quote", text: item.evidence })
+      : item.detail && item.detail !== org ? el("p", { class: "card-note", text: item.detail })
+      : null);
 }
 
 /* --- Cases ------------------------------------------------------------ */
@@ -1390,7 +1381,7 @@ function paintNav() {
   // volume". A count of all mail tells nobody anything.
   const groups = [
     ["Your mail", [
-      ["today", "Today", s.verdicts.action_required || 0, "urgent"],
+      ["today", "Today", s.needs_you ?? (s.verdicts.action_required || 0), "urgent"],
       ["cases", s.entity_plural[0].toUpperCase() + s.entity_plural.slice(1),
         s.cases.stalled || 0, "quiet"],
       ["mail", "Mail", 0, null],

@@ -684,7 +684,8 @@ def build_parser() -> argparse.ArgumentParser:
     triage.set_defaults(func=cmd_triage)
 
     brief = subparsers.add_parser("brief", help="what needs you, in one screen")
-    brief.add_argument("--days", type=int, default=1, help="window in days")
+    brief.add_argument("--days", type=int, default=1,
+                       help="how far back to list filed mail; open requests show whenever they arrived")
     brief.add_argument("--limit", type=int, default=8)
     brief.add_argument("--format", choices=("text", "md", "json"), default="text")
     brief.set_defaults(func=cmd_brief)

@@ -105,8 +105,14 @@ class BmailApp:
         pack = self.pack(_one(query, "pack"))
         conn = self.read()
         try:
+            from bmail.outputs.brief import build_brief
+
             counts = repo.count_messages(conn)
             stats = repo.verdict_stats(conn, pack.name)
+            # What the Today badge shows: requests still open, the same number
+            # the Today headline states. The count of every request ever made
+            # is history, not something waiting on you.
+            needs_you = build_brief(conn, pack, limit=0).counts["needs_you"]
             cases = repo.list_cases(conn, pack.name)
             accounts = [dict(row) for row in repo.list_accounts(conn)]
             runs = repo.recent_runs(conn, 5)
@@ -148,6 +154,7 @@ class BmailApp:
             "states": pack.states,
             "messages": counts,
             "verdicts": stats,
+            "needs_you": needs_you,
             "cases": {
                 "total": len(cases),
                 "open": sum(1 for case in cases if not case.closed),

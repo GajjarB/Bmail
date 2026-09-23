@@ -387,6 +387,57 @@ def iter_verdicts(
     return [(row_to_verdict(row), row) for row in rows]
 
 
+def open_item_candidates(
+    conn: sqlite3.Connection, pack: str
+) -> list[tuple[Verdict, sqlite3.Row]]:
+    """Every verdict that asked for something, with what decides if it still does.
+
+    Each row carries the message's date and thread, and — when the message
+    belongs to a case — that case's id and the date of its latest inbound mail,
+    so the Brief can tell an open request from one the case has moved past.
+    """
+    rows = conn.execute(
+        """
+        SELECT v.*, m.subject, m.from_addr, m.from_name, m.date_utc, m.thread_id,
+               k.case_id AS case_id, k.last_inbound_at AS case_last_inbound
+        FROM verdicts v
+        JOIN messages m ON m.message_id = v.message_id
+        LEFT JOIN (
+            SELECT cm.message_id, cm.case_id, c.last_inbound_at
+            FROM case_messages cm JOIN cases c ON c.id = cm.case_id
+            WHERE c.pack = ?
+        ) k ON k.message_id = v.message_id
+        WHERE v.pack = ? AND m.direction = 'inbound'
+          AND (v.action_required = 1 OR v.urgency != 'none')
+        ORDER BY m.date_utc DESC
+        """,
+        (pack, pack),
+    ).fetchall()
+    seen: set[str] = set()
+    result: list[tuple[Verdict, sqlite3.Row]] = []
+    for row in rows:
+        if row["message_id"] in seen:  # a message in two cases: once is enough
+            continue
+        seen.add(row["message_id"])
+        result.append((row_to_verdict(row), row))
+    return result
+
+
+def last_reply_by_thread(conn: sqlite3.Connection) -> dict[str, datetime]:
+    """thread id -> when you last wrote in that thread."""
+    rows = conn.execute(
+        "SELECT thread_id, MAX(date_utc) AS at FROM messages "
+        "WHERE direction = 'outbound' AND thread_id IS NOT NULL AND thread_id != '' "
+        "GROUP BY thread_id"
+    )
+    replies: dict[str, datetime] = {}
+    for row in rows:
+        at = _text_to_dt(row["at"])
+        if at is not None:
+            replies[row["thread_id"]] = at
+    return replies
+
+
 def verdict_stats(conn: sqlite3.Connection, pack: str) -> dict[str, Any]:
     by_stage = {
         r["stage"]: r["c"]

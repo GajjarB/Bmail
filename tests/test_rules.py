@@ -271,3 +271,20 @@ def test_two_roles_at_one_company_stay_separate(conn, pack, tmp_path):
     roles = {case.role for case in cases}
     assert len(cases) == 3, f"applications merged: {[(c.org, c.role) for c in cases]}"
     assert "Backend Developer" in roles and "Data Engineer" in roles
+
+
+@pytest.mark.parametrize(("body", "summary"), [
+    ("Sehr geehrte Bewerberin, sehr geehrter Bewerber,\n\nIhre Bewerbung für MSc Data "
+     "Science ist unvollständig. Bitte reichen Sie noch Unterlagen nach.",
+     "Ihre Bewerbung für MSc Data Science ist unvollständig."),
+    ("Dear applicant,\n\nYour application is incomplete. Please upload your transcript.",
+     "Your application is incomplete. Please upload your transcript."),
+    ("Hi Anna, could you send your transcript by Friday? Thanks.",
+     "could you send your transcript by Friday? Thanks."),
+])
+def test_the_summary_is_what_the_mail_says_not_its_greeting(body, summary):
+    """The summary under each Brief entry was the first line over fifteen
+    characters, which in formal mail is the greeting."""
+    from bmail.rules.engine import _first_line
+
+    assert _first_line(parse_message(make_raw(body=body))) == summary
