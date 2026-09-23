@@ -6,7 +6,7 @@
     "updater": {
       "pubkey": "__TAURI_UPDATER_PUBKEY__",
       "endpoints": [
-        "https://github.com/GajjarB/Bmail/releases/latest/download/latest.json"
+        "https://github.com/__RELEASES_REPO__/releases/latest/download/latest.json"
       ],
       "windows": {
         "installMode": "passive"

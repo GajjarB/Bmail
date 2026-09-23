@@ -97,6 +97,9 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           TAURI_UPDATER_PUBKEY: ${{ vars.TAURI_UPDATER_PUBKEY }}
+          RELEASES_REPO: ${{ vars.RELEASES_REPO }}
+          RELEASES_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          REPO_IS_PRIVATE: ${{ github.event.repository.private }}
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
@@ -112,13 +115,34 @@ jobs:
               { echo "$name<<__END__"; echo "$value"; echo "__END__"; } >> "$GITHUB_ENV"
             fi
           done
+          # Where installers are published, and so where the app looks for
+          # updates: this repository, or — to keep the code private — a public
+          # one holding only releases, named by the RELEASES_REPO variable.
+          target="${RELEASES_REPO:-$GITHUB_REPOSITORY}"
+          echo "owner=${target%%/*}" >> "$GITHUB_OUTPUT"
+          echo "repo=${target#*/}" >> "$GITHUB_OUTPUT"
+          if [ "$target" != "$GITHUB_REPOSITORY" ]; then
+            if [ -z "$RELEASES_TOKEN" ]; then
+              echo "::error::RELEASES_REPO is $target, but no RELEASES_TOKEN secret can write to it. See docs/RELEASING.md."
+              exit 1
+            fi
+            # This commit does not exist over there; tag that repository's own main.
+            echo "commitish=main" >> "$GITHUB_OUTPUT"
+            echo "Publishing to $target"
+          else
+            echo "commitish=" >> "$GITHUB_OUTPUT"
+          fi
           # Updates need both halves of the key: the private one signs what is
           # built here, the public one is built into the app to check it.
           if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ] && [ -n "$TAURI_UPDATER_PUBKEY" ]; then
-            sed "s|__TAURI_UPDATER_PUBKEY__|$TAURI_UPDATER_PUBKEY|" \
+            sed -e "s|__TAURI_UPDATER_PUBKEY__|$TAURI_UPDATER_PUBKEY|" \
+                -e "s|__RELEASES_REPO__|$target|" \
               desktop/src-tauri/tauri.updater.conf.json > desktop/src-tauri/tauri.updater.local.json
             echo "args=--features updater --config src-tauri/tauri.updater.local.json" >> "$GITHUB_OUTPUT"
-            echo "Auto-update: on"
+            echo "Auto-update: on, from https://github.com/$target/releases"
+            if [ "$target" = "$GITHUB_REPOSITORY" ] && [ "$REPO_IS_PRIVATE" = "true" ]; then
+              echo "::warning::This repository is private, so installed copies cannot fetch updates from it. Make it public, or set RELEASES_REPO to a public repository (docs/RELEASING.md)."
+            fi
           else
             echo "args=" >> "$GITHUB_OUTPUT"
             echo "Auto-update: off (no update-signing key; see docs/RELEASING.md)"
@@ -126,8 +150,15 @@ jobs:
 
       - uses: tauri-apps/tauri-action@v0
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # The built-in token can only write to this repository.
+          GITHUB_TOKEN: ${{ secrets.RELEASES_TOKEN || secrets.GITHUB_TOKEN }}
         with:
+          owner: ${{ steps.signing.outputs.owner }}
+          repo: ${{ steps.signing.outputs.repo }}
+          releaseCommitish: ${{ steps.signing.outputs.commitish }}
+          # Windows updates through the per-user installer, which needs no
+          # administrator rights; the .msi would ask for them on every update.
+          updaterJsonPreferNsis: true
           projectPath: desktop
           tauriScript: npx tauri
           args: --target ${{ matrix.target }} ${{ steps.signing.outputs.args }}

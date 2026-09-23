@@ -60,26 +60,56 @@ Everything below is optional. Without it the workflow still builds working,
 
 ### Automatic updates
 
-With an update key, the app checks GitHub for a newer published release when
-it starts, downloads it in the background, and installs it when the window is
+With an update key, the app checks for a newer published release when it
+starts, downloads it in the background, and installs it when the window is
 closed. Every download is verified against the public key built into the app;
-without a key the updater is not built in at all.
+without a key the updater is not built in at all. Copies installed before the
+key existed (0.1.0) have no updater: their owners install the next version once
+by hand, and it updates itself from then on.
 
-1. Generate a key pair once, and keep the private half safe. Lose it, and
-   installed copies can never be updated again.
+**1. Make a key pair, once, on your own computer.** Needs Node.js; no checkout.
 
-   ```bash
-   cd desktop && npm ci
-   npx tauri signer generate -w ~/.bmail-update.key
-   ```
+```bash
+npx @tauri-apps/cli@2 signer generate -w ~/.bmail-update.key
+```
 
-2. In the repository's **Settings → Secrets and variables → Actions**:
-   - secret `TAURI_SIGNING_PRIVATE_KEY`: the contents of `~/.bmail-update.key`
-   - secret `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`: its password
-   - variable `TAURI_UPDATER_PUBKEY`: the contents of `~/.bmail-update.key.pub`
+Choose a password when asked. This writes `~/.bmail-update.key` (private) and
+`~/.bmail-update.key.pub` (public). Back the private key and its password up,
+in a password manager for instance: lose either, and installed copies can
+never be updated again, since nothing else can sign an update they will accept.
 
-Updates are only offered from **published** releases (drafts are invisible to
-the updater), through `latest.json`, which the workflow attaches.
+**2. Give the build the key.** In the repository's **Settings → Secrets and
+variables → Actions**:
+
+| Kind | Name | Value |
+|---|---|---|
+| Secret | `TAURI_SIGNING_PRIVATE_KEY` | the whole contents of `~/.bmail-update.key` |
+| Secret | `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | its password |
+| Variable | `TAURI_UPDATER_PUBKEY` | the whole contents of `~/.bmail-update.key.pub` |
+
+**3. Put the releases where an app can reach them.** An installed app asks for
+updates without signing in, and a private repository answers "not found". One
+of:
+
+- **Make this repository public** (Settings → General → Danger Zone). Nothing
+  else to set.
+- **Keep the code private and publish to a public releases repository.**
+  1. Create a public repository, say `GajjarB/Bmail-releases`, with a README
+     so it has a `main` branch.
+  2. Create a fine-grained personal access token (GitHub → Settings →
+     Developer settings → Fine-grained tokens) for that repository only, with
+     **Contents: Read and write**.
+  3. Here, add the variable `RELEASES_REPO` = `GajjarB/Bmail-releases` and the
+     secret `RELEASES_TOKEN` = the token.
+  4. Point the README's Download link at that repository's releases.
+
+The build log says which is in effect ("Auto-update: on, from …"), and warns if
+updates would come from a private repository.
+
+**4. Release as usual.** Updates are offered only from **published** releases;
+drafts are invisible to the updater. The workflow attaches `latest.json` and a
+signature for each installer. Windows updates through the per-user
+`-setup.exe`, so no update asks for administrator rights.
 
 ### macOS
 
