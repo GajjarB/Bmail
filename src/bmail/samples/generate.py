@@ -336,12 +336,19 @@ def write_mbox(
     applications: int = 24,
     noise: int = 40,
     owner: str = "you@example.com",
+    end: datetime | None = None,
 ) -> tuple[Path, Path]:
-    """Write `sample.mbox` plus `sample.labels.jsonl` and return both paths."""
+    """Write `sample.mbox` plus `sample.labels.jsonl` and return both paths.
+
+    Every date in the corpus is placed relative to `end`, which defaults to now.
+    The output is a pure function of the seed *and* `end`: pass the same two and
+    the bytes are identical. Leave `end` to the clock and two runs that straddle
+    a second boundary differ in their Date headers.
+    """
     directory = Path(directory).expanduser()
     directory.mkdir(parents=True, exist_ok=True)
     messages, labels = generate_corpus(
-        seed=seed, applications=applications, noise=noise, owner=owner
+        seed=seed, applications=applications, noise=noise, owner=owner, end=end
     )
 
     mbox_path = directory / "sample.mbox"

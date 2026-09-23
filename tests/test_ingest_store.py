@@ -101,9 +101,14 @@ def test_the_sample_corpus_is_reproducible(tmp_path):
     """The generator documents itself as seeded, and the evaluation split is
     keyed on message ids — so two runs of the same seed must be identical."""
     import hashlib
+    from datetime import datetime, timezone
+
+    # Pinned: the corpus is dated relative to `end`, and reading the clock twice
+    # made this fail whenever the two runs straddled a second boundary.
+    end = datetime(2026, 9, 1, 9, 0, tzinfo=timezone.utc)
 
     def digest(directory, seed):
-        mbox, labels = write_mbox(directory, seed=seed, applications=5, noise=5)
+        mbox, labels = write_mbox(directory, seed=seed, applications=5, noise=5, end=end)
         return (
             hashlib.sha256(mbox.read_bytes()).hexdigest(),
             hashlib.sha256(labels.read_bytes()).hexdigest(),
