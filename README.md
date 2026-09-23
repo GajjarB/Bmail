@@ -46,7 +46,7 @@
   <sub>
     Thirty seconds, looping. <b><a href="media/bmail-film-30s.mp4">Watch with sound</a></b> ·
     <a href="media/bmail-film.mp4">the full 1:29 tour</a><br>
-    Every frame is the running app on the sample corpus no mockups. The films are
+    Every frame is the running app on the sample corpus, with no mockups. The films are
     produced by a script, so they are remade whenever the interface changes (<a href="tools/">tools/</a>).
   </sub>
 </p>
@@ -55,9 +55,9 @@
 
 | | |
 |---|---|
-| **Finds what needs you** | Interview invitations, assessments with deadlines, missing documents surfaced first, each with the exact sentence that proves it. |
-| **Tracks every case** | Each application, candidate or invoice gets a state machine. Two to six emails per case, out of order, in two languages resolved into one row. |
-| **Notices silence** | *"Helios Robotics silent 34 days."* Ghosting detection tells you where one follow-up is worth sending. |
+| **Finds what needs you** | Interview invitations, assessments with deadlines, missing documents: surfaced first, each with the exact sentence that proves it. |
+| **Tracks every case** | Each application, candidate or invoice gets a state machine. Two to six emails per case, out of order, in two languages, resolved into one row. |
+| **Notices silence** | *"Helios Robotics: silent 34 days."* Ghosting detection tells you where one follow-up is worth sending. |
 | **Stays current** | While the app is open, IMAP mail arrives within seconds (IDLE push); Gmail and Outlook are checked every few minutes. |
 | **Never leaves your laptop** | No server, no account, no telemetry. The model runs locally, or not at all. |
 | **Shows its working** | Every extracted date carries its source sentence, checked against the email. A date the email doesn't contain is dropped, not shown. |
@@ -81,9 +81,9 @@ NEEDS YOU
     Mon 14 Sep 09:00 UTC
     evidence: "We propose 14 September 2026 at 10:00 CET."
 
-STALLED worth one follow-up
- · Helios Robotics Backend Developer silent 34 days · applied
- · Weser Data GmbH Data Engineer silent 27 days · acknowledged
+STALLED: worth one follow-up
+ · Helios Robotics · Backend Developer · silent 34 days · applied
+ · Weser Data GmbH · Data Engineer · silent 27 days · acknowledged
 ```
 
 ## Why this exists
@@ -92,12 +92,12 @@ STALLED worth one follow-up
 
 | Problem | What it actually is | Solved by |
 |---|---|---|
-| **Volume** 100+ a day, most irrelevant | A filtering problem | Rules plus a small classifier. Cheap. |
-| **Comprehension** long threads, buried asks | A summarisation problem | A language model. |
-| **State** *"did that company ever reply?"* | A **stateful tracking** problem | Entity resolution and a state machine not summarisation. |
+| **Volume:** 100+ a day, most irrelevant | A filtering problem | Rules plus a small classifier. Cheap. |
+| **Comprehension:** long threads, buried asks | A summarisation problem | A language model. |
+| **State:** *"did that company ever reply?"* | A **stateful tracking** problem | Entity resolution and a state machine, not summarisation. |
 
 Nobody solves the third one well. Track 90 roles and each generates two to six
-emails acknowledgement, portal invite, assessment link, scheduling,
+emails: acknowledgement, portal invite, assessment link, scheduling,
 rejection. That is 200–500 messages of pure state change, arriving out of
 order, from applicant-tracking systems that all write differently. No human
 holds that, and a spreadsheet holds only what you remember to type in. That is
@@ -109,11 +109,11 @@ the gap Bmail fills.
   *restricted*: an app that stores or transmits that data on servers needs an
   annual third-party security assessment. A desktop app that never ships mail
   content anywhere sidesteps it entirely.
-- **GDPR.** Your inbox holds personal data about *other people* recruiters,
+- **GDPR.** Your inbox holds personal data about *other people*: recruiters,
   professors, candidates. Process it locally and, for personal use, there is no
   processor at all.
 - **Unit economics.** Backfilling three years of mail is hundreds of thousands
-  of tokens exactly the workload cloud APIs punish. Locally it is a warm
+  of tokens, exactly the workload cloud APIs punish. Locally it is a warm
   laptop for an hour, once.
 
 More in [docs/PRIVACY.md](docs/PRIVACY.md).
@@ -129,7 +129,7 @@ python -m venv .venv && source .venv/bin/activate
 pip install -e .
 ```
 
-**Try it in one minute, with no credentials** a synthetic English/German
+**Try it in one minute, with no credentials,** using a synthetic English/German
 corpus with ground truth:
 
 ```bash
@@ -157,19 +157,19 @@ pip install -e '.[all]'
 
 For Stage 3, install [Ollama](https://ollama.com) and pull the model
 `bmail doctor` suggests for your hardware. **Everything except Stage 3 works
-without it** Bmail falls back to rules plus the classifier and says so.
+without it.** Bmail falls back to rules plus the classifier and says so.
 
 </details>
 
 ## Connect your mail
 
-Start with a file a Gmail Takeout export or any `.mbox` because it needs no
+Start with a file (a Gmail Takeout export or any `.mbox`), because it needs no
 OAuth and no rate limits. Then add live accounts to `config.toml`:
 
 | Source | How it stays current | Setup |
 |---|---|---|
-| **File** mbox, Maildir, `.eml` | Read once, on demand | None |
-| **IMAP** Yahoo, GMX, iCloud, university mail | **Live**: the server announces new mail (IDLE) and it is sorted within seconds | An app password, kept in the OS keychain |
+| **File:** mbox, Maildir, `.eml` | Read once, on demand | None |
+| **IMAP:** Yahoo, GMX, iCloud, university mail | **Live**: the server announces new mail (IDLE) and it is sorted within seconds | An app password, kept in the OS keychain |
 | **Gmail** | Checked on an interval, 5 minutes by default | A free Google Cloud OAuth client |
 | **Outlook / Microsoft 365** | Checked on an interval | A free Entra app registration |
 
@@ -195,7 +195,7 @@ cd desktop/src-tauri && cargo build --release && ./target/release/bmail-desktop
 
 It is a briefing rather than a dashboard:
 
-- **Today** opens with a sentence *"Eighteen things need you."* then the
+- **Today** opens with a sentence, *"Eighteen things need you."*, then the
   things themselves, each with its deadline and the quoted sentence behind it.
 - **Applications** draws every case's state machine as a rail, filled only as
   far as it actually got.
@@ -206,7 +206,7 @@ It is a briefing rather than a dashboard:
 Two densities, **Studio** and **Compact**, light and dark. Fully keyboard
 driven: `j`/`k` to move, `↵` to open, `esc` to close, `/` to search, `c` to
 check for mail, `⌘K` for everything, `?` for the rest. Vanilla HTML, CSS and
-JavaScript no framework, no build step, and a test asserts it makes no
+JavaScript: no framework, no build step, and a test asserts it makes no
 external requests. See [docs/UI.md](docs/UI.md).
 
 ## How it works
@@ -224,7 +224,7 @@ Stage 4  entity resolution + a per-pack state machine
 
 **Deterministic first.** Applicant-tracking systems send the same text with
 three fields swapped. Fingerprint the boilerplate once and extraction becomes a
-regex no model call, milliseconds, deterministic. `bmail templates` shows how
+regex: no model call, milliseconds, deterministic. `bmail templates` shows how
 much of your own mail that covers; it is usually more than people expect.
 
 **Asymmetric routing.** Missing an interview invitation is catastrophic; a false
@@ -261,7 +261,7 @@ bmail export --xlsx tracker.xlsx    # Overview / Cases / Timeline / Deadlines / 
 bmail export --ics deadlines.ics    # interviews as events, deadlines with alarms
 bmail export --csv ./out
 bmail notion --database <id>        # fill a Notion database you already have
-bmail labels                        # plan provider labels writes nothing until you confirm
+bmail labels                        # plan provider labels; writes nothing until you confirm
 ```
 
 ## Evaluation
@@ -275,7 +275,7 @@ bmail eval labels.jsonl --ablate
 Per-class precision, recall and F1, with **recall on `action_required`** as the
 headline number; precision@5 on the brief; field-level accuracy (exact on dates
 including time zone, fuzzy on organisation names); a hallucination rate; and
-latency across rules-only, +classifier, +LLM and LLM-on-everything, for German
+latency, across rules-only, +classifier, +LLM and LLM-on-everything, for German
 and English separately. See [docs/EVALUATION.md](docs/EVALUATION.md).
 
 ## Security
@@ -285,7 +285,7 @@ not hypothetical.
 
 - **The model has no tools.** It emits JSON; every side effect happens in Python
   from validated fields.
-- **The body is data, not instructions** fenced, with the delimiters stripped
+- **The body is data, not instructions:** fenced, with the delimiters stripped
   from the content first.
 - **Nothing is fetched.** URLs are reduced to their host before reaching a
   prompt: no tracking pixels, no SSRF.
@@ -328,7 +328,7 @@ not hypothetical.
 <details>
 <summary><b>Use it as a library</b></summary>
 
-The core is importable and headless the CLI is a client of it:
+The core is importable and headless; the CLI is a client of it:
 
 ```python
 from bmail.store.db import connect
@@ -355,12 +355,12 @@ detection; Excel, CSV, ICS and Notion export; Gmail label and Outlook category
 write-back; the evaluation harness and ablations; the app in the browser and in
 a native window.
 
-**Not built yet:** `sqlite-vec` embedding storage, and signed installers —
+**Not built yet:** `sqlite-vec` embedding storage, and signed installers:
 signing needs per-developer Apple and Windows certificates that cannot live in a
 repository.
 
 **Not planned: compose and send.** The moment Bmail becomes a mail client the
-project doubles rendering, offline sync, threading, MIME edge cases. Bmail
+project doubles: rendering, offline sync, threading, MIME edge cases. Bmail
 sits *beside* your mail client and writes back only labels and categories.
 
 ## Development
@@ -373,14 +373,14 @@ ruff check src tests
 
 The connectors are tested against a real IMAP server on a local socket and a
 fake Gmail API; the interface is tested in real Chromium through Playwright
-(skipped when it is not installed `pip install playwright && playwright
+(skipped when it is not installed; `pip install playwright && playwright
 install chromium` to run them). CI runs the suite on Python 3.10 to 3.13 and the
 browser tests on every push. The native shell needs Rust, and WebKitGTK
 on Linux: `cd desktop/src-tauri && cargo build --release`.
 
 ## Licence
 
-MIT see [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).
 
 The interface bundles two third-party assets, both free to use and redistribute,
 each shipped with its licence beside it: the **[Inter](https://rsms.me/inter/)**
