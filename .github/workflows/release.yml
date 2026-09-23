@@ -24,7 +24,32 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Publishing a draft creates its tag, and a tag starts this workflow; that
+  # build would only replace the files people are already downloading. Build
+  # for a tag only when no published release carries it yet.
+  wanted:
+    runs-on: ubuntu-latest
+    outputs:
+      build: ${{ steps.check.outputs.build }}
+    steps:
+      - id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          build=true
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            draft=$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+                      --json isDraft --jq .isDraft 2>/dev/null || echo none)
+            if [ "$draft" = false ]; then
+              build=false
+              echo "$GITHUB_REF_NAME is already published; nothing to build."
+            fi
+          fi
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+
   installers:
+    needs: wanted
+    if: needs.wanted.outputs.build == 'true'
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
     strategy:

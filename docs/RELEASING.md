@@ -20,7 +20,8 @@ is always the number it was released as.
 To try the build without releasing anything, run **release** from the Actions
 tab, or push to the `release` branch (`git push origin main:release`), useful
 where tags cannot be pushed. The same installers land on a draft release named
-after the current version; publishing that draft creates its tag.
+after the current version; publishing that draft creates its tag, and that
+tag does not build again, since its release is already out.
 
 ## What gets built
 
@@ -79,7 +80,9 @@ in a password manager for instance: lose either, and installed copies can
 never be updated again, since nothing else can sign an update they will accept.
 
 **2. Give the build the key.** In the repository's **Settings → Secrets and
-variables → Actions**:
+variables → Actions**, as **repository** secrets and variables (the
+*Environment*, *Codespaces* and *Dependabot* ones are not given to this
+workflow):
 
 | Kind | Name | Value |
 |---|---|---|
@@ -104,7 +107,9 @@ of:
   4. Point the README's Download link at that repository's releases.
 
 The build log says which is in effect ("Auto-update: on, from …"), and warns if
-updates would come from a private repository.
+updates would come from a private repository. If it says "off" although the
+key is set, the log's environment block for that step shows which value arrived
+empty.
 
 **4. Release as usual.** Updates are offered only from **published** releases;
 drafts are invisible to the updater. The workflow attaches `latest.json` and a
