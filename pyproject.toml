@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "bmail"
-version = "0.1.0"
+version = "0.1.1"
 description = "Local-first email triage engine: filters, extracts and tracks lifecycle mail without sending anything off the machine."
 readme = "README.md"
 requires-python = ">=3.10"
