@@ -45,8 +45,14 @@ Three rules follow from that, and they are worth keeping:
 - **Review** — the uncertain guesses, one at a time. A question, a big *yes*,
   and every alternative offered. Each answer becomes a training row, which is
   what makes the classifier personal within a week.
-- **Setup** — collect mail, sort it, switch pack, export, and see where things
-  live on disk.
+- **Setup** — add and remove mailboxes, choose how often to check, sort,
+  switch what is tracked, export, and see where things live on disk.
+
+A new install opens on a four-step welcome instead of an empty Today: what to
+track, where the mail is (a mailbox, an export file, or sample mail), reading
+it, and what it found. It can be skipped, and everything it asks can be changed
+later in Setup. The choice of what to track is kept by the engine, not the
+browser, so background checks sort with it too.
 
 Keyboard: `1`–`5` switch surface, `r` reloads, `c` checks for new mail, `s`
 sorts it.

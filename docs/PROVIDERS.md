@@ -1,12 +1,42 @@
 # Connecting mail accounts
 
-Start with a file. It needs no credentials, no OAuth screen and no rate limits,
-and it is the fastest way to learn what your own mail actually looks like.
+## In the app
 
-## Local files — start here
+**Setup → Add a mailbox**, or the first-run screen. Type your address and Bmail
+recognises the provider, fills in the IMAP server, and tells you what it needs:
 
-Gmail Takeout, a Thunderbird export or any `.mbox` works, as do Maildir folders
-and directories of `.eml` files.
+| Provider | Server | What to use as the password |
+|---|---|---|
+| Gmail | imap.gmail.com | An [app password](https://myaccount.google.com/apppasswords) (needs 2-Step Verification) |
+| GMX | imap.gmx.net | Your password, after switching on IMAP under Settings → POP3 & IMAP |
+| WEB.DE | imap.web.de | Your password, after switching on IMAP under Settings → POP3 & IMAP |
+| Yahoo Mail | imap.mail.yahoo.com | An app password, from Account security |
+| iCloud Mail | imap.mail.me.com | An app-specific password, from your Apple Account |
+| T-Online | secureimap.t-online.de | The e-mail password (Passwort für E-Mail-Programme) |
+| Posteo, mailbox.org | posteo.de, imap.mailbox.org | Your password |
+
+Anything else: give the server under *Server settings*; most use port 993.
+Outlook and Hotmail addresses are recognised and explained rather than tried:
+Microsoft no longer accepts passwords from apps, so they connect through
+Microsoft sign-in, set up below.
+
+Nothing is saved until a sign-in has worked. The password goes to the system
+keychain (macOS Keychain, Windows Credential Manager, GNOME Keyring or KWallet)
+and nowhere else; the other settings go to `accounts.json` in the Bmail folder,
+never into your `config.toml`. The first read goes back six months by default
+(three months, a year or everything are the other choices); after that Bmail
+keeps up with new mail. Removing a mailbox in Setup forgets its password and
+settings but keeps the mail already read.
+
+If there is no keychain service, as on some minimal Linux desktops, the app says
+so and does not save the account rather than write the password to disk.
+
+## Local files
+
+A file needs no credentials, no OAuth screen and no rate limits, and it is the
+fastest way to learn what your own mail actually looks like. A Gmail Takeout, a
+Thunderbird export or any `.mbox` works, as do Maildir folders and directories
+of `.eml` files.
 
 ```bash
 bmail ingest --path ~/Downloads/takeout/Mail/All\ mail.mbox --account archive

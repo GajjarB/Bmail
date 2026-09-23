@@ -123,7 +123,7 @@ More in [docs/PRIVACY.md](docs/PRIVACY.md).
 
 ## Quick start
 
-Python 3.10 or newer. The core needs three packages.
+Python 3.10 or newer. The core needs four packages.
 
 ```bash
 git clone https://github.com/GajjarB/Bmail.git
@@ -132,18 +132,26 @@ python -m venv .venv && source .venv/bin/activate
 pip install -e .
 ```
 
-**Try it in one minute, with no credentials,** using a synthetic English/German
-corpus with ground truth:
+Then open the app:
+
+```bash
+bmail ui                      # opens in your browser, on a loopback address
+```
+
+The first run walks you through it: pick what to track (job applications,
+university applications, candidates or invoices), connect a mailbox, and watch
+it read. No mailbox handy? **Try it with sample mail**, a made-up English and
+German job search, from the same screen.
+
+Prefer the terminal? The same, with no credentials:
 
 ```bash
 bmail init
 bmail samples --out ./sample
 bmail ingest --path ./sample/sample.mbox --account demo
 bmail triage
-bmail ui                      # opens the app in your browser, on a loopback address
+bmail brief                   # and `bmail cases` for the tracker
 ```
-
-Prefer the terminal? `bmail brief` and `bmail cases` show the same thing.
 
 <details>
 <summary><b>Optional extras</b></summary>
@@ -151,7 +159,6 @@ Prefer the terminal? `bmail brief` and `bmail cases` show the same thing.
 ```bash
 pip install -e '.[gmail]'      # Gmail
 pip install -e '.[graph]'      # Outlook and Microsoft 365
-pip install -e '.[keyring]'    # passwords in the OS keychain
 pip install -e '.[ml]'         # the trainable classifier
 pip install -e '.[html]'       # faster HTML extraction
 pip install -e '.[embeddings]'
@@ -166,15 +173,23 @@ without it.** Bmail falls back to rules plus the classifier and says so.
 
 ## Connect your mail
 
-Start with a file (a Gmail Takeout export or any `.mbox`), because it needs no
-OAuth and no rate limits. Then add live accounts to `config.toml`:
+In the app, **Setup → Add a mailbox** (or the first-run screen): type your
+address, and Bmail recognises Gmail, GMX, WEB.DE, Yahoo, iCloud, T-Online,
+Posteo and mailbox.org, fills in the server, and says what that provider needs,
+usually an app password. It signs in before saving anything, keeps the password
+in your system keychain, and reads the last six months by default. Any other
+IMAP server works too; give its address under *Server settings*.
+
+A file (a Gmail Takeout export or any `.mbox`) needs no sign-in at all. Accounts
+can also be written into `config.toml` by hand, which is how Gmail's own API and
+Outlook are connected today:
 
 | Source | How it stays current | Setup |
 |---|---|---|
 | **File:** mbox, Maildir, `.eml` | Read once, on demand | None |
-| **IMAP:** Yahoo, GMX, iCloud, university mail | **Live**: the server announces new mail (IDLE) and it is sorted within seconds | An app password, kept in the OS keychain |
-| **Gmail** | Checked on an interval, 5 minutes by default | A free Google Cloud OAuth client |
-| **Outlook / Microsoft 365** | Checked on an interval | A free Entra app registration |
+| **IMAP:** Gmail, GMX, WEB.DE, Yahoo, iCloud, university mail | **Live**: the server announces new mail (IDLE) and it is sorted within seconds | In the app: address and app password, kept in the OS keychain |
+| **Gmail API** | Checked on an interval, 5 minutes by default | A free Google Cloud OAuth client, in `config.toml` |
+| **Outlook / Microsoft 365** | Checked on an interval | A free Entra app registration, in `config.toml`; Microsoft no longer accepts app passwords |
 
 Each check fetches and sorts in one go. Background checks never open a sign-in
 window: if a token expires, the account is marked *needs you to sign in* and you
