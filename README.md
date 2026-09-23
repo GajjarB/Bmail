@@ -1,14 +1,70 @@
-# Bmail
+<p align="center">
+  <img src="media/logo.svg" width="72" height="72" alt="">
+</p>
 
-**A local-first email triage engine.** It reads your mailboxes on your own
-machine, decides what actually needs you, and turns lifecycle email — job
-applications, university admissions, candidate pipelines, invoices — into a live
-tracker you never have to type into.
+<h1 align="center">Bmail</h1>
 
-Nothing leaves your computer. No server, no account, no telemetry.
+<p align="center">
+  <b>Your inbox, read on your own machine — and turned into a tracker you never type into.</b><br>
+  A local-first email triage engine for job hunts, university applications, hiring pipelines and invoices.
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/python-3.10%20%E2%80%93%203.13-10111A" alt="Python 3.10 to 3.13">
+  <img src="https://img.shields.io/badge/licence-MIT-10111A" alt="MIT licence">
+  <img src="https://img.shields.io/badge/runs-100%25%20local-1B6644" alt="Runs entirely locally">
+  <img src="https://img.shields.io/badge/telemetry-none-1B6644" alt="No telemetry">
+</p>
+
+<p align="center">
+  <a href="#see-it">See it</a> ·
+  <a href="#quick-start">Quick start</a> ·
+  <a href="#connect-your-mail">Connect your mail</a> ·
+  <a href="#how-it-works">How it works</a> ·
+  <a href="docs/">Docs</a>
+</p>
+
+---
+
+## See it
+
+<!--
+  A real video player, with sound and controls:
+  edit this file on github.com, drag media/bmail-film-30s.mp4 onto the empty
+  line below, and commit. GitHub puts a https://github.com/user-attachments/...
+  link there, which it plays inline. Videos committed to the repository cannot
+  be played in a README; only uploaded ones can.
+-->
+
+
+<a href="media/bmail-film-30s.mp4">
+  <img src="media/film.webp" alt="Bmail reading a deadline out of an email, tracking the application and showing the sentence it came from" width="100%">
+</a>
+
+<p align="center">
+  <sub>
+    Thirty seconds, looping. <b><a href="media/bmail-film-30s.mp4">Watch with sound</a></b> ·
+    <a href="media/bmail-film.mp4">the full 1:29 tour</a><br>
+    Every frame is the running app on the sample corpus — no mockups. The films are
+    produced by a script, so they are remade whenever the interface changes (<a href="tools/">tools/</a>).
+  </sub>
+</p>
+
+## What it does
+
+| | |
+|---|---|
+| **Finds what needs you** | Interview invitations, assessments with deadlines, missing documents — surfaced first, each with the exact sentence that proves it. |
+| **Tracks every case** | Each application, candidate or invoice gets a state machine. Two to six emails per case, out of order, in two languages — resolved into one row. |
+| **Notices silence** | *"Helios Robotics — silent 34 days."* Ghosting detection tells you where one follow-up is worth sending. |
+| **Stays current** | While the app is open, IMAP mail arrives within seconds (IDLE push); Gmail and Outlook are checked every few minutes. |
+| **Never leaves your laptop** | No server, no account, no telemetry. The model runs locally, or not at all. |
+| **Shows its working** | Every extracted date carries its source sentence, checked against the email. A date the email doesn't contain is dropped, not shown. |
+
+The same brief, in the terminal:
 
 ```
-$ bmail ui        # a window; or `bmail brief` for the same thing in the terminal
+$ bmail brief
 
 Bmail brief · Tue 01 Sep 2026 09:12 UTC · pack: job-seeker
 ========================================================================
@@ -29,19 +85,6 @@ STALLED — worth one follow-up
  · Weser Data GmbH — Data Engineer — silent 27 days · acknowledged
 ```
 
-## See it
-
-![Bmail — reading a deadline out of the mail, tracking the application, showing its working](media/film.webp)
-
-*Thirty seconds, silent and looping. With sound:*
-**[the same cut as video](media/bmail-film-30s.mp4)**, or
-**[the full 1:29](media/bmail-film.mp4)**, which also covers the command
-palette, the review queue and the two densities.
-
-Every frame is the running application against the sample corpus; nothing in it
-is a mockup. All three are made by a script rather than by hand, so they can be
-remade when the interface moves: see [tools/](tools/).
-
 ## Why this exists
 
 "Too many emails" is three problems, and most tools solve one:
@@ -52,36 +95,31 @@ remade when the interface moves: see [tools/](tools/).
 | **Comprehension** — long threads, buried asks | A summarisation problem | A language model. |
 | **State** — *"did that company ever reply?"* | A **stateful tracking** problem | Entity resolution and a state machine — not summarisation. |
 
-Nobody solves the third one well. A spreadsheet solves it only for what you
-remember to type in. That is the gap Bmail fills.
+Nobody solves the third one well. Track 90 roles and each generates two to six
+emails — acknowledgement, portal invite, assessment link, scheduling,
+rejection. That is 200–500 messages of pure state change, arriving out of
+order, from applicant-tracking systems that all write differently. No human
+holds that, and a spreadsheet holds only what you remember to type in. That is
+the gap Bmail fills.
 
-The concrete version: track 90 roles, and each generates two to six emails —
-auto-acknowledgement, portal invite, assessment link, scheduling, rejection.
-That is 200–500 messages of pure state change, arriving out of order, in two
-languages, from ATS systems that all write differently. No human holds that. A
-spreadsheet holds only what you remember to update.
+### Why local is the design, not a feature
 
-## Why local is the design, not a feature
-
-- **It removes the recurring compliance cost.** Gmail's `readonly` and `modify`
-  scopes are *restricted*: an app that stores or transmits that data on servers
-  needs an annual third-party security assessment. A desktop app that never
-  ships mail content anywhere sidesteps it entirely.
+- **No recurring compliance cost.** Gmail's `readonly` and `modify` scopes are
+  *restricted*: an app that stores or transmits that data on servers needs an
+  annual third-party security assessment. A desktop app that never ships mail
+  content anywhere sidesteps it entirely.
 - **GDPR.** Your inbox holds personal data about *other people* — recruiters,
-  professors, candidates. Send it to a US API and you are a controller using a
-  processor. Process it locally and, for personal use, there is no processor at
-  all.
+  professors, candidates. Process it locally and, for personal use, there is no
+  processor at all.
 - **Unit economics.** Backfilling three years of mail is hundreds of thousands
-  of tokens — precisely the workload cloud APIs punish. Locally it is a warm
+  of tokens — exactly the workload cloud APIs punish. Locally it is a warm
   laptop for an hour, once.
 
-See [docs/PRIVACY.md](docs/PRIVACY.md).
+More in [docs/PRIVACY.md](docs/PRIVACY.md).
 
-## Install
+## Quick start
 
-Python 3.10 or newer — the test suite is run against 3.10, 3.11, 3.12 and 3.13.
-The core needs three packages (plus `tomli` on 3.10, where `tomllib` is not yet
-in the standard library).
+Python 3.10 or newer. The core needs three packages.
 
 ```bash
 git clone https://github.com/GajjarB/Bmail.git
@@ -90,70 +128,85 @@ python -m venv .venv && source .venv/bin/activate
 pip install -e .
 ```
 
-Optional extras: `pip install -e '.[ml]'` (trainable classifier),
-`'.[html]'` (faster HTML extraction), `'.[gmail]'`, `'.[graph]'` (Outlook and
-Microsoft 365), `'.[keyring]'`, `'.[embeddings]'`, or `'.[all]'`.
-
-For Stage 3, install [Ollama](https://ollama.com) and pull the model
-`bmail doctor` suggests for your hardware. **Everything except Stage 3 works
-without it** — Bmail degrades to rules plus the classifier and says so.
-
-## Try it in one minute, with no credentials
+**Try it in one minute, with no credentials** — a synthetic English/German
+corpus with ground truth:
 
 ```bash
 bmail init
-bmail samples --out ./sample        # a synthetic EN/DE corpus with ground truth
+bmail samples --out ./sample
 bmail ingest --path ./sample/sample.mbox --account demo
 bmail triage
-bmail brief
-bmail cases
+bmail ui                      # opens the app in your browser, on a loopback address
 ```
 
-Or open the window:
+Prefer the terminal? `bmail brief` and `bmail cases` show the same thing.
+
+<details>
+<summary><b>Optional extras</b></summary>
 
 ```bash
-bmail ui                      # opens a browser at a loopback address
+pip install -e '.[gmail]'      # Gmail
+pip install -e '.[graph]'      # Outlook and Microsoft 365
+pip install -e '.[keyring]'    # passwords in the OS keychain
+pip install -e '.[ml]'         # the trainable classifier
+pip install -e '.[html]'       # faster HTML extraction
+pip install -e '.[embeddings]'
+pip install -e '.[all]'
 ```
 
-Then point it at real mail. Start with a file — a Gmail Takeout export or any
-`.mbox` — because it needs no OAuth and no rate limits. Gmail, Outlook /
-Microsoft 365 and any IMAP mailbox are configured in `config.toml`; see
-[docs/PROVIDERS.md](docs/PROVIDERS.md). Once they are, the app keeps them
-current while it is open: IMAP within seconds of mail landing, Gmail and Outlook
-every few minutes, each check fetching and sorting in one go.
+For Stage 3, install [Ollama](https://ollama.com) and pull the model
+`bmail doctor` suggests for your hardware. **Everything except Stage 3 works
+without it** — Bmail falls back to rules plus the classifier and says so.
+
+</details>
+
+## Connect your mail
+
+Start with a file — a Gmail Takeout export or any `.mbox` — because it needs no
+OAuth and no rate limits. Then add live accounts to `config.toml`:
+
+| Source | How it stays current | Setup |
+|---|---|---|
+| **File** — mbox, Maildir, `.eml` | Read once, on demand | None |
+| **IMAP** — Yahoo, GMX, iCloud, university mail | **Live**: the server announces new mail (IDLE) and it is sorted within seconds | An app password, kept in the OS keychain |
+| **Gmail** | Checked on an interval, 5 minutes by default | A free Google Cloud OAuth client |
+| **Outlook / Microsoft 365** | Checked on an interval | A free Entra app registration |
+
+Each check fetches and sorts in one go. Background checks never open a sign-in
+window: if a token expires, the account is marked *needs you to sign in* and you
+do it from the button. Change the interval, or turn it off, under
+**Setup → Check automatically**. Step-by-step for each provider:
+[docs/PROVIDERS.md](docs/PROVIDERS.md).
 
 ```bash
 bmail ingest --path ~/Downloads/takeout/Mail/All\ mail.mbox --account archive
-bmail triage && bmail brief
+bmail accounts set-password uni       # IMAP password into the keychain
 ```
 
-## The window
+## The app
 
-`bmail ui` serves the app from the local daemon and opens it. There is also a
-native shell built on Tauri, for a real desktop window and installers:
+`bmail ui` serves the app from the local daemon and opens it. A native window
+built on Tauri runs the same page:
 
 ```bash
 cd desktop/src-tauri && cargo build --release && ./target/release/bmail-desktop
 ```
 
-Both run the same page against the same daemon. It is a briefing rather than a
-dashboard: **Today** opens with a sentence — *"Eighteen things need you."* —
-then the things themselves, each carrying its deadline and the quoted sentence
-that proves it. **Applications** draws every case's state machine as a rail and
-fills only the stages it actually reached. **Mail** is everything, searchable.
-**Review** asks about one uncertain guess at a time, and each answer teaches the
-classifier. Long jobs run in the background with a progress bar.
+It is a briefing rather than a dashboard:
 
-Two densities ship: **Studio**, roomier and easier to read, and **Compact**,
-which fits about half again as much on a screen. Switch in Setup. Both are
-driven from the keyboard — `j`/`k` move a cursor through the list, `↵` opens,
-`esc` closes, `/` searches, `⌘K` reaches everything from anywhere, and `?`
-lists the rest.
+- **Today** opens with a sentence — *"Eighteen things need you."* — then the
+  things themselves, each with its deadline and the quoted sentence behind it.
+- **Applications** draws every case's state machine as a rail, filled only as
+  far as it actually got.
+- **Mail** is everything, searchable.
+- **Review** asks about one uncertain guess at a time; each answer teaches the
+  classifier.
 
-The page is vanilla HTML, CSS and JavaScript with no build step and no
-framework: it is served from your own machine and has to work offline, so there
-is nothing to fetch and nothing to compile. A test asserts it makes no external
-requests at all. See [docs/UI.md](docs/UI.md) and [the film](#see-it).
+Two densities, **Studio** and **Compact**, light and dark. Fully keyboard
+driven: `j`/`k` to move, `↵` to open, `esc` to close, `/` to search, `c` to
+check for mail, `⌘K` for everything, `?` for the rest. Vanilla HTML, CSS and
+JavaScript — no framework, no build step, and a test asserts it makes no
+external requests. See [docs/UI.md](docs/UI.md).
 
 ## How it works
 
@@ -163,56 +216,51 @@ Four stages. Each may settle a message and stop; only what survives goes on.
 Stage 1  headers, contact graph, ATS template recipes, near-duplicate collapse
            └─ resolves most of an inbox with zero model calls
 Stage 2  local embeddings + a calibrated classifier
-           └─ accept when confident; escalate when not, or when the miss is expensive
+           └─ accept when confident; escalate when not, or when a miss is expensive
 Stage 3  local LLM, schema-constrained, every fact carrying its source sentence
 Stage 4  entity resolution + a per-pack state machine
 ```
 
-Three ideas do most of the work:
-
-**Deterministic first.** ATS systems send the same text with three fields
-swapped. Fingerprint the boilerplate once and extraction becomes a regex — no
-model call, milliseconds, deterministic. Run `bmail templates` on your own
-corpus; that number decides how much model you actually need, and it is usually
-higher than people expect.
+**Deterministic first.** Applicant-tracking systems send the same text with
+three fields swapped. Fingerprint the boilerplate once and extraction becomes a
+regex — no model call, milliseconds, deterministic. `bmail templates` shows how
+much of your own mail that covers; it is usually more than people expect.
 
 **Asymmetric routing.** Missing an interview invitation is catastrophic; a false
-alarm costs three seconds. So high-stakes categories escalate to the model
-regardless of confidence, and packs declare which those are.
+alarm costs three seconds. High-stakes categories go to the model regardless of
+confidence, and packs declare which those are.
 
 **Every fact shows its source.** Each extracted date arrives with the sentence
-it came from, and that sentence is checked against the email. A date the email
-does not contain is dropped, not displayed. This makes hallucination visible and
-measurable instead of silent — the single highest-value decision in the project.
+it came from, and that sentence is checked against the email. This makes
+hallucination visible and measurable instead of silent.
 
 Full detail in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Domain packs
 
 Job seekers, university applicants and recruiters are the same machine with
-different vocabulary — so that is made explicit. A pack is a YAML file declaring
-categories, a case key, a state machine and KPIs. The engine is domain-agnostic.
+different vocabulary. A pack is a YAML file declaring categories, a case key, a
+state machine and KPIs; the engine is domain-agnostic.
 
-| Pack | Entity | Killer feature |
+| Pack | Tracks | Standout |
 |---|---|---|
-| `job-seeker` | application | Ghosting detection, ATS parsing, response-rate analytics |
-| `student-admissions` | programme application | Deadline extraction (uni-assist, DAAD, portals), missing-document alerts |
-| `hr-recruiter` | candidate × requisition | Response-time SLAs, candidate dedupe |
-| `freelance-ops` | invoice | Amount and due-date extraction, an overdue chase list |
+| `job-seeker` | applications | Ghosting detection, ATS parsing, response rates |
+| `student-admissions` | programme applications | Deadlines from uni-assist, DAAD and portals; missing-document alerts |
+| `hr-recruiter` | candidates × requisitions | Response-time SLAs, candidate dedupe |
+| `freelance-ops` | invoices | Amounts and due dates, an overdue chase list |
 
 Write your own: [docs/PACKS.md](docs/PACKS.md).
 
 ## Outputs
 
-SQLite is the source of truth; a spreadsheet is an export. It cannot dedupe,
-cannot hold a state machine, and cannot tell you what has gone stale.
+SQLite is the source of truth; a spreadsheet is an export.
 
 ```bash
 bmail export --xlsx tracker.xlsx    # Overview / Cases / Timeline / Deadlines / Contacts
 bmail export --ics deadlines.ics    # interviews as events, deadlines with alarms
 bmail export --csv ./out
-bmail labels                        # plan provider labels — writes nothing outward
 bmail notion --database <id>        # fill a Notion database you already have
+bmail labels                        # plan provider labels — writes nothing until you confirm
 ```
 
 ## Evaluation
@@ -223,57 +271,63 @@ Built in from the start, because trust is the product.
 bmail eval labels.jsonl --ablate
 ```
 
-Reports per-class P/R/F1, **recall on `action_required`** as the headline
-number, precision@5 on the Brief, field-level accuracy (exact on dates including
-timezone, fuzzy on organisation names), a hallucination rate, and latency —
-across rules-only, +classifier, +LLM, LLM-on-everything, and German vs English
-subsets. See [docs/EVALUATION.md](docs/EVALUATION.md).
+Per-class precision, recall and F1, with **recall on `action_required`** as the
+headline number; precision@5 on the brief; field-level accuracy (exact on dates
+including time zone, fuzzy on organisation names); a hallucination rate; and
+latency — across rules-only, +classifier, +LLM and LLM-on-everything, for German
+and English separately. See [docs/EVALUATION.md](docs/EVALUATION.md).
 
 ## Security
 
 Email is attacker-controlled text being fed to a model, so prompt injection is
-not hypothetical:
+not hypothetical.
 
-- **The model has no tools.** It emits JSON. Every side effect happens in Python
+- **The model has no tools.** It emits JSON; every side effect happens in Python
   from validated fields.
-- **The body is data, not instructions** — fenced with delimiters stripped from
-  the content first.
+- **The body is data, not instructions** — fenced, with the delimiters stripped
+  from the content first.
 - **Nothing is fetched.** URLs are reduced to their host before reaching a
   prompt: no tracking pixels, no SSRF.
-- **Nothing auto-deletes, ever.** The only outward write is a label, and only
-  after you confirm it. Worst case is a wrong row in a local database.
-- Passwords go to the OS keychain, never the config file. `bmail doctor` warns if
-  one ends up there.
-- The local server binds `127.0.0.1` only, on a random port, behind a session
-  token, with the `Host` header pinned against DNS rebinding and `Origin`
-  checked on every request. The model host must be loopback unless you
-  explicitly opt out.
-- The daemon never outlives its window: the shell kills it on close, and the
-  daemon also watches its parent and stops when that goes away.
+- **Nothing is ever deleted, moved or sent.** The only outward write is a label,
+  and only after you confirm it.
+- **Passwords live in the OS keychain**, never the config file. Plain-text IMAP
+  is refused except to a bridge on your own machine.
+- **The local server is loopback-only**, on a random port, behind a session
+  token, with `Host` pinned against DNS rebinding and `Origin` checked on every
+  write. It never outlives its window.
 
 ## Commands
+
+<details>
+<summary><b>All commands</b></summary>
 
 | Command | What it does |
 |---|---|
 | `bmail init` | Create the config and the store |
 | `bmail doctor` | Check the environment, models and privacy settings |
 | `bmail samples` | Generate a synthetic corpus with ground truth |
-| `bmail ingest` | Pull mail from a file, IMAP or Gmail |
+| `bmail accounts` | List accounts, store passwords in the keychain |
+| `bmail ingest` | Pull mail from a file, IMAP, Gmail or Outlook |
 | `bmail triage` | Run the pipeline |
 | `bmail brief` | What needs you, in one screen (`--format md\|json`) |
 | `bmail cases` | The tracker (`--id N` for a full timeline) |
 | `bmail review` | Confirm low-confidence verdicts; each answer trains the classifier |
-| `bmail templates` | Recipe coverage over your own corpus |
 | `bmail search` | Full-text search |
+| `bmail templates` | Recipe coverage over your own corpus |
 | `bmail export` | Excel, CSV, calendar |
+| `bmail notion` | Sync cases into an existing Notion database |
 | `bmail labels` | Plan and apply provider labels |
 | `bmail eval` | Score the pipeline; `--ablate` for the comparison |
 | `bmail packs` | List and describe domain packs |
-| `bmail ui` | Open the desktop UI |
+| `bmail ui` | Open the app |
 | `bmail serve` | Run the local daemon without opening a browser |
 
-The core is importable and headless — the CLI is a client of it, not a container
-for it:
+</details>
+
+<details>
+<summary><b>Use it as a library</b></summary>
+
+The core is importable and headless — the CLI is a client of it:
 
 ```python
 from bmail.store.db import connect
@@ -289,47 +343,44 @@ stats = Pipeline(pack, classifier=Classifier(pack), use_llm=False).triage(
 )
 ```
 
-## Status and what is deliberately absent
+</details>
 
-Working today: file/mbox/Maildir, IMAP, Gmail and Microsoft Graph ingest,
-background sync while the app is open (IMAP IDLE push, interval polling), all
-four stages, four packs, 50 starter template recipes, the Brief, cases and
-ghosting detection, Excel/CSV/ICS/Notion export, Gmail label and Outlook
-category write-back, the evaluation harness and ablations, the local daemon,
-and the desktop UI in both browser and native-window form.
+## Status
 
-Not built yet: `sqlite-vec` embedding storage, and signed installers — signing
-needs per-developer Apple and Windows certificates that cannot live in a repo.
+**Working today:** file, mbox, Maildir, IMAP, Gmail and Microsoft Graph ingest;
+background sync while the app is open (IMAP push, interval polling); all four
+stages; four packs; 50 starter template recipes; the brief, cases and ghosting
+detection; Excel, CSV, ICS and Notion export; Gmail label and Outlook category
+write-back; the evaluation harness and ablations; the app in the browser and in
+a native window.
 
-Not planned: **compose and send.** The moment Bmail becomes a mail client the
-project doubles — rendering, offline sync, threading, MIME edge cases. Bmail sits
-*beside* your mail client and writes back only labels and categories.
+**Not built yet:** `sqlite-vec` embedding storage, and signed installers —
+signing needs per-developer Apple and Windows certificates that cannot live in a
+repository.
+
+**Not planned: compose and send.** The moment Bmail becomes a mail client the
+project doubles — rendering, offline sync, threading, MIME edge cases. Bmail
+sits *beside* your mail client and writes back only labels and categories.
 
 ## Development
 
 ```bash
 pip install -e '.[dev,ml,html]'
-pytest -q                  # 207 tests
+pytest -q
 ruff check src tests
-
-# The browser tests drive the real UI in Chromium; they skip if it is absent.
-pip install playwright && playwright install chromium
-
-# The native shell (needs Rust, and WebKitGTK on Linux)
-cd desktop/src-tauri && cargo build --release
 ```
+
+The connectors are tested against a real IMAP server on a local socket and a
+fake Gmail API; the interface is tested in real Chromium through Playwright
+(skipped when it is not installed). The native shell needs Rust, and WebKitGTK
+on Linux: `cd desktop/src-tauri && cargo build --release`.
 
 ## Licence
 
-MIT. See [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE).
 
 The interface bundles two third-party assets, both free to use and redistribute,
-each shipped with its licence beside it:
-
-- **[Inter](https://rsms.me/inter/)** by Rasmus Andersson, under the SIL Open
-  Font License 1.1 — `src/bmail/ui/static/fonts/LICENSE-Inter.txt`.
-- **[Lucide](https://lucide.dev)** icons, under the ISC licence —
-  `src/bmail/ui/static/icons.LICENSE.txt`.
-
-Both are served from your machine; the interface fetches nothing from the
-network.
+each shipped with its licence beside it: the **[Inter](https://rsms.me/inter/)**
+typeface by Rasmus Andersson (SIL Open Font License 1.1) and
+**[Lucide](https://lucide.dev)** icons (ISC). Both are served from your machine;
+the app fetches nothing from the network.
