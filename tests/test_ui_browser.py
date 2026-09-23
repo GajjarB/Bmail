@@ -398,7 +398,11 @@ def test_mail_content_can_never_become_markup(page_factory, ui):
     })""")
     assert dialogs == [], "mail content executed"
     assert found["imgs"] == 0, "mail content added an element"
-    assert all(src.endswith("/app.js") for src in found["scripts"] if src)
+    # Only the application's own scripts, named exactly: anything else on the
+    # page came from somewhere it should not have.
+    own = {"/app.js", "/icons.js"}
+    assert all(any(src.endswith(name) for name in own) for src in found["scripts"] if src)
+    assert len([src for src in found["scripts"] if src]) == len(own)
     assert found["asText"], "the subject should be visible as text"
     assert not errors
     page.close()
@@ -487,5 +491,47 @@ def test_progress_bars_actually_draw(page_factory):
     assert size["track"] > 0, "the track has no width"
     assert size["fill"] > 0, "the fill drew nothing"
     assert size["fill"] < size["track"], "a queue of one cannot be fully done"
+    assert not errors
+    page.close()
+
+
+def test_the_typeface_is_served_locally_and_used(page_factory):
+    """Inter ships in the package. If it silently failed to load, the page would
+    fall back to system fonts and look fine in a screenshot — so check that it
+    was fetched from this origin, with the right type, and is what renders."""
+    page, errors, _config = page_factory()
+    fonts: list[tuple[int, str]] = []
+    page.on("response", lambda r: fonts.append((r.status, r.headers.get("content-type", "")))
+            if r.url.endswith(".woff2") else None)
+    page.reload(wait_until="networkidle")
+    page.wait_for_selector("#shell:not([hidden])")
+    assert fonts and all(status == 200 and "woff2" in kind for status, kind in fonts), fonts
+    assert page.evaluate("document.fonts.check('13px Inter')")
+    # Browsers differ on whether they quote a single-word family when serialising.
+    family = page.evaluate("getComputedStyle(document.body).fontFamily")
+    assert family.split(",")[0].strip().strip('"') == "Inter", family
+    assert not errors
+    page.close()
+
+
+def test_the_nav_indicator_starts_on_the_current_item(page_factory):
+    """The indicator is first placed while the shell is still hidden, when every
+    item measures zero; it has to be placed again once there is a layout."""
+    page, errors, _config = page_factory()
+    placed = page.evaluate("""() => {
+      const pill = document.querySelector('.nav-pill');
+      const item = document.querySelector('#nav a[aria-current="page"]');
+      return { pill: pill.style.transform, height: pill.style.height,
+               want: `translate(${item.offsetLeft}px, ${item.offsetTop}px)`,
+               wantHeight: `${item.offsetHeight}px` };
+    }""")
+    assert placed["pill"] == placed["want"], placed
+    assert placed["height"] == placed["wantHeight"], placed
+    page.click('[data-tab="mail"]')
+    page.wait_for_timeout(700)
+    moved = page.evaluate("""() => document.querySelector('.nav-pill').style.transform
+      === `translate(${document.querySelector('[data-tab="mail"]').offsetLeft}px, `
+        + `${document.querySelector('[data-tab="mail"]').offsetTop}px)`""")
+    assert moved, "the indicator did not follow the section"
     assert not errors
     page.close()

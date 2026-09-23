@@ -319,3 +319,14 @@ cd desktop/src-tauri && cargo build --release
 ## Licence
 
 MIT. See [LICENSE](LICENSE).
+
+The interface bundles two third-party assets, both free to use and redistribute,
+each shipped with its licence beside it:
+
+- **[Inter](https://rsms.me/inter/)** by Rasmus Andersson, under the SIL Open
+  Font License 1.1 — `src/bmail/ui/static/fonts/LICENSE-Inter.txt`.
+- **[Lucide](https://lucide.dev)** icons, under the ISC licence —
+  `src/bmail/ui/static/icons.LICENSE.txt`.
+
+Both are served from your machine; the interface fetches nothing from the
+network.

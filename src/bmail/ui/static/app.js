@@ -61,39 +61,48 @@ function el(tag, attrs = {}, ...kids) {
   return node;
 }
 
-/* Icons are drawn here rather than pulled from a set, because a local-first
- * app cannot fetch one and a font of glyphs picked for their shape ends up
- * looking like five different sets. One grid, one stroke width. */
+/* Icons are Lucide (ISC), vendored in icons.js as [element, attributes] lists
+ * on a 24px grid. Built as real SVG nodes, not markup, for the same reason
+ * nothing else here is: the el() rule holds even for our own assets. */
 const SVG_NS = "http://www.w3.org/2000/svg";
 
-const ICONS = {
-  today:  ["M4 6.5h9", "M4 11h13", "M4 15.5h6"],
-  cases:  ["M10 2.5 2.5 6.5 10 10.5l7.5-4z", "M2.5 10.5 10 14.5l7.5-4"],
-  mail:   ["M2.5 4.5h15v11h-15z", "m2.8 5 7.2 5 7.2-5"],
-  review: ["M10 2.5a7.5 7.5 0 1 0 0 15 7.5 7.5 0 0 0 0-15z",
-           "M8 8a2 2 0 1 1 2.6 1.9v1.3", "M10.6 14.2h-.01"],
-  setup:  ["M3 5.5h5", "M11 5.5h6", "M3 10h9", "M15 10h2", "M3 14.5h4", "M10 14.5h7"],
-  search: ["M9 15.5a6.5 6.5 0 1 0 0-13 6.5 6.5 0 0 0 0 13z", "m13.8 13.8 3.7 3.7"],
-};
-
-function icon(name, size = 14) {
+function icon(name, size = 16, stroke = 1.75) {
   const svg = document.createElementNS(SVG_NS, "svg");
-  svg.setAttribute("viewBox", "0 0 20 20");
+  svg.setAttribute("viewBox", "0 0 24 24");
   svg.setAttribute("width", size);
   svg.setAttribute("height", size);
   svg.setAttribute("fill", "none");
   svg.setAttribute("stroke", "currentColor");
-  svg.setAttribute("stroke-width", "1.5");
+  svg.setAttribute("stroke-width", stroke);
   svg.setAttribute("stroke-linecap", "round");
   svg.setAttribute("stroke-linejoin", "round");
   svg.setAttribute("aria-hidden", "true");
-  for (const d of ICONS[name] || []) {
-    const path = document.createElementNS(SVG_NS, "path");
-    path.setAttribute("d", d);
-    svg.append(path);
+  svg.setAttribute("class", "icon");
+  for (const [tag, attrs] of (window.BMAIL_ICONS || {})[name] || []) {
+    const node = document.createElementNS(SVG_NS, tag);
+    for (const [key, value] of Object.entries(attrs)) node.setAttribute(key, value);
+    svg.append(node);
   }
   return svg;
 }
+
+/* The mark: the same three lines as the favicon, so the tab and the window
+ * agree about what this is. */
+function mark() {
+  const svg = document.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("fill", "none");
+  svg.setAttribute("stroke", "currentColor");
+  svg.setAttribute("stroke-width", "2.4");
+  svg.setAttribute("stroke-linecap", "round");
+  svg.setAttribute("aria-hidden", "true");
+  const path = document.createElementNS(SVG_NS, "path");
+  path.setAttribute("d", "M5 7.5h14M5 12h14M5 16.5h8");
+  svg.append(path);
+  return svg;
+}
+
+const REDUCED = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 /* ---------------------------------------------------------- formatting --- */
 
@@ -208,7 +217,7 @@ const post = (path, body) =>
 
 function toast(message, isError = false) {
   const node = $("#toast");
-  node.textContent = message;
+  node.replaceChildren(icon(isError ? "alert" : "check", 15, 2), el("span", { text: message }));
   node.classList.toggle("error", Boolean(isError));
   node.classList.remove("leaving");
   node.hidden = false;
@@ -237,7 +246,11 @@ async function run(kind, body, label) {
 
 function paintJob(job, label) {
   const bar = $("#job");
-  if (!job || ["done", "error", "cancelled"].includes(job.status)) { bar.hidden = true; return; }
+  const running = Boolean(job) && !["done", "error", "cancelled"].includes(job.status);
+  // The sync icon turns for as long as work is happening, whichever button
+  // started it. A spinner that stops before the work does is worse than none.
+  $("#btn-sync").classList.toggle("busy", running);
+  if (!running) { bar.hidden = true; return; }
   bar.hidden = false;
   $("#job-label").textContent = label || job.kind;
   $("#job-fill").style.width = `${Math.round((job.progress || 0) * 100)}%`;
@@ -283,13 +296,23 @@ function paint(...nodes) {
   // for those makes the whole list flinch every time you click something —
   // motion reporting a change that did not happen.
   const arriving = App.arriving && !App.skeleton;
-  main.replaceChildren(el("div", { class: `page${wide}${arriving ? "" : " instant"}` }, ...nodes));
-  // Scrolling back to the top belongs to arriving somewhere new. Doing it on a
-  // redraw throws away the place you had scrolled to in order to click.
-  if (arriving) main.scrollTop = 0;
+  // A browser with view transitions cross-fades the content area as one piece.
+  // Without them, the page and its rows animate themselves in. Never both: two
+  // entrances on top of each other read as a stutter.
+  const crossFade = arriving && typeof document.startViewTransition === "function" && !REDUCED();
+  const swap = () => {
+    main.replaceChildren(el("div", {
+      class: `page${wide}${arriving && !crossFade ? "" : " instant"}`,
+    }, ...nodes));
+    // Scrolling back to the top belongs to arriving somewhere new. Doing it on
+    // a redraw throws away the place you had scrolled to in order to click.
+    if (arriving) main.scrollTop = 0;
+    Keys.rescan();
+  };
   App.skeleton = false;
   App.arriving = false;
-  Keys.rescan();
+  if (crossFade) document.startViewTransition(swap);
+  else swap();
 }
 
 /* A placeholder in the shape of what is loading. Only shown if the daemon takes
@@ -306,8 +329,9 @@ function paintSkeleton(route) {
     ...rows));
 }
 
-const empty = (title, body, action) =>
+const empty = (title, body, action, glyph = "empty") =>
   el("div", { class: "empty" },
+    el("div", { class: "glyph" }, icon(glyph, 20)),
     el("h3", { text: title }),
     el("p", { text: body }),
     action);
@@ -340,7 +364,7 @@ async function viewToday() {
 
   if (brief.needs_you.length) {
     const more = (counts.needs_you || 0) - brief.needs_you.length;
-    nodes.push(section("Needs you", counts.needs_you));
+    nodes.push(section("Needs you", counts.needs_you, "today"));
     nodes.push(el("div", { class: "stack" }, brief.needs_you.map(briefCard)));
     if (more > 0) {
       nodes.push(el("div", { class: "bar-row" },
@@ -350,7 +374,7 @@ async function viewToday() {
   }
 
   if (brief.deadlines.length) {
-    nodes.push(section("Deadlines", brief.deadlines.length));
+    nodes.push(section("Deadlines", brief.deadlines.length, "deadline"));
     nodes.push(el("div", { class: "stack" }, brief.deadlines.map((item) => {
       const tone = toneFor({ due: item.due });
       return el("a", { class: "card", "data-tone": tone, href: `#/cases?id=${item.case_id || ""}` },
@@ -362,7 +386,7 @@ async function viewToday() {
   }
 
   if (brief.events.length) {
-    nodes.push(section("Diary", brief.events.length));
+    nodes.push(section("Diary", brief.events.length, "diary"));
     nodes.push(el("div", { class: "stack" }, brief.events.map((item) =>
       el("a", { class: "card", "data-tone": "live", href: `#/cases?id=${item.case_id || ""}` },
         el("div", { class: "card-top" },
@@ -373,7 +397,7 @@ async function viewToday() {
 
   if (brief.stalled.length) {
     const worth = brief.stalled.slice(0, 8);
-    nodes.push(section("No reply", brief.stalled.length));
+    nodes.push(section("No reply", brief.stalled.length, "quiet"));
     nodes.push(el("div", { class: "rows", "data-list": "quiet" },
       worth.map((item) => el("a", { class: "row", href: `#/cases?id=${item.case_id || ""}` },
         el("span", { class: "avatar", text: initials(item.title) }),
@@ -391,7 +415,7 @@ async function viewToday() {
   }
 
   if (counts.archived) {
-    nodes.push(section("Filed", counts.archived));
+    nodes.push(section("Filed", counts.archived, "archive"));
     nodes.push(el("div", { class: "bar-row" },
       el("span", { class: "meta", text: "Newsletters, alerts and automatic acknowledgements." }),
       el("span", { class: "grow" }),
@@ -401,8 +425,9 @@ async function viewToday() {
   paint(...nodes);
 }
 
-const section = (label, count) =>
+const section = (label, count, glyph) =>
   el("h2", { class: "section" },
+    glyph ? icon(glyph, 14) : null,
     el("span", { text: label }),
     count != null ? el("span", { class: "n", text: String(count) }) : null);
 
@@ -504,7 +529,7 @@ async function viewCases(params) {
     el("div", { class: "stack" }, open.map((c) => caseCard(c, data.states, selected))),
     closed.length
       ? el("div", {},
-          section("Closed", closed.length),
+          section("Closed", closed.length, "closed"),
           el("div", { class: "stack closed" },
             closed.map((c) => caseCard(c, data.states, selected))))
       : null);
@@ -575,7 +600,7 @@ function stageRail(c, states) {
 async function caseAside(caseId) {
   let data;
   try { data = await api(`/cases/${caseId}`); }
-  catch (err) { return el("div", { class: "panel panel-pad" }, empty("Not found", err.message)); }
+  catch (err) { return el("div", { class: "panel panel-pad" }, empty("Not found", err.message, null, "nomatch")); }
   const c = data.case;
   const silent = c.last_inbound_at ? -daysFrom(c.last_inbound_at) : null;
 
@@ -637,7 +662,7 @@ async function viewMail(params) {
   });
 
   const controls = el("div", { class: "bar-row" },
-    search,
+    el("label", { class: "field" }, icon("search", 15), search),
     el("select", { onchange: (e) => go("mail", { ...here(), category: e.target.value, offset: 0 }) },
       el("option", { value: "" }, "All kinds"),
       (App.state.categories || []).map((c) =>
@@ -650,7 +675,8 @@ async function viewMail(params) {
     paint(el("h1", { class: "headline", text: "Mail" }), controls,
       el("div", { class: "panel panel-pad" }, empty(q ? "No match" : "No mail yet",
         q ? `Nothing matches “${q}”.` : "Connect a mailbox and Bmail will read it.",
-        q ? null : el("button", { class: "primary", onclick: () => go("setup") }, "Connect a mailbox"))));
+        q ? null : el("button", { class: "primary", onclick: () => go("setup") }, "Connect a mailbox"),
+        q ? "nomatch" : "mail")));
     return;
   }
 
@@ -691,7 +717,7 @@ function mailRow(m, selected) {
 async function mailAside(messageId) {
   let data;
   try { data = await api(`/messages/${encodeURIComponent(messageId)}`); }
-  catch (err) { return el("div", { class: "panel panel-pad" }, empty("Not found", err.message)); }
+  catch (err) { return el("div", { class: "panel panel-pad" }, empty("Not found", err.message, null, "nomatch")); }
   const { message: m, verdict: v, case: kase } = data;
 
   return el("div", { class: "panel panel-pad" },
@@ -701,7 +727,7 @@ async function mailAside(messageId) {
 
     v && v.evidence
       ? el("div", {},
-          el("h3", { text: v.evidence_ok === false ? "Evidence · not in this email" : "Evidence" }),
+          el("h3", {}, icon("quote", 13), v.evidence_ok === false ? "Evidence · not in this email" : "Evidence"),
           el("blockquote", { class: `quote${v.evidence_ok === false ? " bad" : ""}`, text: v.evidence }))
       : null,
 
@@ -819,7 +845,7 @@ function viewSetup() {
   const s = App.state;
   const path = el("input", { type: "text", class: "grow-field", placeholder: "~/mail/archive.mbox" });
   const account = el("select", {},
-    el("option", { value: "" }, "— pick an account —"),
+    el("option", { value: "" }, "Pick an account"),
     (s.configured_accounts || []).map((a) =>
       el("option", { value: a.name }, `${a.name} · ${a.provider}`)));
   const packs = el("select", { onchange: (e) => {
@@ -844,7 +870,7 @@ function viewSetup() {
     el("h1", { class: "headline", text: "Setup" }),
     el("p", { class: "subhead", text: "Everything here happens on this computer." }),
 
-    el("h2", { class: "section", text: "Mail" }),
+    section("Mail", null, "mail"),
     group("Configured account", account,
       el("button", { onclick: () => run("ingest", { account: account.value || null }, "Collecting mail") },
         "Collect")),
@@ -854,7 +880,7 @@ function viewSetup() {
         : toast("Give me a path first", true) }, "Read")),
     note("An mbox, a Maildir or a folder of .eml files. A Gmail Takeout export works."),
 
-    el("h2", { class: "section", text: "Sorting" }),
+    section("Sorting", null, "filter"),
     group("Run",
       el("button", { class: "primary", onclick: () => run("triage", {}, "Sorting new mail") },
         "Sort new mail"),
@@ -866,7 +892,7 @@ function viewSetup() {
         : `${s.llm.model} is not downloaded — run: ollama pull ${s.llm.model}`)
       : "No local model. Rules and the classifier only, which handles most mail."),
 
-    el("h2", { class: "section", text: "Appearance" }),
+    section("Appearance", null, "palette"),
     group("Layout",
       el("select", { onchange: (e) => { applyTheme(e.target.value); render(); } },
         Object.entries(THEMES).map(([value, label]) =>
@@ -875,12 +901,12 @@ function viewSetup() {
     note("Studio is roomier and easier to read. Compact fits about half again as "
        + "much on a screen, which starts to matter at ninety applications."),
 
-    el("h2", { class: "section", text: "Domain" }),
+    section("Domain", null, "package"),
     group("Pack", packs,
       el("span", { class: "meta",
         text: `${s.entity_plural} · ${(s.states || []).length} stages` })),
 
-    el("h2", { class: "section", text: "Export" }),
+    section("Export", null, "download"),
     group("Formats", formats,
       el("button", { onclick: () => {
         const kinds = formats.map((f) => f.querySelector("input")).filter((i) => i.checked)
@@ -890,7 +916,7 @@ function viewSetup() {
       } }, "Write files")),
     note("A spreadsheet, or a calendar of every deadline and interview."),
 
-    el("h2", { class: "section", text: "Storage" }),
+    section("Storage", null, "storage"),
     el("dl", { class: "facts set-facts" },
       fact("Database", s.database),
       fact("Folder", s.home),
@@ -898,7 +924,7 @@ function viewSetup() {
       fact("Sorted", `${s.verdicts.total}`),
       fact("Tracked", `${s.cases.total} ${s.entity_plural}`)),
 
-    el("h2", { class: "section", text: "Keys" }),
+    section("Keys", null, "keys"),
     el("dl", { class: "facts set-facts" },
       [["1", "Today"], ["2", "Cases"], ["3", "Mail"], ["4", "Review"], ["5", "Setup"],
        ["r", "Reload"], ["s", "Sort new mail"]].map(([key, what]) =>
@@ -938,7 +964,7 @@ const Keys = {
     // your place, and you cannot feel it happen.
     App.cursor = Math.max(0, Math.min(this.items.length - 1, next));
     this.paint();
-    this.items[App.cursor].scrollIntoView({ block: "nearest" });
+    this.items[App.cursor].scrollIntoView({ block: "nearest", behavior: REDUCED() ? "auto" : "smooth" });
     return true;
   },
 
@@ -1076,7 +1102,7 @@ async function openPalette() {
     autocomplete: "off", spellcheck: "false", "aria-label": "Search everything",
   });
   const list = el("div", { class: "sheet-list", role: "listbox" });
-  const sheet = openSheet("Search", field, list,
+  const sheet = openSheet("Search", el("div", { class: "sheet-head" }, icon("search", 17), field), list,
     el("div", { class: "sheet-foot" },
       el("span", {}, el("kbd", { text: "↑↓" }), " move"),
       el("span", {}, el("kbd", { text: "↵" }), " open"),
@@ -1084,17 +1110,17 @@ async function openPalette() {
 
   const noun = App.state.entity_plural;
   const commands = [
-    ["Go", "Today", () => go("today")],
-    ["Go", noun[0].toUpperCase() + noun.slice(1), () => go("cases")],
-    ["Go", "Mail", () => go("mail")],
-    ["Go", "Review", () => go("review")],
-    ["Go", "Setup", () => go("setup")],
-    ["Do", "Check for new mail", () => run("ingest", {}, "Checking for new mail")],
-    ["Do", "Sort new mail", () => run("triage", {}, "Sorting new mail")],
-    ["Do", "Re-sort everything", () => run("triage", { all: true }, "Sorting everything")],
-    ["Do", "Show what has gone quiet", () => go("cases", { quiet: "1" })],
-    ["Do", "Keyboard shortcuts", () => openShortcuts()],
-  ].map(([group, what, act]) => ({ group, what, where: "", act }));
+    ["Go", "Today", "today", () => go("today")],
+    ["Go", noun[0].toUpperCase() + noun.slice(1), "cases", () => go("cases")],
+    ["Go", "Mail", "mail", () => go("mail")],
+    ["Go", "Review", "review", () => go("review")],
+    ["Go", "Setup", "setup", () => go("setup")],
+    ["Do", "Check for new mail", "sync", () => run("ingest", {}, "Checking for new mail")],
+    ["Do", "Sort new mail", "filter", () => run("triage", {}, "Sorting new mail")],
+    ["Do", "Re-sort everything", "run", () => run("triage", { all: true }, "Sorting everything")],
+    ["Do", "Show what has gone quiet", "quiet", () => go("cases", { quiet: "1" })],
+    ["Do", "Keyboard shortcuts", "keys", () => openShortcuts()],
+  ].map(([group, what, glyph, act]) => ({ group, what, glyph, where: "", act }));
 
   let entries = commands;
   let cursor = 0;
@@ -1127,6 +1153,7 @@ async function openPalette() {
         onmousemove: () => { if (cursor !== index) { cursor = index; draw(); } },
         onclick: () => { closeOverlay(); hit.entry.act(); },
       },
+        icon(hit.entry.glyph || "arrow", 15),
         el("span", { class: "what", text: hit.entry.what }),
         hit.entry.where ? el("span", { class: "where", text: hit.entry.where }) : null));
     });
@@ -1161,13 +1188,13 @@ async function openPalette() {
     entries = [
       ...commands,
       ...(cases.cases || []).map((c) => ({
-        group: "Case",
+        group: "Case", glyph: "cases",
         what: [c.org || c.title, c.role].filter(Boolean).join(" — "),
         where: humanise(c.state),
         act: () => go("cases", { id: c.id }),
       })),
       ...(mail.messages || []).map((m) => ({
-        group: "Mail",
+        group: "Mail", glyph: "mail",
         what: m.subject || "(no subject)",
         where: m.from_name || m.from_addr || "",
         act: () => go("mail", { id: m.message_id }),
@@ -1207,7 +1234,7 @@ async function render() {
   } catch (err) {
     toast(err.message, true);
     paint(el("div", { class: "panel panel-pad" }, empty("That did not load", err.message,
-      el("button", { onclick: () => render() }, "Try again"))));
+      el("button", { onclick: () => render() }, "Try again"), "alert")));
   } finally {
     clearTimeout(placeholder);
   }
@@ -1239,12 +1266,43 @@ function paintNav() {
       el("span", { text: label }),
       count ? el("span", { class: "count", text: String(count) }) : null);
 
-  $("#nav").replaceChildren(...groups.flatMap(([name, items], index) => [
+  // The pill is the same element across every redraw, re-inserted rather than
+  // rebuilt: that is what lets it travel from the old item to the new one
+  // instead of appearing in place.
+  const pill = NavPill.node();
+  $("#nav").replaceChildren(pill, ...groups.flatMap(([name, items], index) => [
     index ? el("div", { class: "nav-rule" }) : null,
     el("div", { class: "nav-group", text: name }),
     ...items.map(tab),
   ].filter(Boolean)));
+  NavPill.follow();
 }
+
+const NavPill = {
+  element: null,
+  placed: false,
+  node() {
+    if (!this.element) this.element = el("div", { class: "nav-pill settle", "aria-hidden": "true" });
+    return this.element;
+  },
+  /** Slide to the current item. The first placement, and any placement after a
+   *  resize, jumps: travelling from nowhere, or because the window changed
+   *  shape, would be motion that reports nothing. */
+  follow(jump = false) {
+    const pill = this.node();
+    const current = $('#nav a[aria-current="page"]');
+    if (!current) { pill.style.opacity = "0"; return; }
+    pill.classList.toggle("settle", jump || !this.placed);
+    pill.style.opacity = "1";
+    pill.style.width = `${current.offsetWidth}px`;
+    pill.style.height = `${current.offsetHeight}px`;
+    pill.style.transform = `translate(${current.offsetLeft}px, ${current.offsetTop}px)`;
+    if (!this.placed) {
+      this.placed = true;
+      requestAnimationFrame(() => pill.classList.remove("settle"));
+    }
+  },
+};
 
 /* --------------------------------------------------------------- boot --- */
 
@@ -1266,6 +1324,7 @@ async function refresh() {
 }
 
 async function boot() {
+  document.querySelectorAll(".mark").forEach((node) => node.replaceChildren(mark()));
   const url = new URL(location.href);
   const supplied = url.searchParams.get("token");
   if (supplied) {
@@ -1285,6 +1344,9 @@ async function boot() {
 
   $("#boot").hidden = true;
   $("#shell").hidden = false;
+  // The first placement ran while the shell was still hidden, when every item
+  // measures zero. Place it again now there is a layout to measure.
+  NavPill.follow(true);
 
   window.addEventListener("hashchange", render);
   $("#btn-sync").onclick = () => run("ingest", {}, "Checking for new mail");
@@ -1292,6 +1354,15 @@ async function boot() {
   $("#btn-keys").onclick = () => openShortcuts();
   $("#find-key").textContent = `${MOD}K`;
   $("#btn-find").prepend(icon("search", 15));
+  $("#btn-sync").prepend(icon("sync", 15));
+  $("#btn-keys").prepend(icon("keys", 14));
+  // A resize can change where every item sits; the pill jumps to match rather
+  // than sliding, since nothing about the selection moved.
+  let resizing;
+  window.addEventListener("resize", () => {
+    cancelAnimationFrame(resizing);
+    resizing = requestAnimationFrame(() => NavPill.follow(true));
+  });
   document.addEventListener("keydown", onKey);
 
   const jobs = await api("/jobs").catch(() => ({ jobs: [] }));

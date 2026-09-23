@@ -52,7 +52,7 @@ Source = "https://github.com/GajjarB/Bmail"
 where = ["src"]
 
 [tool.setuptools.package-data]
-bmail = ["packs/builtin/*.yaml", "rules/recipes/*.yaml", "store/*.sql", "ui/static/*"]
+bmail = ["packs/builtin/*.yaml", "rules/recipes/*.yaml", "store/*.sql", "ui/static/*", "ui/static/fonts/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

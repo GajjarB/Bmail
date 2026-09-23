@@ -19,6 +19,36 @@
  * daemon and has to work with the machine offline.
  */
 
+/* Inter, vendored (SIL OFL 1.1 — fonts/LICENSE-Inter.txt). The optical-size
+   cut: at 13px it draws the text master, with open apertures and looser
+   spacing; at the 26px title it shifts toward the display master. That axis is
+   most of why the interface reads cleaner than it did on system fonts.
+
+   Two files split by unicode-range. The Latin one covers German umlauts and ß,
+   so it is the only one most screens ever download. */
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("fonts/inter-latin.woff2") format("woff2-variations"),
+       url("fonts/inter-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("fonts/inter-latin-ext.woff2") format("woff2-variations"),
+       url("fonts/inter-latin-ext.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
+    U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020,
+    U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
 :root {
   color-scheme: light dark;
 
@@ -57,7 +87,7 @@
   --s1: 4px;  --s2: 8px;  --s3: 12px; --s4: 16px;
   --s5: 20px; --s6: 24px; --s7: 32px; --s8: 44px;
 
-  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto,
+  --sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
           "Helvetica Neue", Arial, sans-serif;
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 
@@ -125,7 +155,13 @@ body {
   font: var(--t-body)/var(--lh-body) var(--sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  font-optical-sizing: auto;
+  /* cv05: a lowercase l with a tail. This is a screen of names, codes and
+     dates, and l, I and 1 need to be told apart at a glance. */
+  font-feature-settings: "cv05";
+  text-rendering: optimizeLegibility;
 }
+button, input, select, textarea { font-family: inherit; font-feature-settings: inherit; }
 [hidden] { display: none !important; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; border-radius: 3px; }
 
@@ -162,7 +198,7 @@ body {
   padding: 0 var(--s2) var(--s3); min-width: 0;
 }
 .rail-brand b { font: 600 var(--t-body)/1 var(--sans); letter-spacing: -.01em; }
-.rail-brand span {
+#rail-pack {
   margin-left: auto; font-size: var(--t-micro); color: var(--ink-3);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
@@ -179,6 +215,14 @@ body {
 .find kbd { margin-left: auto; }
 
 .nav { display: flex; flex-direction: column; gap: 1px; }
+/* Groups exist in both skins. They were first styled only inside Studio, which
+   left Compact showing its group names as bare, full-size text. */
+.nav-group {
+  font: 600 10.5px/14px var(--sans); letter-spacing: .07em; text-transform: uppercase;
+  color: var(--ink-3); padding: var(--s2) var(--s2) 4px;
+}
+.nav-group:first-child, .nav-pill + .nav-group { padding-top: 0; }
+.nav-rule { height: 1px; background: var(--line); margin: var(--s2) var(--s2); }
 .nav a {
   display: flex; align-items: center; gap: var(--s2);
   padding: 6px var(--s2); border-radius: var(--r);
@@ -713,10 +757,12 @@ kbd {
   .rail { flex-direction: row; align-items: center; gap: var(--s1); overflow-x: auto;
           border-right: 0; border-bottom: 1px solid var(--line); padding: 6px var(--s2); }
   .rail-brand { padding: 0 var(--s3) 0 0; flex: 0 0 auto; }
-  .rail-brand span { display: none; }
+  #rail-pack { display: none; }
   /* The palette and the shortcut list are keyboard features, and this layout
      means there is no keyboard. They would only take room from the tabs. */
   .find, .keys-hint { display: none; }
+  /* Group labels and rules divide a column; in a row of tabs they are noise. */
+  .nav-group, .nav-rule { display: none; }
   .nav { flex-direction: row; flex: 0 0 auto; }
   .nav a { white-space: nowrap; }
   .nav a .count { margin-left: var(--s1); }
@@ -830,7 +876,8 @@ kbd {
   letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3);
   padding: var(--s3) var(--s3) 6px;
 }
-[data-theme="studio"] .nav-group:first-child { padding-top: 0; }
+[data-theme="studio"] .nav-group:first-child,
+[data-theme="studio"] .nav-pill + .nav-group { padding-top: 0; }
 [data-theme="studio"] .nav-rule { height: 1px; background: var(--line); margin: var(--s3) var(--s2); }
 
 [data-theme="studio"] .nav a {
@@ -860,7 +907,7 @@ kbd {
 
 [data-theme="studio"] .main { background: var(--surface); }
 [data-theme="studio"] .page { padding: var(--s6) var(--s7) var(--s8); }
-[data-theme="studio"] .headline { letter-spacing: -.025em; font-weight: 700; }
+[data-theme="studio"] .headline { letter-spacing: -.022em; font-weight: 650; }
 [data-theme="studio"] .subhead { font-size: var(--t-body); margin-top: 6px; }
 
 [data-theme="studio"] h2.section {
@@ -950,3 +997,128 @@ kbd {
    height, which is what stops a sidebar of five items reading as a menu. */
 [data-theme="studio"] .nav a svg { width: 17px; height: 17px; }
 [data-theme="studio"] .find svg { width: 16px; height: 16px; }
+
+/* ============================================================ craft layer === */
+/* Icons, the sliding nav indicator, view transitions, and form controls that
+ * look like they belong to the app rather than to the browser. Applies under
+ * both skins. */
+
+/* ---- icons ---------------------------------------------------------------- */
+/* Lucide, drawn at 1.75 rather than its default 2: at 16px the thinner stroke
+   sits at the same visual weight as 13px Inter instead of shouting over it. */
+.icon { flex: 0 0 auto; display: block; }
+.icon.dim { color: var(--ink-3); }
+
+/* ---- the mark ------------------------------------------------------------- */
+.mark {
+  width: 22px; height: 22px; flex: 0 0 auto; border-radius: 6px;
+  background: var(--ink);
+  display: grid; place-items: center; color: var(--on-ink);
+}
+.mark svg { width: 13px; height: 13px; }
+.boot .mark { width: 40px; height: 40px; border-radius: 11px; margin: 0 auto 14px; }
+.boot .mark svg { width: 22px; height: 22px; }
+.boot-card { animation: page-in var(--slow) var(--ease) both; }
+
+/* ---- nav: one indicator that travels -------------------------------------- */
+/* The active item's background is drawn by a single element that slides to
+   whichever item is current, rather than each item switching its own on and
+   off. Moving between sections then reads as motion in one place instead of a
+   blink in two. */
+.nav { position: relative; }
+.nav a { position: relative; z-index: 1; }
+/* Qualified by [data-theme] so it outranks each skin's own active rule — or the
+   link paints its background instantly while the pill is still travelling. */
+[data-theme] .nav a[aria-current="page"],
+[data-theme] .nav a[aria-current="page"]:hover { background: transparent; box-shadow: none; }
+.nav-pill {
+  position: absolute; left: 0; top: 0; width: 0; height: 0; z-index: 0;
+  border-radius: var(--r); pointer-events: none;
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgba(16, 17, 20, .06), 0 0 0 1px var(--line-soft);
+  transition: transform var(--slow) var(--ease),
+              width var(--slow) var(--ease), height var(--slow) var(--ease);
+}
+.nav-pill.settle { transition: none; }
+[data-theme="studio"] .nav-pill { background: var(--surface-2); box-shadow: none; }
+.nav a svg { transition: color var(--base) var(--ease-soft); }
+
+/* ---- screen changes ------------------------------------------------------- */
+/* Where the browser supports view transitions, arriving at a new screen is one
+   cross-fade of the content area while the sidebar stays live — so the nav
+   indicator is still seen travelling. The root is taken out of the transition
+   for exactly that reason; otherwise the whole window would be a frozen
+   picture for the length of the fade. */
+:root { view-transition-name: none; }
+.main { view-transition-name: main; }
+::view-transition-group(main) { animation-duration: 240ms; }
+::view-transition-old(main) { animation: vt-out 140ms var(--ease-soft) both; }
+::view-transition-new(main) { animation: vt-in 240ms var(--ease) both; }
+@keyframes vt-out { to   { opacity: 0; transform: translateY(-4px); } }
+@keyframes vt-in  { from { opacity: 0; transform: translateY(6px); } }
+
+/* ---- sections, with their icon ------------------------------------------- */
+h2.section .icon { color: var(--ink-3); margin-right: 1px; }
+[data-theme="studio"] h2.section .icon { color: var(--ink-2); }
+
+/* ---- controls ------------------------------------------------------------- */
+button svg.icon { width: 15px; height: 15px; }
+button.wide { gap: 8px; }
+#btn-sync.busy svg { animation: spin .9s linear infinite; }
+#btn-sync.busy { color: var(--ink-2); }
+
+/* A native <select> draws its own arrow in the browser's style, which is the
+   one control that gives away that this is a web page. */
+select {
+  -webkit-appearance: none; appearance: none;
+  padding-right: 30px; cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238C8F99' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 9px center; background-size: 14px;
+}
+select:hover { border-color: var(--ink-3); }
+select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-bg); }
+input[type="checkbox"] { accent-color: var(--ink); width: 15px; height: 15px; margin: 0; cursor: pointer; }
+
+/* ---- toast, with what kind of message it is ------------------------------- */
+.toast { display: flex; align-items: center; gap: 8px; }
+.toast svg { width: 15px; height: 15px; }
+
+/* ---- palette -------------------------------------------------------------- */
+/* One highlight, and it belongs to the cursor. Moving the mouse moves the cursor
+   (onmousemove), so a separate hover tint only ever shows as a second, stale
+   highlight wherever the pointer happens to be resting. */
+.sheet-item:hover:not(:disabled) { background: none; border: 0; }
+.sheet-item[data-cursor="1"],
+.sheet-item[data-cursor="1"]:hover:not(:disabled) { background: var(--accent-bg); }
+.sheet-item { transition: background var(--fast) var(--ease-soft); }
+.sheet-item .icon { color: var(--ink-3); width: 15px; height: 15px; align-self: center; }
+.sheet-item[data-cursor="1"] .icon { color: var(--ink); }
+.sheet-head { display: flex; align-items: center; gap: 10px; padding: 0 var(--s4); border-bottom: 1px solid var(--line); }
+.sheet-head .icon { color: var(--ink-3); }
+.sheet-head .sheet-input { border: 0; padding-left: 0; padding-right: 0; }
+
+/* ---- empty states --------------------------------------------------------- */
+.empty .glyph {
+  width: 40px; height: 40px; border-radius: 12px; margin-bottom: var(--s3);
+  display: grid; place-items: center;
+  background: var(--surface-2); color: var(--ink-3);
+}
+.empty .glyph svg { width: 20px; height: 20px; }
+
+/* ---- the evidence heading ------------------------------------------------- */
+.panel h3 { display: flex; align-items: center; gap: 6px; }
+.panel h3 .icon { width: 13px; height: 13px; }
+
+/* ---- motion off means off ------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) {
+    animation: none !important;
+  }
+  #btn-sync.busy svg { animation: none; }
+}
+
+/* ---- a field with its icon inside ----------------------------------------- */
+.field { position: relative; display: flex; align-items: center; flex: 1; min-width: 160px; }
+.field .icon { position: absolute; left: 10px; color: var(--ink-3); pointer-events: none; }
+.field input { flex: 1; width: 100%; padding-left: 32px; }
+.field:focus-within .icon { color: var(--ink-2); }

@@ -42,6 +42,11 @@ LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1", "[::1]"}
 MAX_BODY = 1 << 20  # 1 MiB is far more than any request here needs
 
 
+# Whether mimetypes knows .woff2 depends on the Python version and the system's
+# mime.types file. Without it the bundled fonts go out as octet-stream.
+mimetypes.add_type("font/woff2", ".woff2")
+
+
 def static_dir() -> Path:
     return Path(str(resources.files("bmail.ui").joinpath("static")))
 
