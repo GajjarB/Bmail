@@ -16,7 +16,8 @@ from bmail.models import Message
 
 @dataclass(slots=True)
 class SyncResult:
-    fetched: int = 0
+    fetched: int = 0   # messages the source handed over
+    new: int = 0       # of those, the ones the store had not seen before
     cursor: dict[str, Any] = field(default_factory=dict)
     notes: list[str] = field(default_factory=list)
 

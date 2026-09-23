@@ -31,3 +31,12 @@ class LLMError(BmailError):
 
 class ExportError(BmailError):
     """An export target could not be written."""
+
+
+class SignInRequired(IngestError):
+    """An account needs its owner to sign in again.
+
+    Raised instead of opening a sign-in window whenever a sync is running
+    unattended. A browser tab appearing out of nowhere every few minutes is not
+    a prompt anyone can act on; the UI shows this state and waits to be asked.
+    """

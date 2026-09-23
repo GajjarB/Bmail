@@ -33,7 +33,7 @@ from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
 
-from bmail.errors import IngestError
+from bmail.errors import IngestError, SignInRequired
 from bmail.ingest.raw import parse_message, synth_message_id
 from bmail.models import Attachment, Direction, EmailAddress, Message
 from bmail.text.clean import clean_body, detect_language, normalise_whitespace
@@ -209,12 +209,16 @@ class GraphAuth:
         token_cache_file: str | Path,
         scopes: list[str],
         mode: str = "interactive",
+        interactive: bool = True,
     ) -> None:
         self.client_id = client_id
         self.tenant = tenant
         self.token_cache_file = Path(token_cache_file).expanduser()
         self.scopes = scopes
         self.mode = mode
+        # False when nobody is at the keyboard (background sync): a browser
+        # window or a device code printed to a log would wait for ever.
+        self.interactive = interactive
         self._app: Any = None
         self._cache: Any = None
         self._claims: dict[str, Any] = {}
@@ -262,6 +266,11 @@ class GraphAuth:
         return str(result["access_token"])
 
     def _sign_in(self, app: Any) -> dict[str, Any]:
+        if not self.interactive:
+            raise SignInRequired(
+                "Microsoft account needs you to sign in again — "
+                "use Check for new mail, or run `bmail ingest`, to do it"
+            )
         if self.mode == "device":
             flow = app.initiate_device_flow(scopes=self.scopes)
             if "user_code" not in flow:
@@ -317,6 +326,7 @@ class GraphSource:
         own_addresses: set[str] | None = None,
         page_size: int = 50,
         auth_mode: str = "interactive",
+        interactive: bool = True,
         http: GraphHTTP | None = None,
         auth: GraphAuth | None = None,
     ) -> None:
@@ -343,6 +353,7 @@ class GraphSource:
                 token_cache_file=token_cache_file or f"~/.local/share/bmail/{name}_graph.json",
                 scopes=self.scopes,
                 mode=auth_mode,
+                interactive=interactive,
             )
             self.http = GraphHTTP(self.auth.token)
 

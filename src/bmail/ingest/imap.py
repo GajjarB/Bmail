@@ -69,7 +69,7 @@ class ImapSource:
         cursor = dict(cursor or {})
         conn = self._connect()
         try:
-            status, data = conn.select(self.folder, readonly=True)
+            status, data = conn.select(_quoted(self.folder), readonly=True)
             if status != "OK":
                 raise IngestError(f"cannot select folder {self.folder}: {data!r}")
             validity = self._uidvalidity(conn, self.folder)
@@ -87,7 +87,12 @@ class ImapSource:
             if limit:
                 uids = uids[:limit]
 
-            highest = start_uid
+            # One below where this run starts, so that a run which finds nothing
+            # leaves the cursor exactly where it was. Starting from start_uid
+            # advanced it by one on every quiet sync, and the next message to
+            # arrive — assigned precisely that UID — fell below the cursor and
+            # was never fetched.
+            highest = start_uid - 1
             for batch_start in range(0, len(uids), _BATCH):
                 batch = uids[batch_start : batch_start + _BATCH]
                 status, chunk = conn.uid("FETCH", ",".join(batch), "(RFC822)")
@@ -117,7 +122,18 @@ class ImapSource:
 
     @staticmethod
     def _uidvalidity(conn: imaplib.IMAP4, folder: str) -> str:
-        status, data = conn.status(f'"{folder}"', "(UIDVALIDITY)")
+        """Read UIDVALIDITY from the SELECT that just ran.
+
+        Every server reports it there, as an untagged `OK [UIDVALIDITY n]`.
+        Asking with STATUS is the fallback only: RFC 3501 says a client SHOULD
+        NOT issue STATUS on the mailbox it has selected, some servers refuse,
+        and an empty answer here means a renumbered mailbox goes unnoticed.
+        """
+        _, found = conn.response("UIDVALIDITY")
+        if found and found[0]:
+            value = found[0].decode(errors="replace") if isinstance(found[0], bytes) else str(found[0])
+            return value.strip()
+        status, data = conn.status(_quoted(folder), "(UIDVALIDITY)")
         if status == "OK" and data and data[0]:
             text = data[0].decode(errors="replace")
             if "UIDVALIDITY" in text:
@@ -140,3 +156,11 @@ class ImapSource:
 
     def cursor(self) -> dict[str, Any]:
         return self._cursor
+
+
+def _quoted(folder: str) -> str:
+    """imaplib sends a mailbox name as given, so "Sent Items" would arrive as two
+    arguments. Quote anything that is not a bare atom."""
+    if folder.startswith('"') or not any(c in folder for c in ' ()"\\{%*'):
+        return folder
+    return '"' + folder.replace("\\", "\\\\").replace('"', '\\"') + '"'

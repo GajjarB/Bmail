@@ -21,7 +21,7 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
-from bmail.errors import IngestError
+from bmail.errors import IngestError, SignInRequired
 from bmail.ingest.raw import parse_message
 from bmail.models import Message
 
@@ -54,8 +54,13 @@ class GmailSource:
         allow_modify: bool = False,
         query: str = "",
         own_addresses: set[str] | None = None,
+        interactive: bool = True,
     ) -> None:
         self.name = name
+        # False when nobody is at the keyboard — an automatic sync. A token that
+        # can be refreshed silently still is; anything that needs a browser
+        # raises SignInRequired instead of opening one.
+        self.interactive = interactive
         self.client_secret_file = Path(client_secret_file).expanduser()
         self.token_file = Path(token_file).expanduser()
         self.scopes = [MODIFY_SCOPE] if allow_modify else [READONLY_SCOPE]
@@ -76,6 +81,11 @@ class GmailSource:
         if not creds or not creds.valid:
             if creds and creds.expired and creds.refresh_token:
                 creds.refresh(Request())
+            elif not self.interactive:
+                raise SignInRequired(
+                    f"Gmail account '{self.name}' needs you to sign in again — "
+                    "use Check for new mail, or run `bmail ingest`, to do it"
+                )
             else:
                 if not self.client_secret_file.exists():
                     raise IngestError(
@@ -101,29 +111,54 @@ class GmailSource:
     def fetch(
         self, cursor: dict[str, Any] | None = None, *, limit: int | None = None
     ) -> Iterator[Message]:
+        """First run: list the mailbox. After that: follow history.
+
+        The cursor that comes out is the part that matters. Behind where it
+        should be only costs a re-read; ahead of it skips mail for good.
+        """
         service = self.service()
         cursor = dict(cursor or {})
         history_id = cursor.get("history_id")
-        ids = (
-            self._ids_since(service, history_id)
-            if history_id
-            else self._ids_full(service, limit)
-        )
-        own = self.own_addresses or {self.address().lower()}
+        self._cursor = {}
 
-        newest_history = history_id
+        profile: dict[str, Any] = {}
+        if not history_id or not self.own_addresses:
+            profile = service.users().getProfile(userId="me").execute()
+        own = self.own_addresses or {str(profile.get("emailAddress", "")).lower()}
+
+        if history_id:
+            listing = _History(service, str(history_id))
+            ids: Iterator[str] = iter(listing)
+        else:
+            # The mailbox's position *before* the listing starts. A message's own
+            # historyId moves every time it changes, so the highest one among
+            # the messages fetched can sit past mail that arrived mid-listing —
+            # and a cursor there skips that mail for ever.
+            listing = None
+            ids = self._ids_full(service, limit)
+
+        seen: set[str] = set()
         count = 0
+        truncated = False
         for message_id in ids:
+            if message_id in seen:       # history can list one message twice
+                continue
+            seen.add(message_id)
             if limit is not None and count >= limit:
+                truncated = True
                 break
-            payload = (
-                service.users()
-                .messages()
-                .get(userId="me", id=message_id, format="raw")
-                .execute()
-            )
+            try:
+                payload = (
+                    service.users()
+                    .messages()
+                    .get(userId="me", id=message_id, format="raw")
+                    .execute()
+                )
+            except Exception as exc:
+                if _status(exc) == 404:
+                    continue  # deleted between being listed and being fetched
+                raise IngestError(f"Gmail could not return message {message_id}: {exc}") from exc
             raw = base64.urlsafe_b64decode(payload["raw"].encode("ascii"))
-            newest_history = max(int(payload.get("historyId", 0)), int(newest_history or 0))
             yield parse_message(
                 raw,
                 provider=self.provider,
@@ -133,8 +168,15 @@ class GmailSource:
                 own_addresses=own,
             )
             count += 1
-        if newest_history:
-            self._cursor = {"history_id": str(newest_history)}
+
+        if listing is not None:
+            # A run stopped part-way through history keeps the old cursor: the
+            # unread remainder is still ahead of it. Saving a later one would
+            # skip it. A complete run moves to where the history listing ended.
+            if not truncated and listing.latest:
+                self._cursor = {"history_id": listing.latest}
+        elif profile.get("historyId"):
+            self._cursor = {"history_id": str(profile["historyId"])}
 
     def _ids_full(self, service: Any, limit: int | None) -> Iterator[str]:
         page: str | None = None
@@ -151,27 +193,6 @@ class GmailSource:
                 seen += 1
                 if limit is not None and seen >= limit:
                     return
-            page = response.get("nextPageToken")
-            if not page:
-                return
-
-    def _ids_since(self, service: Any, history_id: str) -> Iterator[str]:
-        page: str | None = None
-        while True:
-            try:
-                response = (
-                    service.users()
-                    .history()
-                    .list(userId="me", startHistoryId=history_id, pageToken=page)
-                    .execute()
-                )
-            except Exception as exc:  # history expires after ~a week of inactivity
-                raise IngestError(
-                    "Gmail history cursor expired; run a full re-sync with --reset"
-                ) from exc
-            for record in response.get("history", []):
-                for added in record.get("messagesAdded", []):
-                    yield added["message"]["id"]
             page = response.get("nextPageToken")
             if not page:
                 return
@@ -202,3 +223,56 @@ class GmailSource:
         service.users().messages().modify(
             userId="me", id=message_id, body={"addLabelIds": [label_id]}
         ).execute()
+
+
+class _History:
+    """Message ids added since a history id, and where the listing ended.
+
+    Drafts are skipped: they appear in history as messages added, and a
+    half-written reply is not mail anyone sent you.
+    """
+
+    def __init__(self, service: Any, start: str) -> None:
+        self.service = service
+        self.start = start
+        self.latest = ""
+
+    def __iter__(self) -> Iterator[str]:
+        page: str | None = None
+        while True:
+            try:
+                response = (
+                    self.service.users()
+                    .history()
+                    .list(userId="me", startHistoryId=self.start, pageToken=page)
+                    .execute()
+                )
+            except Exception as exc:
+                if _status(exc) == 404:  # Gmail keeps history for about a week
+                    raise IngestError(
+                        "Gmail history cursor expired; run a full re-sync with --reset"
+                    ) from exc
+                # Anything else is not an expired cursor, and saying it was
+                # would tell someone to throw away their sync state over a
+                # passing server error.
+                raise IngestError(f"Gmail history request failed: {exc}") from exc
+            self.latest = str(response.get("historyId") or self.latest)
+            for record in response.get("history", []):
+                for added in record.get("messagesAdded", []):
+                    message = added.get("message", {})
+                    if "DRAFT" in (message.get("labelIds") or []):
+                        continue
+                    yield message["id"]
+            page = response.get("nextPageToken")
+            if not page:
+                return
+
+
+def _status(exc: BaseException) -> int | None:
+    """The HTTP status of a googleapiclient error, without importing it."""
+    response = getattr(exc, "resp", None)
+    status = getattr(response, "status", None) or getattr(exc, "status_code", None)
+    try:
+        return int(status) if status is not None else None
+    except (TypeError, ValueError):
+        return None
