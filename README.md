@@ -55,35 +55,38 @@
 
 | | |
 |---|---|
-| **Finds what needs you** | Interview invitations, assessments with deadlines, missing documents: surfaced first, each with the exact sentence that proves it. |
+| **Finds what needs you** | Interview invitations, assessments with deadlines, missing documents: surfaced first, each with the exact sentence that proves it, and kept there until it is dealt with. |
 | **Tracks every case** | Each application, candidate or invoice gets a state machine. Two to six emails per case, out of order, in two languages, resolved into one row. |
 | **Notices silence** | *"Helios Robotics: silent 34 days."* Ghosting detection tells you where one follow-up is worth sending. |
 | **Stays current** | While the app is open, IMAP mail arrives within seconds (IDLE push); Gmail and Outlook are checked every few minutes. |
 | **Never leaves your laptop** | No server, no account, no telemetry. The model runs locally, or not at all. |
 | **Shows its working** | Every extracted date carries its source sentence, checked against the email. A date the email doesn't contain is dropped, not shown. |
 
-The same brief, in the terminal:
+The same brief in the terminal, on the sample mailbox (`bmail brief --limit 3`,
+first half):
 
 ```
-$ bmail brief
-
-Bmail brief · Tue 01 Sep 2026 09:12 UTC · pack: job-seeker
+Bmail brief · Wed 23 Sep 2026 16:01 UTC · pack: job-seeker
 ========================================================================
-4 need you · 2 deadlines · 1 upcoming · 14 stalled · 61 archived
+4 need you · 2 deadlines · 1 upcoming · 8 stalled · 1 archived
 
 NEEDS YOU
- 1. Online-Test für Ihre Bewerbung als Data Engineer
-    Nordwind Analytics · assessment
-    deadline 2026-09-06
-    evidence: "Bitte schließen Sie den Test bis zum 06.09.2026 ab."
- 2. Interview invitation – Platform Engineer
-    Lumen Mobility · interview_invite
-    Mon 14 Sep 09:00 UTC
-    evidence: "We propose 14 September 2026 at 10:00 CET."
+ 1. Your application to MSc Computer Science
+    Rug Example · MSc Computer Science · document request · Your application for MSc Computer Science is incomplete.
+    deadline 2026-09-14
+    evidence: "Please upload your certified transcript and language certificate no later than 14 September 2026."
+ 2. Ihre Bewerbung: MSc Data Science
+    Tu Rheinland Example · MSc Data Science · document request · Ihre Bewerbung für MSc Data Science ist unvollständig.
+    deadline 2026-09-04
+    evidence: "Bitte reichen Sie noch die beglaubigte Übersetzung Ihrer Zeugnisse bis zum 04.09.2026 nach."
+ 3. Interview invitation – Platform Engineer
+    Cobalt Health · Platform Engineer · interview invite · We would like to invite you to an interview for the Platform Engineer position.
+    Wed 07 Oct 09:00 UTC
+    evidence: "We propose 07 October 2026 at 10:00 CET."
 
-STALLED: worth one follow-up
- · Helios Robotics · Backend Developer · silent 34 days · applied
- · Weser Data GmbH · Data Engineer · silent 27 days · acknowledged
+DEADLINES
+ · Ihre Bewerbung: MSc Data Science · overdue by 19 d (2026-09-04)
+ · Your application to MSc Computer Science · overdue by 9 d (2026-09-14)
 ```
 
 ## Why this exists
@@ -181,7 +184,7 @@ do it from the button. Change the interval, or turn it off, under
 
 ```bash
 bmail ingest --path ~/Downloads/takeout/Mail/All\ mail.mbox --account archive
-bmail accounts set-password uni       # IMAP password into the keychain
+bmail accounts --set-password uni     # IMAP password into the keychain
 ```
 
 ## The app
@@ -195,8 +198,10 @@ cd desktop/src-tauri && cargo build --release && ./target/release/bmail-desktop
 
 It is a briefing rather than a dashboard:
 
-- **Today** opens with a sentence, *"Eighteen things need you."*, then the
-  things themselves, each with its deadline and the quoted sentence behind it.
+- **Today** opens with how many things are waiting on you, then the things
+  themselves, each with its deadline and the quoted sentence behind it. A
+  request stays until it is settled: you replied, the application moved on, or
+  its date passed. Ten copies of one message are one thing to do.
 - **Applications** draws every case's state machine as a rail, filled only as
   far as it actually got.
 - **Mail** is everything, searchable.

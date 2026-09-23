@@ -168,7 +168,7 @@ folder = "INBOX"
 Store the password outside the config:
 
 ```bash
-bmail accounts set-password uni          # OS keychain, needs bmail[keyring]
+bmail accounts --set-password uni        # OS keychain, needs bmail[keyring]
 export BMAIL_PASSWORD_UNI='…'            # or the environment
 ```
 
