@@ -15,6 +15,17 @@ Requires Rust, and on Linux the WebKitGTK development packages:
 sudo apt install libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev build-essential
 ```
 
+To build installers with the engine inside, freeze the engine first, then
+bundle:
+
+```bash
+python ../packaging/build_sidecar.py      # writes src-tauri/binaries/bmail-<target>
+npm ci && npx tauri build                 # installers under src-tauri/target/release/bundle/
+```
+
+Releases do the same on GitHub Actions for every tag; see
+[../docs/RELEASING.md](../docs/RELEASING.md).
+
 The shell looks for the engine in this order: a `bmail` binary beside itself (a
 bundled sidecar), `$BMAIL_BIN`, `bmail` on `PATH`, then `python -m bmail`. It reads
 one JSON line from `bmail serve --json` to learn the loopback URL and session

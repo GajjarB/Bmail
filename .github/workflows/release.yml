@@ -1,0 +1,145 @@
+name: release
+
+# Push a tag like v0.2.0 (after `python packaging/set_version.py 0.2.0`) and
+# this builds installers for macOS, Windows and Linux and attaches them to a
+# draft GitHub Release. Nothing is published until the draft is published by
+# hand. Run it from the Actions tab to try a build without tagging.
+#
+# Signing is optional and switched on by secrets; see docs/RELEASING.md.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  installers:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS (Apple silicon)
+            os: macos-14
+            target: aarch64-apple-darwin
+          - name: Windows
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+          # 22.04 rather than latest: an AppImage runs on systems at least as
+          # new as the one it was built on, so build on an older one.
+          - name: Linux
+            os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Every file carries the tag's version
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: python packaging/set_version.py --check "${{ github.ref_name }}"
+
+      - name: Freeze the engine, and test what was built
+        shell: bash
+        run: |
+          python -m pip install ".[html]" pyinstaller
+          python packaging/build_sidecar.py --target ${{ matrix.target }}
+
+      - name: Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri -> target
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Build tools
+        working-directory: desktop
+        run: npm ci
+
+      # Each credential is exported only when it exists. An empty variable is
+      # not the same as a missing one to the bundler: it tries to use it, and
+      # fails the build. Missing credentials simply mean an unsigned build.
+      - name: Credentials that are present
+        id: signing
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          TAURI_UPDATER_PUBKEY: ${{ vars.TAURI_UPDATER_PUBKEY }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          for name in TAURI_SIGNING_PRIVATE_KEY TAURI_SIGNING_PRIVATE_KEY_PASSWORD \
+                      APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY \
+                      APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+            value="${!name}"
+            if [ -n "$value" ]; then
+              { echo "$name<<__END__"; echo "$value"; echo "__END__"; } >> "$GITHUB_ENV"
+            fi
+          done
+          # Updates need both halves of the key: the private one signs what is
+          # built here, the public one is built into the app to check it.
+          if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ] && [ -n "$TAURI_UPDATER_PUBKEY" ]; then
+            sed "s|__TAURI_UPDATER_PUBKEY__|$TAURI_UPDATER_PUBKEY|" \
+              desktop/src-tauri/tauri.updater.conf.json > desktop/src-tauri/tauri.updater.local.json
+            echo "args=--features updater --config src-tauri/tauri.updater.local.json" >> "$GITHUB_OUTPUT"
+            echo "Auto-update: on"
+          else
+            echo "args=" >> "$GITHUB_OUTPUT"
+            echo "Auto-update: off (no update-signing key; see docs/RELEASING.md)"
+          fi
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: desktop
+          tauriScript: npx tauri
+          args: --target ${{ matrix.target }} ${{ steps.signing.outputs.args }}
+          tagName: v__VERSION__
+          releaseName: Bmail __VERSION__
+          releaseDraft: true
+          prerelease: false
+          releaseBody: |
+            Download the installer for your computer:
+
+            - **macOS** (Apple silicon): the `.dmg`
+            - **Windows**: the `.msi`, or the `-setup.exe` to install without administrator rights
+            - **Linux**: the `.AppImage` (any distribution), or the `.deb` (Debian, Ubuntu)
+
+            Everything runs on your computer. Nothing is uploaded.
+
+            If this build is not signed, your system will warn you the first
+            time you open it. On macOS: System Settings → Privacy & Security →
+            Open Anyway. On Windows: More info → Run anyway.

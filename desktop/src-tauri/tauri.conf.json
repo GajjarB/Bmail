@@ -15,9 +15,31 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/icon.png"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "externalBin": [
+      "binaries/bmail"
+    ],
+    "publisher": "Bmail",
+    "copyright": "MIT licence",
+    "homepage": "https://github.com/GajjarB/Bmail",
+    "licenseFile": "../../LICENSE",
     "category": "Productivity",
     "shortDescription": "Local-first email triage",
-    "longDescription": "Reads your mailboxes on this machine, decides what needs you, and tracks lifecycle mail. Nothing leaves the computer."
+    "longDescription": "Reads your mailboxes on this machine, decides what needs you, and tracks lifecycle mail. Nothing leaves the computer.",
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    },
+    "macOS": {
+      "minimumSystemVersion": "11.0",
+      "entitlements": "Entitlements.plist"
+    }
   }
 }

@@ -55,12 +55,23 @@ fn start_daemon() -> Result<(String, Child), String> {
 
     for (program, prefix) in candidates() {
         let mut command = Command::new(&program);
+        // The engine is a console program, so that it can print its URL. On
+        // Windows that would open a black terminal window beside the app.
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+            command.creation_flags(CREATE_NO_WINDOW);
+        }
         command
             .args(&prefix)
             // --exit-with-parent is the backstop: the cleanup below handles a
             // normal window close, but only the daemon watching this process can
             // survive the shell being killed outright.
             .args(["serve", "--json", "--port", "0", "--exit-with-parent"])
+            // Which process to outlive no longer: this one. The engine cannot
+            // work it out itself when it runs under the frozen-app unpacker.
+            .env("BMAIL_PARENT_PID", std::process::id().to_string())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
 
@@ -124,11 +135,66 @@ fn start_daemon() -> Result<(String, Child), String> {
     ))
 }
 
+/// Updates, when this build carries an update key. They download quietly in
+/// the background and install when the window closes, so nobody's work is
+/// interrupted by a restart they did not ask for. Every download is checked
+/// against the public key built into the app before it is installed.
+#[cfg(feature = "updater")]
+mod update {
+    use std::sync::Mutex;
+
+    use tauri::{AppHandle, Manager};
+    use tauri_plugin_updater::{Update, UpdaterExt};
+
+    #[derive(Default)]
+    pub struct Pending(pub Mutex<Option<(Update, Vec<u8>)>>);
+
+    pub fn fetch_in_background(handle: AppHandle) {
+        tauri::async_runtime::spawn(async move {
+            let updater = match handle.updater() {
+                Ok(updater) => updater,
+                Err(err) => return eprintln!("bmail-desktop: updater unavailable: {err}"),
+            };
+            match updater.check().await {
+                Ok(Some(update)) => match update.download(|_, _| {}, || {}).await {
+                    Ok(bytes) => {
+                        eprintln!(
+                            "bmail-desktop: {} downloaded; installs on quit",
+                            update.version
+                        );
+                        *handle.state::<Pending>().0.lock().unwrap() = Some((update, bytes));
+                    }
+                    Err(err) => eprintln!("bmail-desktop: update download failed: {err}"),
+                },
+                Ok(None) => {}
+                // Offline, or GitHub unreachable: try again next launch.
+                Err(err) => eprintln!("bmail-desktop: update check failed: {err}"),
+            }
+        });
+    }
+
+    pub fn install_pending(handle: &AppHandle) {
+        let pending = handle.state::<Pending>().0.lock().unwrap().take();
+        if let Some((update, bytes)) = pending {
+            if let Err(err) = update.install(bytes) {
+                eprintln!("bmail-desktop: update install failed: {err}");
+            }
+        }
+    }
+}
+
 fn main() {
-    tauri::Builder::default()
-        .manage(Daemon(Mutex::new(None)))
+    let builder = tauri::Builder::default().manage(Daemon(Mutex::new(None)));
+    #[cfg(feature = "updater")]
+    let builder = builder
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .manage(update::Pending::default());
+
+    builder
         .setup(|app| {
             let handle = app.handle().clone();
+            #[cfg(feature = "updater")]
+            update::fetch_in_background(handle.clone());
             let (url, child) = match start_daemon() {
                 Ok(started) => started,
                 Err(message) => {
@@ -157,8 +223,8 @@ fn main() {
         })
         .build(tauri::generate_context!())
         .expect("failed to start the Bmail desktop shell")
-        .run(|handle, event| {
-            if let tauri::RunEvent::ExitRequested { .. } = event {
+        .run(|handle, event| match event {
+            tauri::RunEvent::ExitRequested { .. } => {
                 // The daemon holds the mail store open; never leave it running
                 // after the window it belongs to has gone.
                 if let Some(mut child) = handle.state::<Daemon>().0.lock().unwrap().take() {
@@ -166,5 +232,8 @@ fn main() {
                     let _ = child.wait();
                 }
             }
+            #[cfg(feature = "updater")]
+            tauri::RunEvent::Exit => update::install_pending(handle),
+            _ => {}
         });
 }

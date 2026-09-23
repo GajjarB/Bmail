@@ -37,3 +37,8 @@ out/
 # Rust / Tauri build output
 desktop/src-tauri/target/
 desktop/src-tauri/gen/
+
+# Release builds: the frozen engine and the desktop bundles are artifacts.
+desktop/src-tauri/binaries/
+desktop/node_modules/
+desktop/src-tauri/tauri.updater.local.json

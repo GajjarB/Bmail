@@ -1,0 +1,154 @@
+"""Freeze the Bmail engine into one executable, and prove it works.
+
+The desktop shell ships the engine beside itself as a "sidecar", so installing
+Bmail does not mean installing Python. This builds that file with PyInstaller
+and names it the way Tauri's `externalBin` expects: `bmail-<target triple>`,
+under desktop/src-tauri/binaries/. Tauri strips the triple when it bundles, and
+the shell looks for a plain `bmail` beside itself.
+
+Then it runs what it built: starts `bmail serve`, fetches the page, a script,
+and the state API. A frozen app that is missing a data file still builds
+cleanly and only fails on someone's machine, so the check is the point.
+
+    python packaging/build_sidecar.py            # build for this machine, then test
+    python packaging/build_sidecar.py --no-test  # build only
+    python packaging/build_sidecar.py --test-only
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import platform
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+import urllib.request
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+BINARIES = ROOT / "desktop" / "src-tauri" / "binaries"
+WORK = ROOT / "build" / "sidecar"
+
+# Big, optional, or never used by the engine: kept out so the download stays
+# small. The trainable classifier (numpy, scikit-learn) and the Gmail API and
+# Microsoft libraries are optional extras; the app connects over IMAP and falls
+# back to the prototype classifier, and says so.
+EXCLUDE = ["tkinter", "numpy", "sklearn", "scipy", "torch", "sentence_transformers",
+           "googleapiclient", "google_auth_oauthlib", "msal", "matplotlib", "IPython",
+           "pytest", "playwright"]
+
+
+def target_triple() -> str:
+    """The Rust target this machine builds for, as Tauri names sidecars."""
+    try:
+        out = subprocess.run(["rustc", "-vV"], capture_output=True, text=True, check=True).stdout
+        for line in out.splitlines():
+            if line.startswith("host:"):
+                return line.split(":", 1)[1].strip()
+    except (OSError, subprocess.CalledProcessError):
+        pass
+    machine = platform.machine().lower()
+    arch = {"amd64": "x86_64", "x86_64": "x86_64", "arm64": "aarch64", "aarch64": "aarch64"}[machine]
+    if sys.platform == "darwin":
+        return f"{arch}-apple-darwin"
+    if sys.platform == "win32":
+        return f"{arch}-pc-windows-msvc"
+    return f"{arch}-unknown-linux-gnu"
+
+
+def sidecar_path(triple: str) -> Path:
+    return BINARIES / (f"bmail-{triple}" + (".exe" if "windows" in triple else ""))
+
+
+def build(triple: str) -> Path:
+    dist = WORK / "dist"
+    command = [
+        sys.executable, "-m", "PyInstaller", str(ROOT / "packaging" / "bmail_entry.py"),
+        "--name", "bmail", "--onefile", "--console", "--noconfirm", "--clean",
+        "--distpath", str(dist), "--workpath", str(WORK / "work"), "--specpath", str(WORK),
+        # The UI, the packs, the template recipes and the schema are package data.
+        "--collect-data", "bmail",
+        # Connectors and stages are imported lazily, by name, at run time.
+        "--collect-submodules", "bmail",
+        "--copy-metadata", "bmail",
+    ]
+    for module in EXCLUDE:
+        command += ["--exclude-module", module]
+    print("building:", " ".join(command[2:5]), "…", flush=True)
+    subprocess.run(command, check=True, cwd=ROOT)
+    built = dist / ("bmail.exe" if sys.platform == "win32" else "bmail")
+    target = sidecar_path(triple)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(built, target)
+    size = target.stat().st_size / 1_000_000
+    print(f"built {target.relative_to(ROOT)} ({size:.1f} MB)", flush=True)
+    return target
+
+
+def smoke_test(binary: Path) -> None:
+    """Start the frozen engine the way the shell does, and use it."""
+    version = subprocess.run([str(binary), "--version"], capture_output=True, text=True,
+                             timeout=120, check=True).stdout.strip()
+    print("version:", version, flush=True)
+    with tempfile.TemporaryDirectory() as home:
+        env = {**os.environ, "BMAIL_HOME": home}
+        process = subprocess.Popen(
+            [str(binary), "serve", "--json", "--port", "0"],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env,
+        )
+        try:
+            line = process.stdout.readline()     # onefile unpacks first; allow a while
+            if not line:
+                raise SystemExit(f"the engine exited without a URL:\n{process.stderr.read()}")
+            announced = json.loads(line)
+            base = f"http://127.0.0.1:{announced['port']}"
+            token = announced["token"]
+
+            def fetch(path: str, auth: bool = True) -> bytes:
+                request = urllib.request.Request(base + path)
+                if auth:
+                    request.add_header("Authorization", f"Bearer {token}")
+                with urllib.request.urlopen(request, timeout=30) as response:
+                    return response.read()
+
+            assert json.loads(fetch("/api/health", auth=False))["status"] == "ok"
+            page = fetch("/").decode()
+            assert "<title>Bmail</title>" in page, "the page was not bundled"
+            assert b"function" in fetch("/app.js"), "the script was not bundled"
+            assert fetch("/fonts/inter-latin.woff2"), "the font was not bundled"
+            state = json.loads(fetch("/api/state"))
+            assert "job-seeker" in state["packs"], "the packs were not bundled"
+            assert state["setup"]["first_run"] is True
+            accounts = json.loads(fetch("/api/accounts"))
+            print("keychain:", accounts["keychain"]["backend"] or "none",
+                  "(available)" if accounts["keychain"]["available"] else "(unavailable)")
+            print("smoke test passed: page, script, font, packs and API all served", flush=True)
+        finally:
+            process.terminate()
+            try:
+                process.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                process.kill()
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    parser.add_argument("--target", help="Rust target triple (default: this machine)")
+    parser.add_argument("--no-test", action="store_true", help="build only")
+    parser.add_argument("--test-only", action="store_true", help="test an existing build")
+    args = parser.parse_args()
+    triple = args.target or target_triple()
+    binary = sidecar_path(triple) if args.test_only else build(triple)
+    if not args.no_test:
+        started = time.monotonic()
+        smoke_test(binary)
+        print(f"({time.monotonic() - started:.1f}s)")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

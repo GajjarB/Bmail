@@ -47,3 +47,19 @@ def test_bundled_third_party_assets_carry_their_licences():
     static = PACKAGE / "ui" / "static"
     assert (static / "fonts" / "LICENSE-Inter.txt").read_text().count("SIL OPEN FONT LICENSE") >= 1
     assert "ISC License" in (static / "icons.LICENSE.txt").read_text()
+
+
+def test_every_file_agrees_on_the_version():
+    """Seven files in three ecosystems carry the version. An installer built
+    from files that disagree reports one version and updates to another."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "set_version", pathlib.Path(__file__).resolve().parents[1] / "packaging" / "set_version.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    found = module.read_all()
+    assert len(set(found.values())) == 1, found
+    import bmail
+
+    assert set(found.values()) == {bmail.__version__}
