@@ -25,6 +25,7 @@ playwright_api = pytest.importorskip("playwright.sync_api", reason="playwright n
 
 
 def _chromium_path() -> str | None:
+    """A Chromium that was installed outside Playwright's own cache, if any."""
     root = Path(os.environ.get("PLAYWRIGHT_BROWSERS_PATH", "/opt/pw-browsers"))
     if not root.is_dir():
         return None
@@ -33,6 +34,19 @@ def _chromium_path() -> str | None:
     for candidate in sorted(root.glob("chromium*/chrome-linux/chrome")):
         return str(candidate)
     return None
+
+
+def launch_chromium(playwright):
+    """Chromium from a preinstalled build, else from `playwright install`.
+
+    Skips rather than fails when neither exists: the suite must stay runnable
+    on a plain checkout. CI installs a browser, so there the tests run.
+    """
+    executable = _chromium_path()
+    try:
+        return playwright.chromium.launch(executable_path=executable, args=["--no-sandbox"])
+    except Exception as exc:  # no browser installed
+        pytest.skip(f"no Chromium build available ({type(exc).__name__})")
 
 
 @pytest.fixture(scope="module")
@@ -67,12 +81,9 @@ def ui(tmp_path_factory):
 
 @pytest.fixture(scope="module")
 def page_factory(ui):
-    executable = _chromium_path()
-    if executable is None:
-        pytest.skip("no Chromium build available")
     base, app, config = ui
     with playwright_api.sync_playwright() as p:
-        browser = p.chromium.launch(executable_path=executable, args=["--no-sandbox"])
+        browser = launch_chromium(p)
 
         def make(**kwargs):
             kwargs.setdefault("viewport", {"width": 1440, "height": 900})

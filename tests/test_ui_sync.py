@@ -18,7 +18,7 @@ from bmail.sync import Syncer
 from tests.fake_imap import FakeImapServer
 
 playwright_api = pytest.importorskip("playwright.sync_api", reason="playwright not installed")
-from tests.test_ui_browser import _chromium_path  # noqa: E402
+from tests.test_ui_browser import launch_chromium  # noqa: E402
 
 
 def mail(n: int) -> bytes:
@@ -34,9 +34,6 @@ def mail(n: int) -> bytes:
 
 @pytest.fixture
 def live_page(tmp_path):
-    executable = _chromium_path()
-    if executable is None:
-        pytest.skip("no Chromium build available")
     with FakeImapServer() as imap:
         imap.mailbox.add(mail(1))
         home = tmp_path / "home"
@@ -51,22 +48,26 @@ def live_page(tmp_path):
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         base = f"http://127.0.0.1:{server.server_address[1]}"
-        with playwright_api.sync_playwright() as p:
-            browser = p.chromium.launch(executable_path=executable, args=["--no-sandbox"])
-            page = browser.new_page(viewport={"width": 1440, "height": 900})
-            errors: list[str] = []
-            page.on("pageerror", lambda exc: errors.append(str(exc)))
-            page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
-            page.goto(f"{base}/?token={app.token}", wait_until="networkidle")
-            page.wait_for_selector("#shell:not([hidden])", timeout=15000)
-            try:
-                yield page, errors, imap
-            finally:
-                browser.close()
-                server.shutdown()
-                server.server_close()
-                app.shutdown()
-                thread.join(timeout=5)
+        try:
+            with playwright_api.sync_playwright() as p:
+                browser = launch_chromium(p)
+                page = browser.new_page(viewport={"width": 1440, "height": 900})
+                errors: list[str] = []
+                page.on("pageerror", lambda exc: errors.append(str(exc)))
+                page.on("console",
+                        lambda m: errors.append(m.text) if m.type == "error" else None)
+                page.goto(f"{base}/?token={app.token}", wait_until="networkidle")
+                page.wait_for_selector("#shell:not([hidden])", timeout=15000)
+                try:
+                    yield page, errors, imap
+                finally:
+                    browser.close()
+        finally:
+            # Also on a skip: the server and its sync threads started above.
+            server.shutdown()
+            server.server_close()
+            app.shutdown()
+            thread.join(timeout=5)
 
 
 def poll_until(page, script: str, timeout: float = 15000) -> None:

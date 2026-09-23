@@ -56,7 +56,9 @@ bmail = ["packs/builtin/*.yaml", "rules/recipes/*.yaml", "store/*.sql", "ui/stat
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src"]
+# "." so tests can share helpers (`from tests.fake_imap import …`) however
+# pytest is started — plain `pytest`, not only `python -m pytest`.
+pythonpath = ["src", "."]
 
 [tool.ruff]
 line-length = 100

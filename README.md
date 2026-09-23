@@ -10,6 +10,7 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/GajjarB/Bmail/actions/workflows/tests.yml"><img src="https://github.com/GajjarB/Bmail/actions/workflows/tests.yml/badge.svg" alt="Tests"></a>
   <img src="https://img.shields.io/badge/python-3.10%20%E2%80%93%203.13-10111A" alt="Python 3.10 to 3.13">
   <img src="https://img.shields.io/badge/licence-MIT-10111A" alt="MIT licence">
   <img src="https://img.shields.io/badge/runs-100%25%20local-1B6644" alt="Runs entirely locally">
@@ -372,7 +373,9 @@ ruff check src tests
 
 The connectors are tested against a real IMAP server on a local socket and a
 fake Gmail API; the interface is tested in real Chromium through Playwright
-(skipped when it is not installed). The native shell needs Rust, and WebKitGTK
+(skipped when it is not installed — `pip install playwright && playwright
+install chromium` to run them). CI runs the suite on Python 3.10 to 3.13 and the
+browser tests on every push. The native shell needs Rust, and WebKitGTK
 on Linux: `cd desktop/src-tauri && cargo build --release`.
 
 ## Licence
