@@ -19,6 +19,7 @@
 
 <p align="center">
   <a href="#see-it">See it</a> ·
+  <a href="#download">Download</a> ·
   <a href="#quick-start">Quick start</a> ·
   <a href="#connect-your-mail">Connect your mail</a> ·
   <a href="#how-it-works">How it works</a> ·
@@ -121,7 +122,20 @@ the gap Bmail fills.
 
 More in [docs/PRIVACY.md](docs/PRIVACY.md).
 
+## Download
+
+Installers for macOS (Apple silicon), Windows and Linux are on the
+[Releases page](https://github.com/GajjarB/Bmail/releases). Open the app and it
+walks you through connecting a mailbox. Nothing else to install: the engine is
+inside.
+
+Until the builds are signed, your system will warn you the first time. On
+macOS: System Settings → Privacy & Security → Open Anyway. On Windows: More info
+→ Run anyway. How releases are made: [docs/RELEASING.md](docs/RELEASING.md).
+
 ## Quick start
+
+To run it from source instead:
 
 Python 3.10 or newer. The core needs four packages.
 
