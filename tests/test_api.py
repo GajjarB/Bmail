@@ -444,6 +444,76 @@ def test_the_daemon_exits_when_its_parent_does(tmp_path):
     raise AssertionError("the daemon outlived the process that started it")
 
 
+def test_the_daemon_exits_with_the_window_even_under_an_unpacker(tmp_path):
+    """In the installed app the engine's Python runs under PyInstaller's
+    unpacking process, which waits on it and never exits by itself. Watching
+    the immediate parent therefore watched the unpacker, and a window killed
+    outright left the engine running. The shell now names itself instead."""
+    import subprocess
+    import sys
+    import textwrap
+
+    home = tmp_path / "home"
+    home.mkdir()
+    # window -> unpacker -> engine; the window then exits, the unpacker stays.
+    unpacker = textwrap.dedent(f"""
+        import subprocess, sys, os
+        env = dict(os.environ, BMAIL_HOME={str(home)!r})
+        engine = subprocess.Popen(
+            [sys.executable, "-m", "bmail", "serve", "--json", "--port", "0",
+             "--exit-with-parent"],
+            stdout=subprocess.PIPE, env=env, text=True,
+        )
+        print(engine.stdout.readline().strip(), flush=True)
+        print(engine.pid, os.getpid(), flush=True)
+        engine.wait()
+    """)
+    window = textwrap.dedent(f"""
+        import subprocess, sys, os
+        env = dict(os.environ, BMAIL_PARENT_PID=str(os.getpid()))
+        # Its own stderr, or the test's capture would wait for it to close.
+        middle = subprocess.Popen([sys.executable, "-c", {unpacker!r}],
+                                  stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                  env=env, text=True)
+        print(middle.stdout.readline().strip(), flush=True)
+        print(middle.stdout.readline().strip(), flush=True)
+    """)
+    started = subprocess.run([sys.executable, "-c", window], capture_output=True,
+                             text=True, timeout=90)
+    assert started.returncode == 0, started.stderr
+    announced, pids = started.stdout.strip().splitlines()[:2]
+    assert json.loads(announced)["url"].startswith("http://127.0.0.1:")
+    engine_pid, middle_pid = (int(p) for p in pids.split())
+
+    try:
+        deadline = time.time() + 30
+        while time.time() < deadline:
+            try:
+                os.kill(engine_pid, 0)
+            except OSError:
+                return  # gone, as required, with the unpacker still running
+            time.sleep(0.5)
+        os.kill(engine_pid, 9)
+        raise AssertionError("the engine outlived the window because its unpacker did")
+    finally:
+        try:
+            os.kill(middle_pid, 9)
+        except OSError:
+            pass
+
+
+def test_process_liveness_is_checked_without_touching_the_process():
+    import subprocess
+    import sys
+
+    from bmail.api import _alive
+
+    assert _alive(os.getpid())
+    finished = subprocess.Popen([sys.executable, "-c", "pass"])
+    finished.wait()
+    assert not _alive(finished.pid)
+
+
 # --------------------------------------------------------------------------- #
 # Background sync settings
 # --------------------------------------------------------------------------- #

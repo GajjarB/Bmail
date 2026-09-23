@@ -853,26 +853,74 @@ def _case_id(path: str) -> int:
 # --------------------------------------------------------------------------- #
 
 
-def _watch_parent(server: ThreadingHTTPServer, interval: float = 2.0) -> None:
+def _watch_parent(
+    server: ThreadingHTTPServer, interval: float = 2.0, *, parent_pid: int | None = None
+) -> None:
     """Shut down when the process that started this one goes away.
 
     The desktop shell kills the daemon when its window closes, but that only
     covers a clean exit. If the shell is killed outright the daemon would
     otherwise survive it — leaving a server that can read someone's mail running
-    on their machine with no window to show for it. Watching the parent pid
-    catches every case, including SIGKILL, because an orphan is reparented and
-    `getppid` changes.
+    on their machine with no window to show for it.
+
+    The shell names itself in BMAIL_PARENT_PID, and that process is watched
+    directly. Watching our own parent is only the fallback: in the installed
+    app the engine is a PyInstaller program, whose Python runs *under* a small
+    unpacking process, and that unpacker — the only parent Python can see — does
+    not exit when the window does. On Windows an orphan is not even re-parented,
+    so a changed parent never shows at all.
     """
-    original = os.getppid()
+    if parent_pid:
+        def gone() -> bool:
+            return not _alive(parent_pid)
+    else:
+        original = os.getppid()
+
+        def gone() -> bool:
+            return os.getppid() != original
 
     def watch() -> None:
         while True:
             time.sleep(interval)
-            if os.getppid() != original:
+            if gone():
                 server.shutdown()
                 return
 
     threading.Thread(target=watch, name="bmail-parent-watch", daemon=True).start()
+
+
+def _alive(pid: int) -> bool:
+    """Whether a process exists, without touching it.
+
+    Not os.kill(pid, 0) on Windows: there, any signal other than the two
+    console ones terminates the process — the probe would kill what it checks.
+    """
+    if os.name == "nt":  # pragma: no cover - exercised on Windows only
+        import ctypes
+
+        synchronize, wait_timeout = 0x0010_0000, 0x0000_0102
+        kernel32 = ctypes.windll.kernel32
+        handle = kernel32.OpenProcess(synchronize, False, pid)
+        if not handle:
+            return False
+        try:
+            return kernel32.WaitForSingleObject(handle, 0) == wait_timeout
+        finally:
+            kernel32.CloseHandle(handle)
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True           # it exists; it just is not ours to signal
+    return True
+
+
+def _parent_pid_from_env() -> int | None:
+    try:
+        return int(os.environ.get("BMAIL_PARENT_PID", "")) or None
+    except ValueError:
+        return None
 
 
 class _Server(ThreadingHTTPServer):
@@ -912,7 +960,7 @@ def serve(
 ) -> int:
     server, app = build_server(config, host=host, port=port, pack=pack)
     if exit_with_parent:
-        _watch_parent(server)
+        _watch_parent(server, parent_pid=_parent_pid_from_env())
     actual = server.server_address[1]
     url = f"http://{host}:{actual}/?token={app.token}"
 
