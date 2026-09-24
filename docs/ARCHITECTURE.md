@@ -39,12 +39,20 @@ projection, so every source is parsed by identical code. Where a provider knows
 the thread better than the headers do — Graph's `conversationId` — that is
 passed in as an override.
 
-Two details in the normaliser are load-bearing:
+Three details in the normaliser are load-bearing:
 
-- **HTML → text.** Quoted history is the biggest source of noise in mail
-  summarisation — a three-reply thread is typically 80% repetition. Bodies are
-  extracted, then quoted chains and signatures are stripped before anything
-  downstream sees them.
+- **HTML → text.** The text has to read the way the mail looks in a mail
+  client, because the classifier reads its first few hundred characters and
+  the app shows it to a person. So what a client hides stays hidden (the
+  `display:none` preheader, padded with invisible characters), paragraphs,
+  bullets and table rows survive as plain text ("Date · Tuesday"), and inline
+  markup never splits a word. The HTML part is read instead of the plain one
+  when the plain one is only a "view this email in your browser" stub; a part
+  in an unknown charset is decoded rather than dropped.
+- **Quoted history.** The biggest source of noise in mail summarisation — a
+  three-reply thread is typically 80% repetition. Quoted chains, signatures
+  and "view in browser" lines are stripped before anything downstream sees
+  them; the full text is kept beside it for the reader who wants it.
 - **Threading via `References`/`In-Reply-To`.** Subject matching breaks across
   providers and languages (`Re:`, `AW:`, `Antw:`, `WG:`); the References chain
   does not. The root of the chain is the thread id.

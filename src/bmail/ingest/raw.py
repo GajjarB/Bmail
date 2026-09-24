@@ -13,6 +13,7 @@ from __future__ import annotations
 import email
 import email.policy
 import hashlib
+import re
 from datetime import datetime, timezone
 from email.header import decode_header, make_header
 from email.message import EmailMessage
@@ -20,7 +21,7 @@ from email.utils import getaddresses, parsedate_to_datetime
 
 from bmail.models import Attachment, Direction, EmailAddress, Message
 from bmail.text.clean import clean_body, detect_language, normalise_whitespace
-from bmail.text.html import html_to_text
+from bmail.text.html import html_to_text, looks_like_html
 
 KEEP_HEADERS = (
     "list-id", "list-unsubscribe", "precedence", "auto-submitted", "x-mailer",
@@ -88,24 +89,71 @@ def _bodies(msg: EmailMessage) -> tuple[str, bool, list[Attachment]]:
                 )
             )
             continue
+        if content_type not in ("text/plain", "text/html"):
+            continue
         try:
             payload = part.get_payload(decode=True)
-            if payload is None:
-                continue
-            charset = part.get_content_charset() or "utf-8"
-            text = payload.decode(charset, errors="replace")
-        except (LookupError, UnicodeDecodeError, AttributeError):
+        except (AttributeError, ValueError):
             continue
-        if content_type == "text/plain":
-            plain_parts.append(text)
-        elif content_type == "text/html":
+        if payload is None:
+            continue
+        text = decode_payload(payload, part.get_content_charset())
+        # Some senders label a whole HTML document text/plain.
+        if content_type == "text/html" or looks_like_html(text):
             html_parts.append(text)
+        else:
+            plain_parts.append(text)
 
-    if plain_parts:
-        return "\n\n".join(plain_parts), bool(html_parts), attachments
-    if html_parts:
-        return html_to_text("\n".join(html_parts)), True, attachments
-    return "", False, attachments
+    plain = "\n\n".join(plain_parts)
+    if not html_parts:
+        return plain, False, attachments
+    html = html_to_text("\n".join(html_parts))
+    return (html if _html_says_more(plain, html) else plain), True, attachments
+
+
+def decode_payload(payload: bytes, charset: str | None) -> str:
+    """Bytes to text, whatever the part claims its charset is.
+
+    A charset Python has never heard of ("x-unknown", "unknown-8bit") must not
+    cost the message its body: try UTF-8, then Windows-1252, which is what
+    mislabelled European mail almost always is.
+    """
+    if charset:
+        try:
+            return payload.decode(charset, errors="replace")
+        except LookupError:
+            pass
+    try:
+        return payload.decode("utf-8")
+    except UnicodeDecodeError:
+        return payload.decode("cp1252", errors="replace")
+
+
+# What a plain-text part says when its sender only really wrote the HTML one.
+_STUB = re.compile(
+    r"html[- ]?(capable|compatible|version|format|e-?mail)|(view|read|open|see) (this|the) "
+    r"(e-?mail|message|newsletter) in (a|your) (web )?browser|does not support html|"
+    r"im browser (an)?zeigen|im browser (ansehen|lesen|öffnen)|webversion|html-darstellung",
+    re.I,
+)
+
+
+def _html_says_more(plain: str, html: str) -> bool:
+    """Whether to read the HTML part instead of the plain-text one.
+
+    The plain part wins when it is a real rendering of the mail: it is what
+    the sender chose to write as text. It loses when it is missing, when it is
+    a stub pointing at the HTML ("view this email in your browser"), or when it
+    is a fraction of what the HTML says.
+    """
+    plain, html = plain.strip(), html.strip()
+    if not plain:
+        return True
+    if not html:
+        return False
+    if len(plain) < 600 and _STUB.search(plain) and len(html) > len(plain):
+        return True
+    return len(plain) * 3 < len(html) and len(html) - len(plain) > 300
 
 
 def synth_message_id(from_addr: str, date: datetime, subject: str, body: str) -> str:

@@ -847,6 +847,10 @@ def message_detail(conn: sqlite3.Connection, message_id: str, pack: str) -> dict
             "has_html": message.has_html,
             "attachments": [a.model_dump() for a in message.attachments],
             "body_text": message.body_text,
+            # Everything the cleaning set aside (quoted replies, signature,
+            # footer), for the reader who wants it; absent when nothing was.
+            "body_full": message.body_raw_text
+            if message.body_raw_text.strip() != message.body_text.strip() else None,
         },
         "verdict": verdict.model_dump(mode="json") if verdict else None,
         "case": case.model_dump(mode="json") if case else None,

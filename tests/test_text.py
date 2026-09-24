@@ -16,11 +16,13 @@ def test_html_drops_script_and_keeps_blocks():
     assert text.strip().endswith("Two & three")
 
 
-def test_html_keeps_inline_words_apart():
-    # "Hallo <b>Welt</b>" must not become "HalloWelt": fused tokens break both
-    # search and the classifier's features.
+def test_html_keeps_words_as_they_appear_on_screen():
+    # "Hallo <b>Welt</b>" must not become "HalloWelt", and "<b>B</b>ewerbung"
+    # must not become "B ewerbung": inline markup neither joins nor splits
+    # words, exactly as in a mail client.
     assert html_to_text("<p>Hallo <b>Welt</b></p>") == "Hallo Welt"
-    assert html_to_text("<p>Hello<span>world</span></p>") == "Hello world"
+    assert html_to_text("<p><b>B</b>ewerbung</p>") == "Bewerbung"
+    assert html_to_text("<table><tr><td>Date</td><td>Tuesday</td></tr></table>") == "Date · Tuesday"
 
 
 def test_html_survives_broken_markup():

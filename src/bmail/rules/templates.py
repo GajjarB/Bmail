@@ -42,6 +42,20 @@ class MatchSpec(BaseModel):
     language: str | None = None
 
 
+_QUOTES = str.maketrans({"\u2019": "'", "\u2018": "'", "\u201a": "'", "\u2032": "'",
+                         "\u201c": '"', "\u201d": '"', "\u201e": '"'})
+
+
+def fold(text: str) -> str:
+    """Text as a phrase is compared against it.
+
+    Lower case, typographic quotes as plain ones (HTML mail writes "we’d"),
+    and any run of whitespace as one space: a phrase does not stop being the
+    phrase because a line was wrapped in the middle of it.
+    """
+    return " ".join(text.translate(_QUOTES).lower().split())
+
+
 class FieldSpec(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -68,7 +82,7 @@ class Recipe(BaseModel):
     def matches(self, message: Message) -> bool:
         spec = self.match
         haystack = f"{message.subject}\n{message.body_text}"
-        lowered = haystack.lower()
+        lowered = fold(haystack)
 
         if spec.from_domain:
             domain = message.sender_domain
@@ -84,11 +98,11 @@ class Recipe(BaseModel):
             token.lower() in message.subject.lower() for token in spec.subject_any
         ):
             return False
-        if spec.body_any and not any(token.lower() in lowered for token in spec.body_any):
+        if spec.body_any and not any(fold(token) in lowered for token in spec.body_any):
             return False
-        if spec.body_all and not all(token.lower() in lowered for token in spec.body_all):
+        if spec.body_all and not all(fold(token) in lowered for token in spec.body_all):
             return False
-        if spec.body_none and any(token.lower() in lowered for token in spec.body_none):
+        if spec.body_none and any(fold(token) in lowered for token in spec.body_none):
             return False
         if spec.body_regex and not re.search(spec.body_regex, haystack, re.IGNORECASE | re.DOTALL):
             return False

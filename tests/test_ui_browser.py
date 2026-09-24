@@ -546,3 +546,48 @@ def test_the_nav_indicator_starts_on_the_current_item(page_factory):
     assert moved, "the indicator did not follow the section"
     assert not errors
     page.close()
+
+
+def test_a_long_html_mail_reads_in_full_in_the_message_pane(page_factory, ui):
+    _base, _app, config = ui
+    from email.mime.text import MIMEText
+
+    from bmail.ingest.raw import parse_message
+
+    paragraphs = "".join(
+        f"<p>Point {i}: the team reviewed your profile and would like to go through it together.</p>"
+        for i in range(40))
+    html = (
+        '<div style="display:none">Preview padding &zwnj;&nbsp;&zwnj;&nbsp;</div>'
+        "<p>Hi Bhargav,</p>" + paragraphs +
+        "<ul><li>your ID</li><li>a copy of your CV</li></ul>"
+        "<p>Kind regards,<br>Jana</p>"
+        "<p>On Mon, 21 Sep 2026 at 09:00, Bhargav &lt;b@example.com&gt; wrote:</p>"
+        "<blockquote>My earlier question about the process.</blockquote>")
+    mime = MIMEText(html, "html", "utf-8")
+    mime["Subject"] = "Your interview: everything you need"
+    mime["From"] = "Jana <jana@acme.example>"
+    mime["Message-ID"] = "<longhtml@acme.example>"
+    mime["Date"] = "Tue, 22 Sep 2026 10:00:00 +0200"
+    conn = connect(config.database)
+    try:
+        repo.bulk_upsert(conn, [parse_message(mime.as_bytes(), account="demo")])
+    finally:
+        conn.close()
+
+    page, errors, _ = page_factory()
+    page.goto(page.url.split("#")[0] + "#/mail?id=" + "%3Clonghtml%40acme.example%3E")
+    body = page.wait_for_selector(".aside .body-text")
+    text = body.inner_text()
+    assert "Point 39" in text and "• a copy of your CV" in text
+    assert "Preview padding" not in text
+    assert "My earlier question" not in text, "the quoted thread is set aside at first"
+    boxed = page.evaluate("(el) => el.scrollHeight > el.clientHeight + 1", body)
+    assert boxed is False, "the message is cut off inside a scrolling box"
+
+    page.click("text=Show the whole message")
+    assert "My earlier question" in body.inner_text()
+    page.click("text=Show only the new part")
+    assert "My earlier question" not in body.inner_text()
+    assert not errors
+    page.close()

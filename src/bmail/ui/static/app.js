@@ -878,7 +878,23 @@ async function mailAside(messageId) {
       correctionControls(messageId, v)) : null,
 
     el("h3", { text: "Message" }),
-    el("div", { class: "body-text", text: m.body_text || "(no text)" }));
+    messageText(m));
+}
+
+// The cleaned text first: what this mail says, without the thread it quotes
+// or the footer it carries. The rest is one click away, never gone.
+function messageText(m) {
+  const short = m.body_text || "";
+  const whole = m.body_full || "";
+  const text = el("div", { class: "body-text full", text: short || whole || "(no text)" });
+  if (!short || !whole) return text;
+  let showingWhole = false;
+  const toggle = el("button", { class: "quiet sm gap-above", onclick: () => {
+    showingWhole = !showingWhole;
+    text.textContent = showingWhole ? whole : short;
+    toggle.textContent = showingWhole ? "Show only the new part" : "Show the whole message";
+  } }, "Show the whole message");
+  return el("div", {}, text, toggle);
 }
 
 function correctionControls(messageId, verdict) {

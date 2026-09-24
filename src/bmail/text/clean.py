@@ -47,12 +47,30 @@ _SUBJECT_PREFIX = re.compile(
     re.IGNORECASE,
 )
 
+# Lines that only point at another rendering of the same mail. They carry no
+# meaning, and they would otherwise be the "first line" a summary quotes.
+_WEB_VIEW = re.compile(
+    r"^[^\w\n]*(?:having trouble[^.?!\n]{0,40}[.?!]\s*|problems? viewing[^.?!\n]{0,40}[.?!]\s*)?"
+    r"(?:click here to |klicken sie hier,? um (?:diese )?(?:e-?mail|nachricht) )?"
+    r"(?:(?:view|read|open|see)(?: (?:this|the|it|our))?(?: (?:e-?mail|message|newsletter|mail))?"
+    r"(?: online| (?:in|with) (?:your |a |the )?(?:web ?)?browser| as a web ?page)"
+    r"|(?:(?:diese |die )?(?:e-?mail|nachricht|newsletter) )?(?:im|in ihrem) (?:web)?browser "
+    r"(?:an(?:zeigen|sehen)|lesen|öffnen)(?: zu können)?"
+    r"|web ?version|online[- ]version|webansicht)"
+    r"[^\w\n]*$",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+# Characters with no width that mail uses to pad preview text. U+200D is kept:
+# emoji sequences are built with it.
+_INVISIBLE = dict.fromkeys(map(ord, "\u00ad\u034f\u180e\u200b\u200c\u2060\u2061\u2062\u2063\ufeff"))
+
 _URL = re.compile(r"https?://\S+")
 _TRACKING_PIXEL = re.compile(r"\[image:[^\]]*\]", re.IGNORECASE)
 
 
 def normalise_whitespace(text: str) -> str:
-    text = unicodedata.normalize("NFKC", text or "")
+    text = unicodedata.normalize("NFKC", text or "").translate(_INVISIBLE)
     text = text.replace(" ", " ").replace("\r\n", "\n").replace("\r", "\n")
     text = re.sub(r"[ \t]+", " ", text)
     text = re.sub(r" *\n *", "\n", text)
@@ -98,6 +116,7 @@ def clean_body(text: str) -> str:
     """Full cleaning pass used by the normaliser."""
     text = normalise_whitespace(text)
     text = _TRACKING_PIXEL.sub(" ", text)
+    text = _WEB_VIEW.sub("", text)
     text = strip_quoted(text)
     text = strip_signature(text)
     return normalise_whitespace(text)

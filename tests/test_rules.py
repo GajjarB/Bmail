@@ -288,3 +288,22 @@ def test_the_summary_is_what_the_mail_says_not_its_greeting(body, summary):
     from bmail.rules.engine import _first_line
 
     assert _first_line(parse_message(make_raw(body=body))) == summary
+
+
+
+def test_a_phrase_still_matches_when_the_mail_wraps_it_or_curls_its_quotes():
+    # Plain-text mail is hard-wrapped at ~72 columns and HTML mail breaks lines
+    # with <br>; either can land in the middle of a recipe phrase.
+    wrapped = parse_message(make_raw(
+        sender="jobs@weser-data.example", subject="Backend Developer",
+        body="Hello Bhargav,\n\nthank you for your application. We would like to invite you\n"
+             "to an interview next week.\n\nBest, Jana",
+    ))
+    hit = match_template(wrapped)
+    assert hit is not None and hit.recipe.category == "interview_invite"
+
+    # No built-in phrase has an apostrophe yet; custom recipes do, and HTML
+    # mail curls them.
+    from bmail.rules.templates import fold
+
+    assert fold("We\u2019d  like") == fold("we'd like")
