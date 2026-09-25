@@ -30,14 +30,13 @@
     <nav class="nav" id="nav" aria-label="Sections"></nav>
 
     <div class="rail-foot">
-      <div class="sync-line" id="sync-line" role="status" hidden></div>
-      <div class="account-card">
+      <a class="account-card" href="#/setup" id="account-card">
         <span class="avatar" id="account-avatar" aria-hidden="true"></span>
-        <div class="account-who">
+        <span class="account-who">
           <b id="account-name"></b>
           <span id="account-address"></span>
-        </div>
-      </div>
+        </span>
+      </a>
       <div class="rail-meta" id="rail-meta"></div>
       <button id="btn-keys" class="quiet sm keys-hint">
         <span>Shortcuts</span>
@@ -48,7 +47,7 @@
 
   <section class="workspace">
     <header class="topbar">
-      <nav class="crumbs" id="crumbs" aria-label="You are here"></nav>
+      <div class="sync-line" id="sync-line" role="status" hidden></div>
       <button id="btn-find" class="find">
         <span>Search mail and applications</span>
         <kbd id="find-key">⌘K</kbd>

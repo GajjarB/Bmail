@@ -16,42 +16,56 @@ cd desktop/src-tauri && cargo build --release
 
 Someone opens this in the morning anxious about ninety applications and wants
 to be told two things: what needs them, and what has gone quiet. The design
-does that the way the best current productivity apps do. White panels float on
-a softly tinted canvas: the sidebar sits on the canvas itself, with a white
-pill marking where you are, and the work sits on one rounded card with a top
-bar (where you are, search, and the one black button that checks for mail).
+does that the way the best current productivity apps do. The sidebar sits on a
+warm grey ground, with a white pill marking where you are, and the work sits on
+one white panel with a top bar: when mail was last checked, search, and the one
+black button that checks for mail. Hairlines divide things, not shadows; there
+are no gradients, no glows and nothing that lifts on hover.
 
-Three rules are worth keeping:
+Four rules are worth keeping:
 
 1. **Chrome is grey; content gets the colour.** Every sender has an avatar in
-   one of eight soft hues, stable for that sender. Every kind of mail has its
-   tag colour, the same on Today, in Mail and in Review. The primary button is
-   black. Colour on the chrome would drown the colour that means something.
+   one of eight soft hues, stable for that sender. Every kind of mail is a
+   plain tag with a small dot in its colour, the same on Today, in Mail and on
+   the board. The primary button is black. Colour on the chrome would drown
+   the colour that means something.
 2. **Status colour means exactly one thing.** Red is overdue, amber is this
-   week, green is moving, slate is silent, grey is closed, in a dot, a tag, a
-   calendar day and a "days left" bar alike.
+   week, green is moving or booked, grey is closed or silent, in the words
+   under a card and on a calendar day alike.
 3. **Nothing claims more than it knows.** The counts are real totals, not page
    sizes. The stage rail fills only the stages a case actually reached. An
    extracted date always shows the sentence it came from.
+4. **Everyone can use it.** Every text colour clears 4.5:1 against its
+   background in both themes, every control has a name a screen reader can
+   say, and the drawer is a real modal dialog: focus moves into it, Tab stays
+   in it, Escape closes it and focus returns to the card it came from. The
+   pages are checked with axe-core, light and dark, and report nothing.
 
 ## The surfaces
 
 - **Today**: a greeting by name (taken from your own sent mail), a sentence
-  with the day's truth, and four cards: what needs you, open applications,
-  what is coming up, and how much was filed for you, each with the one bar
-  that says whether it is a lot. Then the things that need you as cards, each
-  with its kind, its deadline and the quoted sentence that proves it, and
-  beside them a month calendar with a dot on every day something is due and
-  the next few dated things with how much time is left.
+  with the day's truth, and a strip of four numbers: what needs you, open
+  applications (and how many closed), what is coming up in the next two weeks
+  (and how many are already overdue), and how many guesses are waiting to be
+  checked. Then the things that need you as cards, each with its kind, its
+  deadline and the quoted sentence that proves it. Beside them is a month
+  calendar with a dot on every day something is due. A marked day is a
+  button that narrows the list under it to that day, and the arrows move
+  between months only where there is something to see. Each dated thing links
+  to its application, or to the mail it came from. At the foot, how much was
+  filed for you, over a period you choose, with a link to that mail.
 - **Applications**: a board, one column per stage in the pack's own order, so
   you see where each application is and where it goes next. A stage with
-  nothing in it is a slim strip that takes no room. Opening a card slides its
-  history in from the right.
+  nothing in it is a slim strip that takes no room. **All** or **Gone quiet**,
+  and a stage menu, narrow it. Opening a card slides its history in from the
+  right; closing it keeps the filters you had.
 - **Mail**: three panes, like a mail client. Message cards on the left
-  (sender, subject, two lines, its kind), filtered by one-click pills; the
-  message in the middle with the sender at the top; and what Bmail made of it
-  on the right: the kind, how sure it is, the evidence, the application it
-  belongs to, and the correction. Opening another message changes only the
+  (sender, subject, two lines, its kind), with **All**, **Needs me** and
+  **Filed**, and a menu of every kind; the message in the middle, subject
+  first, then who sent it and when; and what Bmail made of it on the right:
+  the kind, how sure it is and what decided it ("95% sure, recognised by a
+  rule"), the sentence that says so, the application it belongs to, and a
+  way to change it. Opening another message changes only the
   reading panes, so the list stays where you scrolled it.
 - **Review**: the uncertain guesses, one at a time. A question, a big *yes*,
   and every alternative offered. Each answer becomes a training row, which is

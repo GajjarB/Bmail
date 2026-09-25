@@ -193,7 +193,7 @@ def test_closed_cases_do_not_show_a_deadline(page_factory):
     page, errors, _config = page_factory()
     page.click('[data-tab="cases"]')
     page.wait_for_selector(".card")
-    stale = page.locator('.stack.closed .card .chip[data-tone="urgent"]').count()
+    stale = page.locator('.stack.closed .card .due-words[data-tone="urgent"]').count()
     assert stale == 0
     assert not errors
     page.close()
@@ -357,7 +357,7 @@ def test_switching_pack_switches_the_data_not_just_the_labels(page_factory):
     nav = " ".join(page.locator("#nav a").all_inner_texts()).lower()
     assert "programme" in nav, "the sidebar should name the new pack's entity"
 
-    options = " ".join(page.locator(".bar-row select option").all_inner_texts())
+    options = " ".join(page.locator(".bar-row select option").all_inner_texts()).lower()
     assert "enquiry" in options, "the stage filter still lists the old pack's states"
     assert "acknowledged" not in options
 
