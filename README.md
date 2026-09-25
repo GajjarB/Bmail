@@ -32,21 +32,21 @@
 
 <!--
   A real video player, with sound and controls:
-  edit this file on github.com, drag media/bmail-film-30s.mp4 onto the empty
+  edit this file on github.com, drag media/bmail-film-short.mp4 onto the empty
   line below, and commit. GitHub puts a https://github.com/user-attachments/...
   link there, which it plays inline. Videos committed to the repository cannot
   be played in a README; only uploaded ones can.
 -->
 
 
-<a href="media/bmail-film-30s.mp4">
-  <img src="media/film.webp" alt="Bmail reading a deadline out of an email, tracking the application and showing the sentence it came from" width="100%">
+<a href="media/bmail-film-short.mp4">
+  <img src="media/film.webp" alt="Bmail reading a deadline out of an email, putting it on a calendar, tracking the application and showing why it sorted a message the way it did" width="100%">
 </a>
 
 <p align="center">
   <sub>
-    Thirty seconds, looping. <b><a href="media/bmail-film-30s.mp4">Watch with sound</a></b> ·
-    <a href="media/bmail-film.mp4">the full 1:29 tour</a><br>
+    Under forty seconds, looping. <b><a href="media/bmail-film-short.mp4">Watch with sound</a></b> ·
+    <a href="media/bmail-film.mp4">the full 1:50 tour</a>, with the board, the calendar and dark mode<br>
     Every frame is the running app on the sample corpus, with no mockups. The films are
     produced by a script, so they are remade whenever the interface changes (<a href="tools/">tools/</a>).
   </sub>

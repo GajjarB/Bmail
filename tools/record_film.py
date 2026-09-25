@@ -167,8 +167,18 @@ STAGE = r"""([W, H]) => {
 
   // ---- camera --------------------------------------------------------------
   const cam = { s: 1, tx: 0, ty: 0 };
+  // The drawer and its scrim live on <body>, outside the shell, so the camera
+  // moves them too. Each is fixed to the viewport; an origin at the viewport's
+  // corner, expressed in the element's own box, makes the same transform land
+  // it where it would be if it were part of the shell.
   const apply = () => {
-    shell.style.transform = `translate(${cam.tx}px, ${cam.ty}px) scale(${cam.s})`;
+    const t = `translate(${cam.tx}px, ${cam.ty}px) scale(${cam.s})`;
+    shell.style.transform = t;
+    for (const n of document.querySelectorAll(".drawer, .drawer-scrim")) {
+      n.style.animation = "none";
+      n.style.transformOrigin = `${-n.offsetLeft}px ${-n.offsetTop}px`;
+      n.style.transform = t;
+    }
   };
   // Never pan past the content's edges, or a push near a corner shows a band
   // of empty page down one side.
@@ -326,6 +336,11 @@ class Reel:
         self.page.evaluate("n => { applyTheme(n); render(); }", name)
         self.beat(ms)
 
+    def scheme(self, name, ms):
+        """Light or dark, the way the operating system would switch it."""
+        self.page.emulate_media(color_scheme=name)
+        self.beat(ms)
+
     def line(self, text, hold):
         """A caption, held, then cleared."""
         self.say(text)
@@ -344,47 +359,66 @@ def film_full(page):
     reel.drop()
     reel.beat(1100)
 
-    reel.line("Right \u2014 this is everything that needs me today.", 3200)
+    reel.line("Right, this is everything that needs me today.", 3000)
     reel.beat(150)
 
-    reel.push(".stack > .card", 1.5, 1900, 1)
+    reel.push(".stack > .card", 1.5, 1900, 0)
     reel.beat(500)
     reel.say("It pulled that deadline out of the email, and it shows me the line it got it from.")
-    hand.at(".quote", 1, ms=900)
+    hand.at(".stack .quote", 0, ms=900)
     reel.beat(3400)
     reel.hush()
     reel.beat(400)
     reel.pull(1700)
-    reel.beat(800)
-
-    hand.click('[data-tab="cases"]', ms=900, settle=1400)
-    reel.push(".stack > .card", 1.4, 1900, 1)
     reel.beat(500)
-    reel.line("Every application I've sent, and where each one actually got to.", 3200)
 
-    hand.click(".stack > .card", 1, ms=800, settle=1500)
-    reel.push(".aside", 1.45, 1800)
-    reel.beat(500)
-    reel.line(
-        "Applied, acknowledged, then nothing for three weeks. That's the bit I lose track of.",
-        3600,
-    )
+    reel.push(".schedule", 1.45, 1800)
+    reel.beat(300)
+    reel.say("Every date it found, on a calendar. Press a day to see what falls on it.")
+    hand.click(".calendar button.day", 1, ms=900, settle=2200)
+    hand.click(".due-filter button", ms=700, settle=900)
+    reel.hush()
+    reel.beat(300)
     reel.pull(1700)
     reel.beat(800)
 
+    hand.click('[data-tab="cases"]', ms=900, settle=1400)
+    reel.push(".column .card", 1.4, 1900, 0)
+    reel.beat(500)
+    reel.line("Every application I've sent, and the stage each one actually reached.", 3200)
+    reel.pull(1500)
+    reel.beat(300)
+
+    # A ghosted one: the case the line below is about.
+    hand.click('.column:has(h2:text-is("Ghosted")) .card', 0, ms=800, settle=1500)
+    reel.push("#drawer-title", 1.4, 1800)
+    reel.beat(500)
+    reel.line(
+        "Applied, acknowledged, then nothing for weeks. That's the bit I lose track of.",
+        3600,
+    )
+    reel.pull(1500)
+    reel.beat(300)
+    reel.press("Escape", 1000)
+
     hand.click('[data-tab="mail"]', ms=900, settle=1400)
     hand.click('[data-list="mail"] .row', 4, ms=800, settle=1500)
-    reel.push(".aside", 1.5, 1900)
+    reel.push(".context .sureness", 1.5, 1900)
     reel.beat(500)
     reel.say("If I want to know why it decided that, it's all here.")
     reel.beat(3200)
-    hand.at(".aside select", ms=700)
+    hand.at(".context select", ms=700)
     reel.beat(700)
     reel.hush()
     reel.beat(300)
     reel.line("And if it's wrong I fix it here, and it remembers.", 2900)
     reel.pull(1700)
-    reel.beat(800)
+    reel.beat(500)
+
+    reel.say("Or just the mail that needs me.")
+    hand.click('.segmented button[aria-pressed="false"]', 0, ms=800, settle=2200)
+    reel.hush()
+    reel.beat(600)
 
     reel.press("Control+k")
     reel.say("Ctrl-K, when I already know what I'm after.")
@@ -402,10 +436,10 @@ def film_full(page):
     reel.beat(800)
 
     hand.click('[data-tab="today"]', ms=900, settle=1300)
-    reel.say("Or tighter, if I'd rather see more at once.")
-    reel.beat(1700)
-    reel.theme("compact", 2800)
-    reel.theme("studio", 1900)
+    reel.say("It follows the system into dark mode, too.")
+    reel.beat(1200)
+    reel.scheme("dark", 3400)
+    reel.scheme("light", 1500)
     reel.hush()
     reel.beat(800)
 
@@ -414,10 +448,10 @@ def film_full(page):
 
 
 def film_short(page):
-    """Thirty seconds: the three things that are hard to believe without
-    seeing them — that it reads a deadline out of the prose, that it tracks
-    state across a thread, and that the verdict is inspectable. Everything
-    else is in the long cut.
+    """Thirty seconds: the things that are hard to believe without seeing
+    them. It reads a deadline out of the prose, it puts every date on a
+    calendar, it tracks state across a thread, and the verdict can be
+    inspected. Everything else is in the long cut.
 
     Every hold here is about a second shorter than the long cut's. A README
     video is watched once, with the page half-read; the long cut is watched on
@@ -426,34 +460,42 @@ def film_short(page):
     hand = reel.hand
 
     reel.title("Bmail", "Email triage that runs on your own laptop")
-    reel.beat(1800)
+    reel.beat(2400)
     reel.drop()
     reel.beat(600)
 
-    reel.line("Everything that needs me today.", 2000)
+    reel.line("Everything that needs me today.", 1800)
 
-    reel.push(".stack > .card", 1.5, 1200, 1)
+    reel.push(".stack > .card", 1.5, 1200, 0)
     reel.beat(200)
     reel.say("It pulled that deadline out of the email, and shows me the line it came from.")
-    hand.at(".quote", 1, ms=650)
+    hand.at(".stack .quote", 0, ms=650)
     reel.beat(2300)
     reel.hush()
     reel.beat(250)
     reel.pull(1000)
-    reel.beat(300)
+    reel.beat(200)
+
+    reel.push(".schedule", 1.45, 1100)
+    reel.say("Every date it found, on a calendar.")
+    hand.click(".calendar button.day", 1, ms=650, settle=1500)
+    reel.hush()
+    reel.beat(200)
+    reel.pull(1000)
+    reel.beat(200)
 
     hand.click('[data-tab="cases"]', ms=650, settle=950)
-    reel.push(".stack > .card", 1.4, 1200, 1)
+    reel.push(".column .card", 1.4, 1200, 0)
     reel.beat(200)
-    reel.line("Every application, and where each one actually got to.", 2400)
+    reel.line("Every application, and the stage each one reached.", 2200)
     reel.pull(1000)
     reel.beat(300)
 
     hand.click('[data-tab="mail"]', ms=650, settle=850)
     hand.click('[data-list="mail"] .row', 4, ms=600, settle=1050)
-    reel.push(".aside", 1.5, 1200)
+    reel.push(".context .sureness", 1.5, 1200)
     reel.beat(200)
-    reel.line("And why it decided that, in full.", 2300)
+    reel.line("And why it decided that, in full.", 2200)
     reel.pull(1000)
     reel.beat(350)
 
