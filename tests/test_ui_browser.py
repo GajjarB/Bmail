@@ -577,7 +577,7 @@ def test_a_long_html_mail_reads_in_full_in_the_message_pane(page_factory, ui):
 
     page, errors, _ = page_factory()
     page.goto(page.url.split("#")[0] + "#/mail?id=" + "%3Clonghtml%40acme.example%3E")
-    body = page.wait_for_selector(".aside .body-text")
+    body = page.wait_for_selector(".reader .body-text")
     text = body.inner_text()
     assert "Point 39" in text and "• a copy of your CV" in text
     assert "Preview padding" not in text

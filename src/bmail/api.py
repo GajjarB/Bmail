@@ -137,8 +137,11 @@ class BmailApp:
             cases = repo.list_cases(conn, pack.name)
             accounts = [dict(row) for row in repo.list_accounts(conn)]
             runs = repo.recent_runs(conn, 5)
+            name = repo.owner_name(conn)
         finally:
             conn.close()
+        addresses = [str(entry.get("address") or entry.get("username") or "")
+                     for entry in self.config.accounts] + list(self.config.owner_addresses)
 
         tier = detect_tier()
         model = self.config.llm.model or tier.model
@@ -183,6 +186,8 @@ class BmailApp:
             },
             "accounts": accounts,
             "configured_accounts": [mailboxes.public(entry) for entry in self.config.accounts],
+            # Who the app is for, to greet and to show at the foot of the sidebar.
+            "owner": {"name": name, "address": next((a for a in addresses if "@" in a), "")},
             "setup": self.setup_state(counts["total"]),
             "runs": runs,
             "llm": llm,

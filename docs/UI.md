@@ -14,39 +14,54 @@ cd desktop/src-tauri && cargo build --release
 
 ## The idea
 
-This is a briefing, not a dashboard. Someone opens it in the morning anxious
-about ninety applications and wants to be told two things: what needs them, and
-what has gone quiet. So the interface talks in sentences — *"Eighteen things
-need you."* — rather than lining up stat tiles, and it gives one thing at a time
-real weight.
+Someone opens this in the morning anxious about ninety applications and wants
+to be told two things: what needs them, and what has gone quiet. The design
+does that the way the best current productivity apps do. White panels float on
+a softly tinted canvas: the sidebar sits on the canvas itself, with a white
+pill marking where you are, and the work sits on one rounded card with a top
+bar (where you are, search, and the one black button that checks for mail).
 
-Three rules follow from that, and they are worth keeping:
+Three rules are worth keeping:
 
-1. **Numbers live inside sentences.** A row of counters is what you build when
-   you have not decided what matters.
-2. **Colour means exactly one thing.** Red is overdue, amber is this week, green
-   is moving, slate is silent, grey is closed — the same everywhere, in a dot, a
-   chip and a card edge.
-3. **Nothing claims more than it knows.** The headline count is the real total,
-   not the page size. The stage rail fills only the stages a case actually
-   reached. An extracted date always shows the sentence it came from.
+1. **Chrome is grey; content gets the colour.** Every sender has an avatar in
+   one of eight soft hues, stable for that sender. Every kind of mail has its
+   tag colour, the same on Today, in Mail and in Review. The primary button is
+   black. Colour on the chrome would drown the colour that means something.
+2. **Status colour means exactly one thing.** Red is overdue, amber is this
+   week, green is moving, slate is silent, grey is closed, in a dot, a tag, a
+   calendar day and a "days left" bar alike.
+3. **Nothing claims more than it knows.** The counts are real totals, not page
+   sizes. The stage rail fills only the stages a case actually reached. An
+   extracted date always shows the sentence it came from.
 
 ## The surfaces
 
-- **Today** — the briefing. A headline that states the day's truth, then the
-  things that need you, each with its deadline and the quoted sentence that
-  proves it. Underneath: what is coming up, what has gone quiet, and what was
-  filed away without bothering you.
-- **Applications** — the tracker, named after whatever the active pack tracks:
-  applications, programme applications, candidates or invoices. Each case draws
-  its own state machine as a rail, live ones first and closed ones receding.
-- **Mail** — everything Bmail has read, searchable and filterable, with a detail
-  panel that shows what Bmail concluded and why.
-- **Review** — the uncertain guesses, one at a time. A question, a big *yes*,
+- **Today**: a greeting by name (taken from your own sent mail), a sentence
+  with the day's truth, and four cards: what needs you, open applications,
+  what is coming up, and how much was filed for you, each with the one bar
+  that says whether it is a lot. Then the things that need you as cards, each
+  with its kind, its deadline and the quoted sentence that proves it, and
+  beside them a month calendar with a dot on every day something is due and
+  the next few dated things with how much time is left.
+- **Applications**: a board, one column per stage in the pack's own order, so
+  you see where each application is and where it goes next. A stage with
+  nothing in it is a slim strip that takes no room. Opening a card slides its
+  history in from the right.
+- **Mail**: three panes, like a mail client. Message cards on the left
+  (sender, subject, two lines, its kind), filtered by one-click pills; the
+  message in the middle with the sender at the top; and what Bmail made of it
+  on the right: the kind, how sure it is, the evidence, the application it
+  belongs to, and the correction. Opening another message changes only the
+  reading panes, so the list stays where you scrolled it.
+- **Review**: the uncertain guesses, one at a time. A question, a big *yes*,
   and every alternative offered. Each answer becomes a training row, which is
   what makes the classifier personal within a week.
-- **Setup** — add and remove mailboxes, choose how often to check, sort,
-  switch what is tracked, export, and see where things live on disk.
+- **Setup**: add and remove mailboxes, choose how often to check, sort,
+  switch what is tracked, export, choose the layout, and see where things live
+  on disk.
+
+Two layouts share the markup: **Studio** (the default, described above) and
+**Compact**, denser, for when ninety applications need to fit on a screen.
 
 A new install opens on a four-step welcome instead of an empty Today: what to
 track, where the mail is (a mailbox, an export file, or sample mail), reading

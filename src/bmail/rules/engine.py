@@ -64,6 +64,12 @@ class RulesEngine:
         template = match_template(message, self.recipe_dir)
         if template is not None and template.recipe.category in self.pack.categories:
             self._apply_template(message, verdict, template)
+            # A job board's mailing has the same unsubscribe footer as any
+            # newsletter; what it carries is jobs.
+            if (verdict.category == "newsletter" and "job_alert" in self.pack.categories
+                    and self._is_job_board_mail(message)):
+                verdict.category = "job_alert"
+                verdict.reasons.append("a job board's mailing: filed with job alerts")
             result.template = template
             result.resolved = True
         elif (duplicate := self._duplicate_of(conn, message)) is not None:

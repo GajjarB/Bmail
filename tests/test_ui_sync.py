@@ -118,7 +118,7 @@ def test_mail_arriving_while_you_read_never_redraws_the_page(live_page):
     page.evaluate("location.hash = '#/mail'")
     page.wait_for_selector('[data-list="mail"] .row')
     page.click('[data-list="mail"] .row')
-    page.wait_for_selector(".aside .body-text")
+    page.wait_for_selector(".reader .body-text")
     page.evaluate("() => { window.__page = document.querySelector('#main .page'); }")
 
     imap.mailbox.add(mail(2))

@@ -133,6 +133,8 @@ def decode_payload(payload: bytes, charset: str | None) -> str:
 _STUB = re.compile(
     r"html[- ]?(capable|compatible|version|format|e-?mail)|(view|read|open|see) (this|the) "
     r"(e-?mail|message|newsletter) in (a|your) (web )?browser|does not support html|"
+    r"best viewed (in|with|as) (an? )?html|(requires|needs) (an? )?html|"
+    r"am besten (in|als) html|"
     r"im browser (an)?zeigen|im browser (ansehen|lesen|öffnen)|webversion|html-darstellung",
     re.I,
 )

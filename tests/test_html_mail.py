@@ -166,3 +166,13 @@ def test_html_sent_as_plain_text_is_read_as_html():
 def test_invisible_padding_in_a_text_part_is_dropped():
     raw = _mail(plain="Your interview is confirmed" + "‌ ͏" * 50 + "\n\nSee you on Tuesday.")
     assert parse_message(raw).body_text == "Your interview is confirmed\n\nSee you on Tuesday."
+
+
+@pytest.mark.parametrize("stub", [
+    "This message is best viewed in HTML.",
+    "This email requires HTML. Please switch your mail client to HTML view.",
+    "Diese E-Mail wird am besten in HTML dargestellt.",
+])
+def test_every_way_of_saying_view_the_html_part_reads_the_html(stub):
+    message = parse_message(_mail(plain=stub, html=ATS))
+    assert "Backend Developer" in message.body_text

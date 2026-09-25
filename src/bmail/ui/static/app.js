@@ -37,6 +37,8 @@ const App = {
   packChoice: null,   // the pack the user picked, or null for the configured one
   cursor: -1,         // keyboard position in the current list, -1 for "nowhere"
   overlay: null,      // the open sheet, if any, and how to close it
+  drawer: null,       // the detail drawer over the board, if open
+  mailKey: null,      // the mail list on screen, so opening a message keeps it
   skeleton: false,    // a placeholder is on screen, so skip the entrance again
   arriving: false,    // this paint is a new screen, not a redraw of this one
 };
@@ -166,6 +168,32 @@ const initials = (name, address) => {
   const parts = source.split(/[\s.@_-]+/).filter(Boolean);
   return ((parts[0] || "?")[0] + (parts.length > 1 ? parts[1][0] : "")).slice(0, 2);
 };
+
+/* A sender's colour: stable for a name, one of eight soft hues. Content gets
+   colour; the chrome around it stays grey. */
+function hueOf(text) {
+  let hash = 0;
+  for (const ch of String(text || "?").toLowerCase()) hash = (hash * 31 + ch.codePointAt(0)) >>> 0;
+  return String(hash % 8);
+}
+
+const avatar = (name, address, size = "") => el("span", {
+  class: `avatar${size ? ` ${size}` : ""}`, "data-hue": hueOf(address || name),
+  "aria-hidden": "true", text: initials(name, address).toUpperCase(),
+});
+
+/* The kind of a message, in the same colour wherever it appears. */
+const CATEGORY_HUE = {
+  interview_invite: 1, assessment: 6, offer: 5, document_request: 3, scheduling: 0,
+  recruiter_outreach: 2, rejection: 4, acknowledgement: 7, job_alert: 0, newsletter: 7,
+  admin: 7, personal: 2, other: 7,
+};
+const kindChip = (category) => (category ? el("span", {
+  class: "chip", "data-hue": String(CATEGORY_HUE[category] ?? hueOf(category)),
+  text: capital(humanise(category)),
+}) : null);
+
+const capital = (text) => (text ? text[0].toUpperCase() + text.slice(1) : "");
 
 /** One vocabulary for urgency, used by every dot, chip and card edge. */
 function toneFor({ due, urgency, actionRequired, state, stalled, closed }) {
@@ -441,7 +469,7 @@ const Sync = {
 
 function paint(...nodes) {
   const main = $("#main");
-  const wide = App.route === "mail" ? " wide" : "";
+  const wide = App.route === "mail" ? " wide mailpage" : App.route === "cases" ? " wide" : "";
   // Animate only when a new screen arrives. Selecting a row, running a search
   // or changing a filter redraws the same screen, and replaying the entrance
   // for those makes the whole list flinch every time you click something —
@@ -497,59 +525,43 @@ async function viewToday() {
 
   const today = new Date().toLocaleDateString(undefined,
     { weekday: "long", day: "numeric", month: "long" });
+  const hello = el("div", { class: "hello" },
+    el("div", {}, el("span", { class: "eyebrow", text: today }), ...headlineFor(counts, state)));
 
-  const header = el("div", { class: "bar-row flush" },
-    el("span", { class: "eyebrow", text: today }));
+  if (!state.verdicts.total) {
+    paint(hello);
+    return;
+  }
 
-  const nodes = [header, ...headlineFor(counts, state)];
-
+  const main = [];
   if (brief.needs_you.length) {
     const more = (counts.needs_you || 0) - brief.needs_you.length;
-    nodes.push(section("Needs you", counts.needs_you, "today"));
-    nodes.push(el("div", { class: "stack" }, brief.needs_you.map(briefCard)));
+    main.push(section("Needs you", counts.needs_you, "today"));
+    main.push(el("div", { class: "stack" }, brief.needs_you.map(briefCard)));
     if (more > 0) {
-      nodes.push(el("div", { class: "bar-row" },
+      main.push(el("div", { class: "bar-row" },
         el("button", { class: "sm", onclick: () => go("mail", { action: "1" }) },
           `Show the other ${more}`)));
     }
-  }
-
-  if (brief.deadlines.length) {
-    nodes.push(section("Deadlines", brief.deadlines.length, "deadline"));
-    nodes.push(el("div", { class: "stack" }, brief.deadlines.map((item) => {
-      const tone = toneFor({ due: item.due });
-      return el("a", { class: "card", "data-tone": tone, href: `#/cases?id=${item.case_id || ""}` },
-        el("div", { class: "card-top" },
-          el("span", { class: "flag when", "data-tone": tone, text: overdueWords(item.due) })),
-        el("div", { class: "card-title", text: item.title }),
-        el("div", { class: "card-org", text: dateWords(item.due) }));
-    })));
-  }
-
-  if (brief.events.length) {
-    nodes.push(section("Diary", brief.events.length, "diary"));
-    nodes.push(el("div", { class: "stack" }, brief.events.map((item) =>
-      el("a", { class: "card", "data-tone": "live", href: `#/cases?id=${item.case_id || ""}` },
-        el("div", { class: "card-top" },
-          el("span", { class: "flag when", "data-tone": "live", text: whenWords(item.when) })),
-        el("div", { class: "card-title", text: item.title }),
-        el("div", { class: "card-org", text: dateWords(item.when, true) })))));
+  } else {
+    main.push(section("Needs you", 0, "today"));
+    main.push(el("div", { class: "panel panel-pad" },
+      empty("All clear", "Nothing is waiting on a reply or an action from you.", null, "clear")));
   }
 
   if (brief.stalled.length) {
-    const worth = brief.stalled.slice(0, 8);
-    nodes.push(section("No reply", brief.stalled.length, "quiet"));
-    nodes.push(el("div", { class: "rows", "data-list": "quiet" },
+    const worth = brief.stalled.slice(0, 6);
+    main.push(section("No reply", brief.stalled.length, "quiet"));
+    main.push(el("div", { class: "rows", "data-list": "quiet" },
       worth.map((item) => el("a", { class: "row", href: `#/cases?id=${item.case_id || ""}` },
-        el("span", { class: "avatar", text: initials(item.title) }),
+        avatar(item.title, "", "sm"),
         el("span", { class: "row-main" },
           el("span", { class: "row-title", text: item.title }),
           el("span", { class: "row-sub", text: humanise(item.detail.split("·").pop()) })),
-        // The silence, as a column of numbers you can run your eye down.
         el("span", { class: "row-side" },
-          el("span", { class: "meta", text: `${Math.round(item.score)}d silent` }))))));
+          el("span", { class: "chip", "data-tone": "quiet", text: `${Math.round(item.score)}d silent` }))))));
     if (brief.stalled.length > worth.length) {
-      nodes.push(el("div", { class: "bar-row" },
+      main.push(el("div", { class: "bar-row" },
         el("button", { class: "sm", onclick: () => go("cases", { quiet: "1" }) },
           `Show all ${brief.stalled.length}`)));
     }
@@ -557,20 +569,21 @@ async function viewToday() {
 
   // Needs you is everything still open, whenever it arrived. The period only
   // decides how far back "filed" looks, so its picker lives here, with it.
-  if (state.verdicts.total) {
-    nodes.push(section("Filed", counts.archived || 0, "archive"));
-    nodes.push(el("div", { class: "bar-row" },
-      el("span", { class: "meta", text: "Newsletters, alerts and automatic acknowledgements." }),
-      el("span", { class: "grow" }),
-      el("select", { "aria-label": "Filed in", onchange: (e) => {
-          localStorage.setItem("bmail.window", e.target.value); render();
-        } },
-        [[1, "Today"], [7, "Last 7 days"], [30, "Last 30 days"], [3650, "Everything"]]
-          .map(([value, label]) => el("option", { value, selected: value === days }, label))),
-      el("button", { class: "sm", onclick: () => go("mail") }, "Open")));
-  }
+  main.push(section("Filed for you", counts.archived || 0, "archive"));
+  main.push(el("div", { class: "bar-row" },
+    el("span", { class: "meta", text: "Newsletters, alerts and automatic acknowledgements." }),
+    el("span", { class: "grow" }),
+    el("select", { "aria-label": "Filed in", onchange: (e) => {
+        localStorage.setItem("bmail.window", e.target.value); render();
+      } },
+      [[1, "Today"], [7, "Last 7 days"], [30, "Last 30 days"], [3650, "Everything"]]
+        .map(([value, label]) => el("option", { value, selected: value === days }, label))),
+    el("button", { class: "sm", onclick: () => go("mail") }, "Open")));
 
-  paint(...nodes);
+  paint(hello, statCards(counts, state, brief),
+    el("div", { class: "today-grid" },
+      el("div", { class: "today-main" }, main),
+      el("aside", { class: "today-side" }, scheduleCard(brief))));
 }
 
 const section = (label, count, glyph) =>
@@ -578,6 +591,13 @@ const section = (label, count, glyph) =>
     glyph ? icon(glyph, 14) : null,
     el("span", { text: label }),
     count != null ? el("span", { class: "n", text: String(count) }) : null);
+
+function greeting() {
+  const hour = new Date().getHours();
+  const part = hour < 5 || hour >= 18 ? "evening" : hour < 12 ? "morning" : "afternoon";
+  const first = (((App.state && App.state.owner) || {}).name || "").trim().split(/\s+/)[0];
+  return `Good ${part}${first ? `, ${first}` : ""}`;
+}
 
 function headlineFor(counts, state) {
   const needs = counts.needs_you || 0;
@@ -590,34 +610,120 @@ function headlineFor(counts, state) {
         el("button", { class: "primary", onclick: () => go("setup") }, "Connect a mailbox")),
     ];
   }
-  if (needs) {
-    const extra = [];
-    if (counts.deadlines) extra.push(`${counts.deadlines} with a deadline`);
-    if (counts.events) extra.push(`${counts.events} in the diary`);
-    return [
-      el("h1", { class: "headline" },
-        el("span", { class: "n", text: String(needs) }),
-        needs === 1 ? " needs you" : " need you"),
-      extra.length ? el("p", { class: "subhead", text: extra.join(" · ") }) : null,
-    ];
-  }
+  const parts = [needs
+    ? `${needs} ${needs === 1 ? "thing needs" : "things need"} you`
+    : "Nothing is waiting on you"];
+  if (counts.deadlines) parts.push(`${counts.deadlines} with a deadline`);
+  if (counts.events) parts.push(`${counts.events} in the diary`);
   return [
-    el("h1", { class: "headline", text: "All clear" }),
-    el("p", { class: "subhead", text: "Nothing is waiting on you." }),
+    el("h1", { class: "headline", text: greeting() }),
+    el("p", { class: "subhead", text: `${parts.join(" · ")}.` }),
   ];
+}
+
+/* Four numbers worth knowing before anything else, each with the one bar that
+   says whether it is a lot. */
+function statCards(counts, state, brief) {
+  const stat = ({ glyph, hue, title, href, num, sub, fraction }) =>
+    el(href ? "a" : "div", { class: "stat", "data-hue": String(hue), href: href || null },
+      el("div", { class: "stat-head" },
+        el("span", { class: "tile" }, icon(glyph, 14)),
+        el("span", { text: title }),
+        href ? el("span", { class: "go" }, icon("arrow", 14)) : null),
+      el("div", { class: "stat-num", text: String(num) }),
+      el("div", { class: "stat-sub", text: sub }),
+      el("span", { class: "meter" }, progressFill(fraction || 0)));
+
+  const needs = counts.needs_you || 0;
+  const open = counts.open_cases || 0;
+  const total = counts.total_cases || 0;
+  const dated = [...brief.deadlines.map((d) => d.due), ...brief.events.map((e) => e.when)]
+    .filter(Boolean).sort();
+  const soon = dated.filter((d) => (daysFrom(d) ?? 99) <= 7).length;
+  const filed = counts.archived || 0;
+  const handled = filed + needs ? filed / (filed + needs) : 0;
+  return el("div", { class: "stats" },
+    stat({ glyph: "today", hue: 4, title: "Needs you", href: "#/mail?action=1", num: needs,
+      sub: counts.deadlines ? `${counts.deadlines} with a deadline` : "Replies and actions waiting",
+      fraction: needs ? (counts.deadlines || 0) / needs : 0 }),
+    stat({ glyph: "cases", hue: 0, title: capital(state.entity_plural), href: "#/cases", num: open,
+      sub: `${open} open of ${total}`, fraction: total ? open / total : 0 }),
+    stat({ glyph: "diary", hue: 1, title: "Coming up", href: null, num: dated.length,
+      sub: dated.length ? `Next: ${dateWords(dated[0])}` : "Nothing dated yet",
+      fraction: dated.length ? soon / dated.length : 0 }),
+    stat({ glyph: "archive", hue: 2, title: "Filed for you", href: "#/mail", num: filed,
+      sub: `${Math.round(handled * 100)}% of mail handled for you`, fraction: handled }));
+}
+
+/* The month at a glance, with a dot on every day something is due, and the
+   next few dated things underneath with how much time is left. */
+function scheduleCard(brief) {
+  const dayKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-`
+    + `${String(d.getDate()).padStart(2, "0")}`;
+  const items = [
+    ...brief.deadlines.map((d) => ({
+      day: String(d.due || ""), title: d.title, kind: "Due", tone: toneFor({ due: d.due }),
+      href: `#/cases?id=${d.case_id || ""}`, words: overdueWords(d.due),
+    })),
+    ...brief.events.map((e) => ({
+      day: e.when ? dayKey(new Date(e.when)) : "", title: e.title, kind: "Diary", tone: "live",
+      href: `#/cases?id=${e.case_id || ""}`, words: whenWords(e.when),
+    })),
+  ].filter((item) => item.day).sort((a, b) => a.day.localeCompare(b.day));
+
+  const now = new Date();
+  const first = new Date(now.getFullYear(), now.getMonth(), 1);
+  const start = new Date(first);
+  start.setDate(1 - ((first.getDay() + 6) % 7));   // weeks start on Monday
+  const marks = {};
+  for (const item of items) if (!marks[item.day] || item.tone === "urgent") marks[item.day] = item.tone;
+  let cells = Array.from({ length: 42 }, (_, n) => {
+    const d = new Date(start);
+    d.setDate(start.getDate() + n);
+    return d;
+  });
+  if (cells.slice(35).every((d) => d.getMonth() !== now.getMonth())) cells = cells.slice(0, 35);
+
+  const calendar = el("div", { class: "calendar", "aria-label": "This month" },
+    ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"].map((d) => el("span", { class: "dow", text: d })),
+    cells.map((d) => el("span", {
+      class: `day${d.getMonth() !== now.getMonth() ? " other" : ""}${dayKey(d) === dayKey(now) ? " today" : ""}`,
+      "data-tone": marks[dayKey(d)] || null, title: marks[dayKey(d)] ? "Something is due" : null,
+      text: String(d.getDate()),
+    })));
+
+  const month = now.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+  const rows = items.slice(0, 5).map((item) => {
+    const date = new Date(`${item.day}T12:00:00`);
+    const left = daysFrom(item.day) ?? 0;
+    return el("a", { class: "due", "data-tone": item.tone, href: item.href },
+      el("span", { class: "due-date" },
+        el("b", { text: String(date.getDate()) }),
+        el("span", { text: date.toLocaleDateString(undefined, { month: "short" }) })),
+      el("span", { class: "due-main" },
+        el("span", { class: "due-title", text: item.title }),
+        el("span", { class: "due-foot" }, el("span", { text: item.kind }), el("span", { text: item.words })),
+        // Fuller as it gets closer; a fortnight away starts empty.
+        el("span", { class: "meter" }, progressFill(1 - Math.min(Math.max(left, 0), 14) / 14))));
+  });
+  return el("section", { class: "side-card" },
+    el("h3", {}, icon("diary", 15), el("span", { text: "Schedule" }), el("span", { class: "meta", text: month })),
+    calendar,
+    rows.length ? el("div", { class: "due-list" }, rows)
+      : el("p", { class: "meta gap-above", text: "Nothing dated coming up." }));
 }
 
 function briefCard(item) {
   const tone = toneFor({ due: item.due, urgency: item.urgency, actionRequired: true });
   const org = [item.org, item.role].filter(Boolean).join(" · ") || item.detail;
-  const category = humanise(item.category);
   const timing = item.due ? overdueWords(item.due) : item.when ? whenWords(item.when) : "";
   return el("a", {
-    class: "card", "data-tone": tone,
+    class: "card person", "data-tone": tone,
     href: item.message_id ? `#/mail?id=${encodeURIComponent(item.message_id)}` : `#/cases?id=${item.case_id || ""}`,
   },
+    avatar(item.org || item.title, ""),
     el("div", { class: "card-top" },
-      category ? el("span", { class: "chip", "data-tone": timing ? null : tone, text: category }) : null,
+      kindChip(item.category),
       timing ? el("span", { class: "flag when", "data-tone": tone, text: timing }) : null),
     el("div", { class: "card-title", text: item.title }),
     el("div", { class: "card-org", text: org }),
@@ -646,70 +752,119 @@ async function viewCases(params) {
       el("option", { value: "" }, "Every stage"),
       (data.states || []).map((s) =>
         el("option", { value: s, selected: s === stateFilter }, humanise(s)))),
-    el("button", { class: onlyQuiet ? "on" : "", onclick: () => go("cases", onlyQuiet ? {} : { quiet: "1" }) },
-      "No reply"),
+    el("button", { class: "pill", "aria-pressed": String(onlyQuiet),
+      onclick: () => go("cases", onlyQuiet ? {} : { quiet: "1" }) }, "No reply"),
     el("span", { class: "grow" }),
     el("span", { class: "meta", text: `${data.cases.length} ${noun}` }));
+  const title = el("div", { class: "hello" }, el("div", {},
+    el("h1", { class: "headline", text: capital(noun) }),
+    el("p", { class: "subhead", text: `Every ${App.state.entity}, by the stage it has reached.` })));
 
   if (!data.cases.length) {
-    paint(el("h1", { class: "headline", text: noun[0].toUpperCase() + noun.slice(1) }), controls,
+    paint(title, controls,
       el("div", { class: "panel panel-pad" }, empty("Nothing tracked yet",
         `A ${App.state.entity} opens the first time Bmail sees mail about one.`,
         el("button", { class: "primary", onclick: () => go("setup") }, "Connect a mailbox"))));
     return;
   }
 
-  // Live before closed: a rejection from July is history, not news.
-  const ordered = [...data.cases].sort((a, b) =>
-    (a.closed ? 1 : 0) - (b.closed ? 1 : 0)
-    || (b.stalled ? 1 : 0) - (a.stalled ? 1 : 0)
-    || String(b.last_event_at || "").localeCompare(String(a.last_event_at || "")));
-  const open = ordered.filter((c) => !c.closed);
-  const closed = ordered.filter((c) => c.closed);
+  // One column per stage that has anything in it, in the pack's own order.
+  const byState = {};
+  for (const c of data.cases) (byState[c.state] ||= []).push(c);
+  const order = [...(data.states || []),
+    ...Object.keys(byState).filter((name) => !(data.states || []).includes(name))];
+  const recent = (a, b) => (b.stalled ? 1 : 0) - (a.stalled ? 1 : 0)
+    || String(b.last_event_at || "").localeCompare(String(a.last_event_at || ""));
+  // Every stage on the way is shown, so you can see where an application goes
+  // next; one with nothing in it is a slim strip that takes no room from the
+  // ones that have. Dead ends (withdrawn, ghosted) appear only when used.
+  const detours = ["withdrawn", "ghosted", "written_off", "lapsed"];
+  const shown = stateFilter ? [stateFilter]
+    : order.filter((name) => byState[name] || !detours.includes(name));
+  const columns = shown.map((name) => {
+    const cases = (byState[name] || []).sort(recent);
+    if (!cases.length) {
+      return el("section", { class: "column empty", "data-hue": stageHue(name), title: capital(humanise(name)) },
+        el("span", { class: "dot" }),
+        el("span", { class: "column-name", text: capital(humanise(name)) }),
+        el("span", { class: "n", text: "0" }));
+    }
+    const closed = cases.every((c) => c.closed);
+    return el("section", { class: "column", "data-hue": stageHue(name) },
+      el("div", { class: "column-head" },
+        el("span", { class: "dot" }),
+        el("span", { text: capital(humanise(name)) }),
+        el("span", { class: "n", text: String(cases.length) })),
+      el("div", { class: `stack${closed ? " closed" : ""}` },
+        cases.map((c) => caseCard(c, data.states, selected))));
+  });
 
-  const list = el("div", {},
-    el("div", { class: "stack" }, open.map((c) => caseCard(c, data.states, selected))),
-    closed.length
-      ? el("div", {},
-          section("Closed", closed.length, "closed"),
-          el("div", { class: "stack closed" },
-            closed.map((c) => caseCard(c, data.states, selected))))
-      : null);
-  paint(
-    el("h1", { class: "headline", text: noun[0].toUpperCase() + noun.slice(1) }),
-    controls,
-    selected
-      ? el("div", { class: "split" }, list, el("div", { class: "aside" }, await caseAside(selected)))
-      : list);
+  paint(title, controls, el("div", { class: "board" }, columns));
+  if (selected) {
+    const params2 = here();
+    delete params2.id;
+    openDrawer(await caseAside(selected), () => go("cases", params2));
+  }
+}
+
+/* A stage's colour: the good outcomes green, the bad ones rose, the waiting
+   ones blue and violet, the dead ends grey. */
+function stageHue(name) {
+  const known = {
+    applied: 0, submitted: 0, enquiry: 0, acknowledged: 2, received: 2, assessment: 6,
+    interview_scheduled: 1, interviewed: 1, under_review: 1, offer: 5, admitted: 5,
+    awarded: 5, paid: 5, rejected: 4, declined: 4, withdrawn: 7, ghosted: 7, lapsed: 7,
+  };
+  return String(known[name] ?? hueOf(name));
+}
+
+/* A detail panel that slides over the board instead of squeezing it. */
+function openDrawer(content, onClose) {
+  closeDrawer();
+  const scrim = el("div", { class: "drawer-scrim", onclick: onClose });
+  const panel = el("aside", { class: "drawer", role: "dialog", "aria-label": "Details" }, content);
+  document.body.append(scrim, panel);
+  App.drawer = { scrim, panel };
+}
+
+function closeDrawer() {
+  if (!App.drawer) return;
+  App.drawer.scrim.remove();
+  App.drawer.panel.remove();
+  App.drawer = null;
 }
 
 function caseCard(c, states, selected) {
   const silent = c.last_inbound_at ? -daysFrom(c.last_inbound_at) : null;
   const tone = toneFor({ stalled: c.stalled, closed: c.closed, due: c.next_action_due, state: c.state });
+  // One tag at most: the single thing most worth knowing about it right now.
+  let flag = null;
+  if (!c.closed && c.next_action_due) {
+    flag = el("span", { class: "chip", "data-tone": toneFor({ due: c.next_action_due }),
+      text: overdueWords(c.next_action_due) });
+  } else if (!c.closed && c.event_datetime) {
+    flag = el("span", { class: "chip",
+      // An interview that has already happened is history, not a plan.
+      "data-tone": (daysFrom(c.event_datetime) ?? -1) >= 0 ? "live" : null,
+      text: dateWords(c.event_datetime, true) });
+  } else if (c.stalled && silent) {
+    flag = el("span", { class: "chip", "data-tone": "quiet", text: `${silent}d silent` });
+  }
   return el("a", {
     class: "card", "data-tone": tone, href: `#/cases?id=${c.id}`,
     "aria-selected": String(c.id) === String(selected),
   },
-    // Right-hand column: only what is true of this case right now. The stage
-    // it has reached is drawn underneath, so it is not repeated as a word here.
-    el("div", { class: "card-top" },
-      c.stalled && silent
-        ? el("span", { class: "chip", "data-tone": "quiet", text: `${silent}d silent` }) : null,
-      !c.closed && c.next_action_due
-        ? el("span", { class: "chip", "data-tone": toneFor({ due: c.next_action_due }),
-            text: overdueWords(c.next_action_due) }) : null,
-      !c.closed && c.event_datetime
-        ? el("span", {
-            class: "chip",
-            // An interview that has already happened is history, not a plan.
-            "data-tone": (daysFrom(c.event_datetime) ?? -1) >= 0 ? "live" : null,
-            text: dateWords(c.event_datetime, true),
-          }) : null,
-      el("span", { class: "meta when",
-        text: c.last_event_at ? agoWords(c.last_event_at) : `${c.message_count} messages` })),
-    el("div", { class: "card-title", text: c.org || c.title || "Untitled" }),
-    el("div", { class: "card-org", text: c.role || `${c.message_count} messages` }),
-    stageRail(c, states));
+    el("div", { class: "card-who" },
+      avatar(c.org || c.title, "", "sm"),
+      el("div", { class: "card-title", text: c.org || c.title || "Untitled" })),
+    el("div", { class: "card-org",
+      text: c.role || `${c.message_count} message${c.message_count === 1 ? "" : "s"}` }),
+    flag ? el("div", { class: "card-top" }, flag) : null,
+    stageRail(c, states),
+    el("div", { class: "card-foot" },
+      el("span", {}, icon("mail", 12), ` ${c.message_count}`),
+      el("span", { class: "grow" }),
+      el("span", { text: c.last_event_at ? agoWords(c.last_event_at) : "" })));
 }
 
 /* The state machine, drawn — the thing that makes this a tracker and not a list.
@@ -790,105 +945,152 @@ async function viewMail(params) {
   const category = params.get("category") || "";
   const onlyAction = params.get("action") === "1";
   const offset = Number(params.get("offset") || 0);
+  const selected = params.get("id");
 
   const query = new URLSearchParams({ limit: "60", offset: String(offset) });
   if (q) query.set("q", q);
   if (category) query.set("category", category);
   if (onlyAction) query.set("action", "1");
-  const data = await api(`/messages?${query}`);
-  const selected = params.get("id");
 
-  const search = el("input", {
-    type: "search", placeholder: "Search", value: q,
-    onkeydown: (e) => { if (e.key === "Enter") go("mail", { ...here(), q: e.target.value, offset: 0 }); },
-  });
-
-  const controls = el("div", { class: "bar-row" },
-    el("label", { class: "field" }, icon("search", 15), search),
-    el("select", { onchange: (e) => go("mail", { ...here(), category: e.target.value, offset: 0 }) },
-      el("option", { value: "" }, "All kinds"),
-      (App.state.categories || []).map((c) =>
-        el("option", { value: c.name, selected: c.name === category }, humanise(c.name)))),
-    el("button", { class: onlyAction ? "on" : "",
-      onclick: () => go("mail", { ...here(), action: onlyAction ? "" : "1", offset: 0 }) }, "Needs me"),
-    el("span", { class: "grow" }));
-
-  if (!data.messages.length) {
-    paint(el("h1", { class: "headline", text: "Mail" }), controls,
-      el("div", { class: "panel panel-pad" }, empty(q ? "No match" : "No mail yet",
-        q ? `Nothing matches “${q}”.` : "Connect a mailbox and Bmail will read it.",
-        q ? null : el("button", { class: "primary", onclick: () => go("setup") }, "Connect a mailbox"),
-        q ? "nomatch" : "mail")));
+  // Opening another message changes only the reading panes. Redrawing the list
+  // for it would throw away where you had scrolled to in order to click.
+  const box = document.querySelector(".mailbox");
+  if (!App.arriving && box && App.mailKey === query.toString()) {
+    box.querySelectorAll('[data-list="mail"] .row').forEach((row) =>
+      row.setAttribute("aria-selected", String(row.dataset.id === selected)));
+    box.querySelector(".read-pane").replaceWith(await readPane(selected));
+    Keys.rescan();
     return;
   }
+  const scrolled = !App.arriving && document.querySelector(".mail-scroll")?.scrollTop;
+  const data = await api(`/messages?${query}`);
+  App.mailKey = query.toString();
 
-  const rows = el("div", { class: "rows", "data-list": "mail" },
-    data.messages.map((m) => mailRow(m, selected)));
-  const pager = el("div", { class: "bar-row" },
+  const search = el("input", {
+    type: "search", placeholder: "Search mail", value: q,
+    onkeydown: (e) => { if (e.key === "Enter") go("mail", { ...here(), q: e.target.value, offset: 0, id: "" }); },
+  });
+  const pill = (label, active, onclick) =>
+    el("button", { class: "pill", "aria-pressed": String(active), onclick }, label);
+  // The kinds worth a single click; every other kind is in the menu beside them.
+  const quick = ["interview_invite", "rejection", "job_alert"]
+    .filter((name) => (App.state.categories || []).some((c) => c.name === name));
+  const pills = el("div", { class: "pills" },
+    pill("All", !onlyAction && !category, () => go("mail", q ? { q } : {})),
+    pill("Needs me", onlyAction, () => go("mail", { ...here(), action: onlyAction ? "" : "1", offset: 0, id: "" })),
+    quick.map((name) => pill(capital(humanise(name)), category === name,
+      () => go("mail", { ...here(), category: category === name ? "" : name, offset: 0, id: "" }))),
+    el("select", { "aria-label": "Kind",
+      onchange: (e) => go("mail", { ...here(), category: e.target.value, offset: 0, id: "" }) },
+      el("option", { value: "" }, "All kinds"),
+      (App.state.categories || []).map((c) =>
+        el("option", { value: c.name, selected: c.name === category }, humanise(c.name)))));
+
+  const list = data.messages.length
+    ? el("div", { class: "rows mail-list", "data-list": "mail" },
+        data.messages.map((m) => mailRow(m, selected)))
+    : el("div", { class: "panel panel-pad" }, empty(q ? "No match" : "No mail yet",
+        q ? `Nothing matches “${q}”.` : "Connect a mailbox and Bmail will read it.",
+        q ? null : el("button", { class: "primary", onclick: () => go("setup") }, "Connect a mailbox"),
+        q ? "nomatch" : "mail"));
+  const pager = data.messages.length ? el("div", { class: "bar-row" },
     el("span", { class: "meta", text: `${offset + 1}–${offset + data.messages.length} of ${data.total}` }),
     el("span", { class: "grow" }),
     el("button", { class: "sm", disabled: offset === 0,
-      onclick: () => go("mail", { ...here(), offset: Math.max(0, offset - 60) }) }, "Newer"),
+      onclick: () => go("mail", { ...here(), offset: Math.max(0, offset - 60), id: "" }) }, "Newer"),
     el("button", { class: "sm", disabled: offset + 60 >= data.total,
-      onclick: () => go("mail", { ...here(), offset: offset + 60 }) }, "Older"));
+      onclick: () => go("mail", { ...here(), offset: offset + 60, id: "" }) }, "Older")) : null;
 
-  const left = el("div", {}, rows, pager);
-  paint(el("h1", { class: "headline", text: "Mail" }), controls,
-    selected
-      ? el("div", { class: "split" }, left, el("div", { class: "aside" }, await mailAside(selected)))
-      : left);
+  paint(el("div", { class: "mailbox" },
+    el("section", { class: "mail-col" },
+      el("div", { class: "mail-col-head" },
+        el("h1", { class: "headline", text: "Mail" }),
+        el("label", { class: "field" }, icon("search", 15), search),
+        pills),
+      el("div", { class: "mail-scroll" }, list, pager)),
+    await readPane(selected)));
+  if (scrolled) document.querySelector(".mail-scroll").scrollTop = scrolled;
 }
 
 function mailRow(m, selected) {
-  const tone = toneFor({ due: m.deadline, urgency: m.urgency, actionRequired: m.action_required });
   return el("a", {
-    class: "row", href: `#/mail?${new URLSearchParams({ ...here(), id: m.message_id })}`,
-    "aria-selected": m.message_id === selected,
+    class: "row mail-card", "data-id": m.message_id,
+    href: `#/mail?${new URLSearchParams({ ...here(), id: m.message_id })}`,
+    "aria-selected": String(m.message_id === selected),
   },
-    el("span", { class: "avatar", text: initials(m.from_name, m.from_addr) }),
+    avatar(m.from_name, m.from_addr),
     el("span", { class: "row-main" },
+      el("span", { class: "row-top" },
+        el("span", { class: "row-from", text: m.from_name || m.from_addr }),
+        el("span", { class: "meta when", text: agoWords(m.date_utc) })),
       el("span", { class: "row-title", text: m.subject || "(no subject)" }),
-      el("span", { class: "row-sub", text: m.summary || m.from_name || m.from_addr })),
-    // Date last: a ragged right edge of chips is unreadable, a column of dates
-    // is something you can run your eye down.
-    el("span", { class: "row-side" },
-      m.category ? el("span", { class: "chip", "data-tone": tone, text: humanise(m.category) }) : null,
-      el("span", { class: "meta when", text: agoWords(m.date_utc) })));
+      el("span", { class: "row-sub", text: m.summary || m.from_addr }),
+      kindChip(m.category)));
 }
 
-async function mailAside(messageId) {
+/* The message and what Bmail made of it, side by side. */
+async function readPane(messageId) {
+  if (!messageId) {
+    return el("div", { class: "read-pane solo" },
+      el("section", { class: "reader reader-empty" },
+        el("div", {}, el("div", { class: "glyph" }, icon("mail", 26)),
+          el("p", { text: "Pick a message to read it here." }))));
+  }
   let data;
   try { data = await api(`/messages/${encodeURIComponent(messageId)}`); }
-  catch (err) { return el("div", { class: "panel panel-pad" }, empty("Not found", err.message, null, "nomatch")); }
+  catch (err) {
+    return el("div", { class: "read-pane solo" },
+      el("section", { class: "reader" }, empty("Not found", err.message, null, "nomatch")));
+  }
   const { message: m, verdict: v, case: kase } = data;
+  const sure = v ? Math.max(0, Math.min(1, v.confidence || 0)) : 0;
 
-  return el("div", { class: "panel panel-pad" },
-    el("div", { class: "eyebrow", text: dateWords(m.date, true) }),
-    el("div", { class: "panel-title", text: m.subject || "(no subject)" }),
-    el("div", { class: "card-org", text: `${m.from.name || ""} ${m.from.address}`.trim() }),
-
-    v && v.evidence
-      ? el("div", {},
-          el("h3", {}, icon("quote", 13), v.evidence_ok === false ? "Evidence · not in this email" : "Evidence"),
-          el("blockquote", { class: `quote${v.evidence_ok === false ? " bad" : ""}`, text: v.evidence }))
-      : null,
-
-    el("h3", { text: "Verdict" }),
-    el("dl", { class: "facts" },
-      v ? fact("Kind", humanise(v.category)) : null,
-      v && v.action_required ? fact("Action", humanise(v.next_action)) : null,
-      v && v.deadline ? fact("Deadline", `${v.deadline} · ${whenWords(v.deadline)}`) : null,
-      v && v.event_datetime ? fact("Diary", dateWords(v.event_datetime, true)) : null,
-      v ? fact("Decided by", `${humanise(v.stage)} · ${Math.round((v.confidence || 0) * 100)}%`) : null,
-      kase ? fact("Part of", kase.title) : null,
-      m.attachments.length ? fact("Attached", m.attachments.map((a) => a.filename).join(", ")) : null),
-
-    v ? el("div", {},
-      el("h3", { text: "Correct it" }),
-      correctionControls(messageId, v)) : null,
-
-    el("h3", { text: "Message" }),
+  const reader = el("section", { class: "reader" },
+    el("div", { class: "reader-bar" },
+      el("span", { text: dateWords(m.date, true) }),
+      el("span", { class: "grow" }),
+      el("button", { class: "quiet sm", onclick: () => go("mail", { ...here(), id: "" }) },
+        icon("close", 14), "Close")),
+    el("div", { class: "reader-head" },
+      avatar(m.from.name, m.from.address, "lg"),
+      el("div", { class: "reader-from", text: m.from.name || m.from.address }),
+      el("div", { class: "meta", text: m.from.name ? m.from.address : m.account || "" }),
+      el("h1", { class: "reader-subject", text: m.subject || "(no subject)" })),
+    m.attachments.length ? el("div", { class: "attachments" }, m.attachments.map((a) =>
+      el("span", { class: "attachment" }, icon("download", 14), a.filename))) : null,
     messageText(m));
+
+  const context = el("aside", { class: "aside context" },
+    v ? el("section", { class: "side-card" },
+      el("h3", { text: "Bmail read this as" }),
+      el("div", { class: "pills" },
+        kindChip(v.category),
+        el("span", { class: "chip", "data-tone": v.action_required ? "urgent" : "quiet",
+          text: v.action_required ? "Needs you" : "Filed" })),
+      el("div", { class: "confidence" },
+        el("span", { text: `${Math.round(sure * 100)}% sure` }),
+        el("span", { class: "meter" }, progressFill(sure)),
+        el("span", { text: humanise(v.stage) })),
+      el("dl", { class: "facts gap-above" },
+        v.action_required ? fact("Action", humanise(v.next_action)) : null,
+        v.deadline ? fact("Deadline", `${v.deadline} · ${whenWords(v.deadline)}`) : null,
+        v.event_datetime ? fact("Diary", dateWords(v.event_datetime, true)) : null,
+        m.attachments.length ? fact("Attached", `${m.attachments.length}`) : null)) : null,
+    v && v.evidence ? el("section", { class: "side-card" },
+      el("h3", {}, icon("quote", 13), v.evidence_ok === false ? " Evidence · not in this email" : " Evidence"),
+      el("blockquote", { class: `quote${v.evidence_ok === false ? " bad" : ""}`, text: v.evidence })) : null,
+    kase ? el("a", { class: "side-card case-link", href: `#/cases?id=${kase.id}` },
+      el("h3", { text: `Part of this ${App.state.entity}` }),
+      el("div", { class: "card-who" },
+        avatar(kase.org || kase.title, ""),
+        el("div", {},
+          el("div", { class: "card-title", text: kase.org || kase.title }),
+          el("div", { class: "card-org", text: [kase.role, humanise(kase.state)].filter(Boolean).join(" · ") })))) : null,
+    v ? el("section", { class: "side-card" },
+      el("h3", { text: "Correct it" }),
+      correctionControls(messageId, v)) : null);
+
+  return el("div", { class: "read-pane" }, reader, context);
 }
 
 // The cleaned text first: what this mail says, without the thread it quotes
@@ -1730,6 +1932,7 @@ const ROUTES = {
 };
 
 async function render() {
+  closeDrawer();
   const [path, rawQuery] = location.hash.replace(/^#\/?/, "").split("?");
   let route = ROUTES[path] ? path : "today";
   // A new install has nothing to show on any screen yet; the welcome is the
@@ -1744,6 +1947,7 @@ async function render() {
   if (route !== "review") App.reviewIndex = 0;
   if (moved) Keys.reset();   // a new screen starts with no cursor on it
   paintNav();
+  paintCrumbs(route);
 
   // 120ms is about where a blank frame stops reading as "instant" and starts
   // reading as "stalled". Under that, showing a placeholder would flash.
@@ -1757,6 +1961,15 @@ async function render() {
   } finally {
     clearTimeout(placeholder);
   }
+}
+
+function paintCrumbs(route) {
+  const label = {
+    today: "Today", cases: capital(App.state.entity_plural), mail: "Mail",
+    review: "Review", setup: "Setup", welcome: "Welcome",
+  }[route] || "";
+  $("#crumbs").replaceChildren(icon(route === "welcome" ? "sparkle" : route, 15),
+    el("span", { text: "Bmail" }), el("span", { class: "sep", text: "/" }), el("b", { text: label }));
 }
 
 function paintNav() {
@@ -1834,6 +2047,7 @@ async function refresh() {
    sidebar and its footer. Never the page itself. */
 async function loadState() {
   App.packChoice = localStorage.getItem("bmail.pack") || null;
+  App.mailKey = null;   // the data changed: the next mail screen fetches its list afresh
   const state = await api("/state");
   // The product should speak the domain's language, not the engine's.
   state.entity = humanise(state.entity || "case");
@@ -1846,6 +2060,13 @@ async function loadState() {
     el("div", { text: `${state.cases.total} ${state.entity_plural} tracked` }),
     el("div", {}, el("span", { class: "dot", text: "●" }), " ",
       state.llm.available && state.llm.pulled ? state.llm.model : "rules + classifier"));
+  const owner = state.owner || {};
+  const who = owner.name || (owner.address ? owner.address.split("@")[0] : "You");
+  $("#account-name").textContent = who;
+  $("#account-address").textContent = owner.address || "No mailbox connected";
+  const face = $("#account-avatar");
+  face.textContent = initials(owner.name, owner.address).toUpperCase();
+  face.dataset.hue = hueOf(owner.address || who);
   if (App.route) paintNav();
 }
 

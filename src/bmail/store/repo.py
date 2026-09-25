@@ -716,6 +716,16 @@ def own_addresses(conn: sqlite3.Connection) -> set[str]:
     return {r["address"].lower() for r in rows}
 
 
+def owner_name(conn: sqlite3.Connection) -> str:
+    """The name you sign your own mail with, as your sent mail shows it."""
+    row = conn.execute(
+        "SELECT from_name, COUNT(*) AS n FROM messages "
+        "WHERE direction = 'outbound' AND from_name != '' AND from_name NOT LIKE '%@%' "
+        "GROUP BY from_name ORDER BY n DESC LIMIT 1"
+    ).fetchone()
+    return row["from_name"] if row else ""
+
+
 def bulk_upsert(conn: sqlite3.Connection, messages: Iterable[Message]) -> tuple[int, int]:
     """Insert many messages in one transaction. Returns (new, seen)."""
     new = seen = 0

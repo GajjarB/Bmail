@@ -124,3 +124,18 @@ def test_sample_message_ids_are_unique(tmp_path):
     _mbox, labels = write_mbox(tmp_path, applications=12, noise=20)
     ids = [json.loads(line)["message_id"] for line in labels.read_text().splitlines()]
     assert len(ids) == len(set(ids))
+
+
+def test_the_owner_is_named_as_their_own_sent_mail_names_them(conn):
+    own = {"you@example.com"}
+    sent = [parse_message(make_raw(sender="you@example.com", sender_name="Alex Demo",
+                                   message_id=f"<sent{n}@x>"), own_addresses=own) for n in range(2)]
+    received = parse_message(make_raw(sender="hr@acme.example", sender_name="Acme HR",
+                                      message_id="<in@x>"), own_addresses=own)
+    repo.bulk_upsert(conn, [*sent, received])
+    assert repo.owner_name(conn) == "Alex Demo"
+
+
+def test_without_sent_mail_there_is_no_name_to_guess(conn):
+    repo.bulk_upsert(conn, [parse_message(make_raw(sender="hr@acme.example", sender_name="Acme HR"))])
+    assert repo.owner_name(conn) == ""

@@ -27,16 +27,17 @@
       <span id="rail-pack"></span>
     </div>
 
-    <button id="btn-find" class="find">
-      <span>Search</span>
-      <kbd id="find-key">⌘K</kbd>
-    </button>
-
     <nav class="nav" id="nav" aria-label="Sections"></nav>
 
     <div class="rail-foot">
-      <button id="btn-sync" class="wide"><span>Check for new mail</span></button>
       <div class="sync-line" id="sync-line" role="status" hidden></div>
+      <div class="account-card">
+        <span class="avatar" id="account-avatar" aria-hidden="true"></span>
+        <div class="account-who">
+          <b id="account-name"></b>
+          <span id="account-address"></span>
+        </div>
+      </div>
       <div class="rail-meta" id="rail-meta"></div>
       <button id="btn-keys" class="quiet sm keys-hint">
         <span>Shortcuts</span>
@@ -45,7 +46,17 @@
     </div>
   </aside>
 
-  <main class="main" id="main"></main>
+  <section class="workspace">
+    <header class="topbar">
+      <nav class="crumbs" id="crumbs" aria-label="You are here"></nav>
+      <button id="btn-find" class="find">
+        <span>Search mail and applications</span>
+        <kbd id="find-key">⌘K</kbd>
+      </button>
+      <button id="btn-sync" class="primary sync-btn"><span>Check for new mail</span></button>
+    </header>
+    <main class="main" id="main"></main>
+  </section>
 </div>
 
 <div id="job" class="jobbar" hidden>
