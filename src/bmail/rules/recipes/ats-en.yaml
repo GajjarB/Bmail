@@ -468,6 +468,8 @@
       - "we have received your application"
       - "your application has been received"
       - "we confirm receipt of your application"
+      - "thank you for your application"
+      - "thank you again for the time you have spent in our application process"
     body_none:
       - "we have decided not to move forward"
       - "we will not be moving forward"

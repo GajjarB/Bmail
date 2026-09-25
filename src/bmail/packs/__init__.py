@@ -9,13 +9,14 @@ of Python.
 
 from __future__ import annotations
 
+import re
 from functools import lru_cache
 from importlib import resources
 from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator
 
 from bmail.errors import PackError
 from bmail.models import NextAction, Urgency
@@ -34,6 +35,8 @@ class CategorySpec(BaseModel):
     closes_case: bool = False
     label: str | None = None         # provider label suggestion
     prototypes: list[str] = Field(default_factory=list)  # zero-shot seed phrases
+    # Only for mail that is about the pack's subject at all: see Pack.topic.
+    on_topic: bool = False
 
 
 class TimedTransition(BaseModel):
@@ -59,6 +62,26 @@ class Pack(BaseModel):
     stall_days: int = 21
     kpis: list[str] = Field(default_factory=list)
     label_prefix: str = "Bmail"
+    # Words that show a message is about the pack's subject: an application,
+    # a job, a hire. A category marked `on_topic` is never given to mail that
+    # contains none of them, whatever else it says: a declined credit card
+    # "application" or a DSL order that "leider" is late is not a rejection.
+    # Each word matches at the start of a word, case-insensitively.
+    topic: list[str] = Field(default_factory=list)
+    _topic_re: re.Pattern[str] | None = PrivateAttr(default=None)
+
+    def is_on_topic(self, text: str) -> bool:
+        """Whether `text` is about this pack's subject; always true without a topic."""
+        if not self.topic:
+            return True
+        return self._topic_pattern().search(text or "") is not None
+
+    def _topic_pattern(self) -> re.Pattern[str]:
+        if self._topic_re is None:
+            words = sorted({w.strip().lower() for w in self.topic if w.strip()}, key=len, reverse=True)
+            self._topic_re = re.compile(
+                r"\b(?:" + "|".join(re.escape(w) for w in words) + ")", re.IGNORECASE)
+        return self._topic_re
 
     @field_validator("categories")
     @classmethod

@@ -80,6 +80,8 @@
   priority: 72
   match:
     from_domain: [arbeitsagentur.de]
+    # Its job alerts are alerts, not housekeeping.
+    body_none: ["stellenangebot", "suchauftrag", "jobbörse"]
 
 - id: join-acknowledgement
   vendor: JOIN
@@ -150,12 +152,13 @@
   vendor: generic
   description: >-
     "Gerne laden wir Sie zu einem persönlichen Gespräch ein", "wir freuen uns,
-    Sie zu einem ersten Kennenlernen einzuladen": you, a meeting and an
-    invitation, within one sentence.
+    Sie zu einem ersten Kennenlernen einzuladen", "wir würden Sie gerne in einem
+    ersten Gespräch kennenlernen": you, a meeting and an invitation, within one
+    sentence.
   category: interview_invite
   priority: 88
   match:
-    body_regex: '\bsie\b(?:(?!\. )[^!?]){0,40}?\bzu\b(?:(?!\. )[^!?]){0,30}?(?:gespr(?:ä|ae)ch|interview|kennenlernen|kennenlerntermin)\w*(?:(?!\. )[^!?]){0,20}?\b(?:einladen|einzuladen)\b|\blad(?:en|e) (?:wir|ich) sie\b(?:(?!\. )[^!?]){0,50}?(?:gespr(?:ä|ae)ch|interview|kennenlernen)\w*(?:(?!\. )[^!?]){0,25}?\bein\b'
+    body_regex: '\bsie\b(?:(?!\. )[^!?]){0,40}?\bzu\b(?:(?!\. )[^!?]){0,30}?(?:gespr(?:ä|ae)ch|interview|kennenlernen|kennenlerntermin)\w*(?:(?!\. )[^!?]){0,20}?\b(?:einladen|einzuladen)\b|\blad(?:en|e) (?:wir|ich) sie\b(?:(?!\. )[^!?]){0,50}?(?:gespr(?:ä|ae)ch|interview|kennenlernen)\w*(?:(?!\. )[^!?]){0,25}?\bein\b|\b(?:würden|möchten|wollen) (?:wir )?sie\b(?:(?!\. )[^!?]){0,60}?\bkennen(?:zu)?lernen\b'
     # An acknowledgement that mentions an interview that may come is not an
     # invitation.
     body_none:

@@ -14,7 +14,19 @@ from bmail.models import Message
 
 _NOREPLY = re.compile(
     r"(^|[._+-])(no[._-]?reply|do[._-]?not[._-]?reply|donotreply|noreply|nicht[._-]?antworten|"
-    r"mailer[._-]?daemon|postmaster|notifications?|automated|auto[._-]?reply|bounce)",
+    r"ne[._-]?pas[._-]?repondre|mailer[._-]?daemon|postmaster|notifications?|automated|"
+    r"auto[._-]?reply|bounce)",
+    re.IGNORECASE,
+)
+
+# Mailboxes a system sends from: banks, shops, carriers, account services.
+# Not the ones a recruiter writes from (jobs@, karriere@, hr@, talent@), which
+# stay person-like on purpose: a person there may be asking you something.
+_SYSTEM_MAILBOX = re.compile(
+    r"^(alerts?|support|service|services|kundenservice|customer[._-]?service|billing|"
+    r"invoices?|rechnung|orders?|bestellung|auftrag\w*|versand|shipping|delivery|tracking|"
+    r"booking|buchung|reservations?|tickets?|accounts?|account[._-]?\w+|security|"
+    r"enq[._-]?\w*|statements?|transactions?|payments?|shop|store|dsl[._-]?\w*)$",
     re.IGNORECASE,
 )
 
@@ -36,6 +48,7 @@ class HeaderSignals:
     is_automated: bool = False
     is_noreply: bool = False
     is_list: bool = False
+    is_system: bool = False
     reasons: list[str] = field(default_factory=list)
 
     @property
@@ -45,6 +58,7 @@ class HeaderSignals:
             "is_list": 0.45,
             "is_bulk": 0.35,
             "is_noreply": 0.25,
+            "is_system": 0.25,
             "is_automated": 0.30,
         }
         total = sum(value for name, value in weights.items() if getattr(self, name))
@@ -86,9 +100,13 @@ def header_signals(message: Message) -> HeaderSignals:
             break
 
     address = message.from_.address.lower()
-    if _NOREPLY.search(address.split("@")[0] if "@" in address else address):
+    local = address.split("@")[0] if "@" in address else address
+    if _NOREPLY.search(local):
         signals.is_noreply = True
         signals.reasons.append("no-reply sender address")
+    elif _SYSTEM_MAILBOX.match(local):
+        signals.is_system = True
+        signals.reasons.append("system mailbox sender")
     elif any(hint in address for hint in _BULK_ADDRESS_HINTS):
         signals.is_bulk = True
         signals.reasons.append("bulk-style sender address")

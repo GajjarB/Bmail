@@ -18,7 +18,7 @@ from bmail.classify.stage2 import Classifier
 from bmail.entities.stage4 import CaseResolver, refresh_derived
 from bmail.errors import LLMError
 from bmail.llm.stage3 import LLMStage
-from bmail.models import Message, Stage, Verdict
+from bmail.models import Lane, Message, Stage, Verdict
 from bmail.packs import Pack
 from bmail.rules.engine import RulesEngine, Stage1Result
 from bmail.store import repo
@@ -131,12 +131,17 @@ class Pipeline:
             verdict.needs_review = True
             verdict.reasons.append("no classifier configured")
 
+        if verdict.stage in (Stage.rules, Stage.classifier):
+            self._keep_to_topic(message, stage1, verdict)
         repo.save_verdict(conn, verdict)
         self._settle(conn, message, verdict, stats)
         return verdict
 
-    # Below this machine score, a message reads as written by a person.
-    HUMAN_BELOW = 0.3
+    # Below this machine score, a message reads as written by a person. Any one
+    # machine signal is enough to cross it: a no-reply or system sender, a list
+    # header, an auto-reply. A bank, a shop or a security alert never writes to
+    # you as a person does, and must never be shown as if it had.
+    HUMAN_BELOW = 0.25
 
     def _when_unsure(self, stage1: Stage1Result, verdict: Verdict) -> None:
         """Nothing settled this message; fail towards showing it to you.
@@ -164,6 +169,38 @@ class Pipeline:
         verdict.reasons.append(
             f"written by a person and the guess '{guessed}' is unsure: shown, not filed"
         )
+
+    def _keep_to_topic(self, message: Message, stage1: Stage1Result, verdict: Verdict) -> None:
+        """Only mail about the pack's subject gets the pack's subject categories.
+
+        A rule matches a phrase and the classifier matches a shape; neither knows
+        that "we regret to inform you that your credit card application" is not
+        about a job. The pack does: its topic words. Without one, an outcome of
+        an application becomes what the sender makes it: housekeeping from a
+        machine, or personal mail from a person, which is still shown to you.
+        And mail from a machine is never "personal".
+        """
+        machine = (
+            stage1.headers.score >= self.HUMAN_BELOW
+            or verdict.lane in (Lane.bulk, Lane.template)
+        )
+        spec = self.pack.spec(verdict.category)
+        if spec.on_topic and not self.pack.is_on_topic(f"{message.subject}\n{message.body_text}"):
+            reason = f"'{verdict.category}' without a word about the subject"
+        elif verdict.category == "personal" and machine:
+            reason = "sent by a machine, not a person"
+        else:
+            return
+        fallback = "admin" if machine else "personal"
+        if fallback not in self.pack.categories:
+            fallback = "other"
+        target = self.pack.spec(fallback)
+        verdict.reasons.append(f"{reason}: filed as {fallback}")
+        verdict.category = fallback
+        verdict.action_required = target.action_required
+        verdict.urgency = target.urgency
+        verdict.next_action = target.next_action
+        verdict.org = verdict.role = None
 
     def _settle(
         self,

@@ -93,6 +93,30 @@ acknowledgement — with no local model, an unsure day-one guess was final — a
 an English "your application is incomplete" had no template, while the German
 one did. Both are fixed, and each fix has a test.
 
+## A realistic inbox
+
+The synthetic corpus is almost all job mail. A real job seeker's inbox is not:
+job boards and alerts, a few real replies, and a majority of banks, shops,
+security codes, deliveries, travel, newsletters and forms, many using the same
+words as an application reply. `tests/realworld.py` holds such an inbox, 58
+messages modelled on a real one with every name and number invented, plus 25
+held-out messages written afterwards.
+
+| | before | after |
+|---|---|---|
+| Inbox: category right | 53% | 100% |
+| Inbox: shown as "needs you" for nothing | 17 of 53 | 0 |
+| Inbox: non-job mail read as a job outcome | 6 | 0 |
+| Held out, measured once before any change for it | 84% | 100% |
+
+The first row is the one that made the app feel broken: a Google security
+alert, a bank's "new document", a fund's "transaction confirmation" and a DSL
+order were all put in front of the user, because an automated sender without
+a list header read as a person. The held-out 84% is the honest estimate for
+mail the rules were not written against; the 100% after it is what fixing its
+four misses did, and no longer an estimate. `tests/test_realworld.py` keeps
+both sets from sliding back.
+
 Treat a perfect score on the synthetic corpus as the floor, not the finish. It
 is generated from the same patterns the rules were written against; your own
 mail is the real test. Label a hundred of your own messages and run the harness

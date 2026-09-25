@@ -1,6 +1,8 @@
 # Bulk and housekeeping mail. These exist so obviously-uninteresting messages
 # never reach the classifier, let alone a model.
 
+# Mail that talks about an application or an interview is never housekeeping,
+# whatever else it says: these recipes stand aside for it.
 - id: security-notice
   vendor: generic
   category: admin
@@ -11,9 +13,68 @@
       - "new sign-in to your account"
       - "verify your email address"
       - "two-factor authentication"
+      - "security alert"
+      - "app password created"
+      - "passkey"
+      - "verification code"
+      - "enter the code below"
+      - "your code is"
+      - "one-time code"
+      - "sign in with google"
+      - "shared some google account data"
       - "ihr passwort wurde geändert"
       - "neue anmeldung bei ihrem konto"
       - "bestätigen sie ihre e-mail-adresse"
+      - "sicherheitswarnung"
+      - "bestätigungscode"
+      - "ihr code lautet"
+    body_none: &about_a_job
+      - "bewerbung"
+      - "vorstellungsgespräch"
+      - "interview"
+      - "your application to"
+      - "application process"
+      - "recruit"
+
+- id: account-transaction
+  vendor: generic
+  description: >-
+    What a bank, a shop, a carrier or an office sends: a customer, order,
+    contract or case number, a booking, a parcel, a statement. Housekeeping,
+    however much of it says "application", "leider" or "unfortunately".
+  category: admin
+  priority: 66
+  match:
+    body_any:
+      - "dear customer"
+      - "dear investor"
+      - "dear shareholder"
+      - "online banking"
+      - "neues dokument in ihrem"
+      - "folio"
+      - "credit card application"
+      - "kundennummer"
+      - "vertragsnummer"
+      - "bestellnummer"
+      - "order number"
+      - "your order"
+      - "ihre bestellung"
+      - "vielen dank für ihre bestellung"
+      - "ihr auftrag"
+      - "tracking number"
+      - "sendungsnummer"
+      - "ihre sendung"
+      - "your booking"
+      - "your reservation"
+      - "booking number"
+      - "buchungsnummer"
+      - "ihre buchung"
+      - "justificatif d'achat"
+      - "purchase receipt"
+      - "your case number"
+      - "fallnummer"
+      - "registered office"
+    body_none: *about_a_job
 
 - id: invoice-receipt
   vendor: generic
@@ -42,3 +103,20 @@
       - "newsletter abbestellen"
       - "manage your preferences"
       - "view this email in your browser"
+
+- id: job-offer-roundmail
+  vendor: generic
+  description: >-
+    An agency or a job board mailing openings to everyone on its list, often
+    from a person's own address and without a list header.
+  category: job_alert
+  priority: 45
+  match:
+    body_any:
+      - "rundmail an unseren gesamten bewerberpool"
+      - "an unseren gesamten bewerberpool"
+      - "neues stellenangebot"
+      - "neue stellenangebote"
+      - "new job openings"
+      - "the following jobs matched your search"
+      - "jobs matched your search agent"

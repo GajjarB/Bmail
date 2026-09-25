@@ -144,16 +144,37 @@ class RulesEngine:
             return False
         return headers.score >= 0.45
 
+    # Everything these send is about jobs.
     _JOB_BOARDS = (
-        "linkedin.com", "indeed.com", "indeedemail.com", "stepstone.de", "xing.com",
-        "glassdoor.com", "monster.de", "jobware.de", "kimeta.de",
+        "indeed.com", "indeedemail.com", "stepstone.de", "stepstone.com", "glassdoor.com",
+        "glassdoor.de", "monster.de", "monster.com", "jobware.de", "kimeta.de",
+        "jobs2web.com", "join.com", "arbeitsagentur.de", "jobs.ch", "karriere.at",
     )
+    # These also send posts, people and events: only their job mail is an alert.
+    _SOCIAL_BOARDS = ("linkedin.com", "xing.com")
+    # What an alert says in its subject; an article about getting a job does not.
+    _JOB_SUBJECT = re.compile(
+        r"\b(?:job alerts?|jobs? (?:near|in|for you|matching)|\d+\s+(?:new\s+)?jobs|new jobs|"
+        r"weitere jobs|neue jobs|is hiring|are hiring|hiring for|stellenangebot\w*|stellenanzeige\w*|"
+        r"looking for candidates|candidates like you|invitation to apply|reminder to apply|"
+        r"jetzt bewerben)\b",
+        re.IGNORECASE,
+    )
+
+    @classmethod
+    def _is_job_board_mail(cls, message: Message) -> bool:
+        domain = message.sender_domain
+        if any(domain == board or domain.endswith(f".{board}") for board in cls._JOB_BOARDS):
+            return True
+        if any(domain == board or domain.endswith(f".{board}") for board in cls._SOCIAL_BOARDS):
+            # jobalerts-noreply@linkedin.com, jobs@mail.xing.com, jobs-noreply@...
+            return "job" in message.from_.address.lower()
+        return bool(cls._JOB_SUBJECT.search(message.subject))
 
     def _bulk_category(self, message: Message, headers: HeaderSignals) -> str:
         """Give bulk mail the most specific category the pack actually declares."""
-        domain = message.sender_domain
         preferences: list[str] = []
-        if any(domain == board or domain.endswith(f".{board}") for board in self._JOB_BOARDS):
+        if self._is_job_board_mail(message):
             preferences.append("job_alert")
         if headers.is_list:
             preferences.append("newsletter")

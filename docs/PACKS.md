@@ -84,6 +84,7 @@ label_prefix: Bmail
 | `stall_days` | Silence beyond this marks the case stalled |
 | `transitions` | Time-based transitions, evaluated on every run |
 | `label_prefix` | Prefix for provider labels (`Bmail/Interview`) |
+| `topic` | Words that show a message is about the pack's subject at all. Each matches at the start of a word |
 
 **Per category**
 
@@ -97,6 +98,18 @@ label_prefix: Bmail
 | `opens_case` | May this category create a case? |
 | `closes_case` | Does it close one? |
 | `label` | Provider label suffix |
+| `on_topic` | Only for mail containing one of the pack's `topic` words |
+
+`topic` and `on_topic` exist because most of a real inbox uses the pack's
+words about something else. A bank declines a credit card *application*, a fund
+*acknowledges receipt*, an internet provider is *leider* late. Mark the
+categories that describe the pack's subject (every outcome of an application,
+in `job-seeker`) as `on_topic`, and list the words that show a message is about
+that subject. A rule or the classifier may still suggest one of those
+categories; without a topic word it becomes `admin` if a machine sent it, or
+`personal` if a person did, so it is still shown. Keep ambiguous words out of
+the list: `job-seeker` has "your application for" and "Bewerbung", not
+"application" or "applicant".
 
 An `other` category is added automatically if you omit it. Packs are validated
 on load: a category pointing at an unknown state is an error, not a surprise at

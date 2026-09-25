@@ -21,6 +21,60 @@ states:
 terminal_states: [offer, rejected, withdrawn]
 stall_days: 21
 
+# What makes a message about a job at all. The categories marked `on_topic`
+# (every outcome of an application) are never given to mail without one of
+# these, however much it sounds like one: "we regret to inform you that your
+# credit card application", "we acknowledge receipt of your subscription",
+# "leider noch nicht". Bare "application" is not here for exactly that reason,
+# nor "applicant": visas and universities have applicants too.
+# Each entry matches at the start of a word.
+topic:
+  # English
+  - job
+  - position
+  - role
+  - vacanc
+  - candida
+  - recruit
+  - hiring
+  - hire
+  - interview
+  - career
+  - talent
+  - resume
+  - résumé
+  - curriculum vitae
+  - cover letter
+  - job application
+  - application process
+  - application at
+  - your application to
+  - your application for
+  - employ
+  - internship
+  - working student
+  - trainee
+  - offer letter
+  # German
+  - bewerb
+  - vorstellungsgespr
+  - kennenlerngespr
+  - lebenslauf
+  - anschreiben
+  - karriere
+  - personalabteilung
+  - arbeitgeber
+  - arbeitsvertrag
+  - ausbildung
+  - praktikum
+  - werkstudent
+  - stellenangebot
+  - stellenanzeige
+  - stellenausschreibung
+  - offene stelle
+  - die stelle
+  - der stelle
+
 transitions:
   ghosted:
     from: [applied, acknowledged, interviewed, assessment]
@@ -28,6 +82,7 @@ transitions:
 
 categories:
   acknowledgement:
+    on_topic: true
     description: An automated confirmation that an application was received. No action needed.
     state: acknowledged
     opens_case: true
@@ -38,6 +93,7 @@ categories:
       - "Your application has been submitted successfully and is now under review."
 
   rejection:
+    on_topic: true
     description: The employer declines to move forward with the application.
     state: rejected
     closes_case: true
@@ -48,6 +104,7 @@ categories:
       - "We have decided to proceed with other candidates whose profile more closely matches."
 
   interview_invite:
+    on_topic: true
     description: An invitation to an interview or a request to book a time slot.
     action_required: true
     urgency: this_week
@@ -61,6 +118,7 @@ categories:
       - "Are you available for a 30 minute introductory call next week?"
 
   assessment:
+    on_topic: true
     description: An online test, coding challenge or task with a submission deadline.
     action_required: true
     urgency: this_week
@@ -74,6 +132,7 @@ categories:
       - "As a next step we ask you to complete a short coding challenge."
 
   offer:
+    on_topic: true
     description: A concrete job offer or a contract to review and sign.
     action_required: true
     urgency: today
@@ -87,6 +146,7 @@ categories:
       - "Wir freuen uns, Ihnen die Stelle anbieten zu können. Anbei finden Sie den Vertrag."
 
   document_request:
+    on_topic: true
     description: A request for missing documents, certificates, references or forms.
     action_required: true
     urgency: this_week
@@ -108,6 +168,7 @@ categories:
       - "Passt Ihnen der Termin am Dienstag um 14 Uhr?"
 
   recruiter_outreach:
+    on_topic: true
     description: A recruiter approaching you about a role you did not apply for.
     action_required: true
     urgency: whenever
