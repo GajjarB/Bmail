@@ -37,7 +37,7 @@ class MatchSpec(BaseModel):
     body_any: list[str] = Field(default_factory=list)
     body_all: list[str] = Field(default_factory=list)
     body_none: list[str] = Field(default_factory=list)   # any hit vetoes the recipe
-    body_regex: str | None = None
+    body_regex: str | None = None                          # searched in fold(subject + body)
     header_any: dict[str, str] = Field(default_factory=dict)
     language: str | None = None
 
@@ -104,7 +104,9 @@ class Recipe(BaseModel):
             return False
         if spec.body_none and any(fold(token) in lowered for token in spec.body_none):
             return False
-        if spec.body_regex and not re.search(spec.body_regex, haystack, re.IGNORECASE | re.DOTALL):
+        # Against the folded text, like the phrases: lower case, straight
+        # quotes, one space for any line break.
+        if spec.body_regex and not re.search(spec.body_regex, lowered, re.IGNORECASE):
             return False
         if spec.language and message.language != spec.language:
             return False

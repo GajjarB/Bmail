@@ -384,7 +384,7 @@ stats = Pipeline(pack, classifier=Classifier(pack), use_llm=False).triage(
 
 **Working today:** file, mbox, Maildir, IMAP, Gmail and Microsoft Graph ingest;
 background sync while the app is open (IMAP push, interval polling); all four
-stages; four packs; 51 starter template recipes; the brief, cases and ghosting
+stages; four packs; 55 starter template recipes; the brief, cases and ghosting
 detection; Excel, CSV, ICS and Notion export; Gmail label and Outlook category
 write-back; the evaluation harness and ablations; the app in the browser and in
 a native window.

@@ -232,6 +232,53 @@
       - "schedule an interview with"
       - "book a time slot"
       - "pick a time that works for you"
+    # An acknowledgement that mentions an interview that may come is not an
+    # invitation.
+    body_none:
+      - "should your profile"
+      - "if your profile"
+      - "if your qualifications"
+      - "should your qualifications"
+      - "if you are shortlisted"
+      - "if shortlisted"
+      - "should you be shortlisted"
+      - "if you are selected"
+      - "should you be selected"
+      - "may invite you"
+      - "if we would like to"
+      - "should we wish to"
+  extract:
+    org: {source: from_domain, transform: [domain_to_org]}
+    role:
+      source: subject
+      regex: "(?i)(?:application\\s+(?:for|to)|assessment\\s+for|invitation\\s*[–—-]|application\\s*[–—-]|position\\s+of)\\s+(?:the\\s+)?(.{2,80}?)(?:\\s+at\\s+.+)?$"
+      transform: [strip_org_suffix, strip, collapse]
+
+- id: generic-interview-invite-phrased-en
+  vendor: generic
+  description: >-
+    The ways an invitation is actually worded ("we'd love to invite you to
+    interview", "we are pleased to invite you to a video interview", "I'd like
+    to schedule a first interview"), within one sentence.
+  category: interview_invite
+  priority: 88
+  match:
+    body_regex: '(?:(?:we|i)(?:''d| would) (?:like|love)|(?:we are|we''re|i am|i''m) (?:pleased|happy|delighted|excited|glad)) to (?:invite you|schedule|arrange|set up|book)\b(?:(?!\. )[^!?]){0,50}?\binterview'
+    # An acknowledgement that mentions an interview that may come is not an
+    # invitation.
+    body_none:
+      - "should your profile"
+      - "if your profile"
+      - "if your qualifications"
+      - "should your qualifications"
+      - "if you are shortlisted"
+      - "if shortlisted"
+      - "should you be shortlisted"
+      - "if you are selected"
+      - "should you be selected"
+      - "may invite you"
+      - "if we would like to"
+      - "should we wish to"
   extract:
     org: {source: from_domain, transform: [domain_to_org]}
     role:
@@ -280,6 +327,26 @@
       - "please submit the following documents"
       - "the following documents are missing"
       - "outstanding documents"
+    body_none:
+      - "we have decided not to move forward"
+      - "we will not be moving forward"
+      - "your application was not successful"
+  extract:
+    org: {source: from_domain, transform: [domain_to_org]}
+    role:
+      source: subject
+      regex: "(?i)(?:application\\s+(?:for|to)|assessment\\s+for|invitation\\s*[–—-]|application\\s*[–—-]|position\\s+of)\\s+(?:the\\s+)?(.{2,80}?)(?:\\s+at\\s+.+)?$"
+      transform: [strip_org_suffix, strip, collapse]
+
+- id: generic-document-request-phrased-en
+  vendor: generic
+  description: >-
+    "Please send us your references", "could you provide a copy of your work
+    permit": a request, then within the sentence the documents it wants.
+  category: document_request
+  priority: 84
+  match:
+    body_regex: '\b(?:please|kindly|could you(?: please)?|can you(?: please)?) (?:send|provide|forward|submit|upload|share|email)\b(?:(?!\. )[^!?]){0,60}?\b(?:references?|reference letters?|transcripts?|certificates?|diplomas?|degree|documents|work permit|visa|proof of|copy of your (?:id|passport))'
     body_none:
       - "we have decided not to move forward"
       - "we will not be moving forward"

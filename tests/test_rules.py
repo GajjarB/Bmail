@@ -307,3 +307,66 @@ def test_a_phrase_still_matches_when_the_mail_wraps_it_or_curls_its_quotes():
     from bmail.rules.templates import fold
 
     assert fold("We\u2019d  like") == fold("we'd like")
+
+
+# --- how recruiters actually phrase it --------------------------------------
+# Each wording below was misfiled before: an invitation read as a plain
+# acknowledgement, a request for documents as needing nothing. The negatives
+# are the acknowledgements that only mention an interview that may come.
+
+RECRUITER_WORDING = [
+    # English invitations
+    ("Thank you for applying for the Backend Developer role. We'd like to invite you to an interview.",
+     "interview_invite"),
+    ("We are pleased to invite you to a video interview on Tuesday, 6 October.", "interview_invite"),
+    ("I'd like to schedule a first interview with you next week.", "interview_invite"),
+    ("Thanks for applying! We’d love to invite you to\ninterview with the team.", "interview_invite"),
+    # ...and acknowledgements that only mention one
+    ("Thank you for applying. Should your profile match our requirements, we will invite you "
+     "to an interview.", "acknowledgement"),
+    ("Thank you for applying. If you are shortlisted, we would like to invite you for an interview "
+     "within two weeks.", "acknowledgement"),
+    ("Thank you for applying. We may invite you to an interview after reviewing all applications.",
+     "acknowledgement"),
+    # English document requests
+    ("Thank you for your application. Please send us your references and degree certificate by Friday.",
+     "document_request"),
+    ("Could you please provide a copy of your work permit before we continue?", "document_request"),
+    ("Please send us any questions you have about the role.", None),
+    # An invitation that also asks for documents is still an invitation
+    ("We'd like to invite you to an interview. Please send us your references beforehand.",
+     "interview_invite"),
+    # German invitations
+    ("Gerne laden wir Sie zu einem persönlichen Gespräch in unser Büro ein.", "interview_invite"),
+    ("Wir freuen uns, Sie zu einem ersten Kennenlernen einzuladen.", "interview_invite"),
+    ("Wir würden Sie gerne zu einem Vorstellungsgespraech einladen.", "interview_invite"),
+    # ...and an acknowledgement that only mentions one
+    ("Vielen Dank für Ihre Bewerbung. Sollte Ihr Profil passen, werden wir Sie zu einem "
+     "Vorstellungsgespräch einladen.", "acknowledgement"),
+    # German document requests
+    ("vielen Dank für Ihre Bewerbung. Bitte senden Sie uns bis zum 30.09.2026 Ihre Zeugnisse.",
+     "document_request"),
+    ("Bitte reichen Sie Ihre Arbeitszeugnisse bis Freitag nach.", "document_request"),
+    ("Bitte Ihre Zeugnisse noch hochladen, dann geht es weiter.", "document_request"),
+    ("Bitte senden Sie uns keine Unterlagen per Post.", None),
+]
+
+
+@pytest.mark.parametrize(("body", "expected"), RECRUITER_WORDING)
+def test_recruiter_wording_is_read_as_what_it_asks(body, expected):
+    message = parse_message(make_raw(sender="jobs@weser-data.example", subject="Ihre Bewerbung", body=body))
+    hit = match_template(message)
+    assert (hit.recipe.category if hit else None) == expected, hit and hit.recipe.id
+
+
+def test_a_request_for_documents_by_a_date_needs_you(conn, pack):
+    message = parse_message(make_raw(
+        sender="petra.weber@weser-data.example", subject="AW: Bewerbung Backend",
+        body="Hallo Herr Vadgama,\n\nvielen Dank für Ihre Bewerbung. Bitte senden Sie uns bis "
+             "zum 30.09.2026 Ihre Zeugnisse.\n\nMit freundlichen Grüßen\nPetra Weber",
+    ))
+    repo.bulk_upsert(conn, [message])
+    verdict = RulesEngine(pack).run(conn, message).verdict
+    assert verdict.category == "document_request"
+    assert verdict.action_required is True
+    assert verdict.deadline is not None and verdict.deadline.isoformat() == "2026-09-30"

@@ -128,6 +128,45 @@
       - "laden wir sie zu einem gespräch ein"
       - "würden wir uns gerne mit ihnen unterhalten"
       - "terminvorschlag für ein gespräch"
+    # An acknowledgement that mentions an interview that may come is not an
+    # invitation.
+    body_none:
+      - "sollte ihr profil"
+      - "falls ihr profil"
+      - "sofern ihr profil"
+      - "wenn ihr profil"
+      - "sollten ihre qualifikationen"
+      - "in die engere auswahl"
+      - "gegebenenfalls zu einem"
+      - "ggf. zu einem"
+  extract:
+    org: {source: from_domain, transform: [domain_to_org]}
+    role:
+      source: subject
+      regex: "(?i)(?:bewerbung\\s*(?:als|f(?:ü|ue)r|:)|vorstellungsgespr(?:ä|ae)ch\\s*[–—-]|gespr(?:ä|ae)ch\\s*[–—-]|stelle\\s+als)\\s*(.{2,80}?)(?:\\s+bei\\s+.+)?$"
+      transform: [strip_org_suffix, strip, collapse]
+
+- id: generic-interview-invite-phrased-de
+  vendor: generic
+  description: >-
+    "Gerne laden wir Sie zu einem persönlichen Gespräch ein", "wir freuen uns,
+    Sie zu einem ersten Kennenlernen einzuladen": you, a meeting and an
+    invitation, within one sentence.
+  category: interview_invite
+  priority: 88
+  match:
+    body_regex: '\bsie\b(?:(?!\. )[^!?]){0,40}?\bzu\b(?:(?!\. )[^!?]){0,30}?(?:gespr(?:ä|ae)ch|interview|kennenlernen|kennenlerntermin)\w*(?:(?!\. )[^!?]){0,20}?\b(?:einladen|einzuladen)\b|\blad(?:en|e) (?:wir|ich) sie\b(?:(?!\. )[^!?]){0,50}?(?:gespr(?:ä|ae)ch|interview|kennenlernen)\w*(?:(?!\. )[^!?]){0,25}?\bein\b'
+    # An acknowledgement that mentions an interview that may come is not an
+    # invitation.
+    body_none:
+      - "sollte ihr profil"
+      - "falls ihr profil"
+      - "sofern ihr profil"
+      - "wenn ihr profil"
+      - "sollten ihre qualifikationen"
+      - "in die engere auswahl"
+      - "gegebenenfalls zu einem"
+      - "ggf. zu einem"
   extract:
     org: {source: from_domain, transform: [domain_to_org]}
     role:
@@ -146,6 +185,27 @@
       - "wir benötigen noch"
       - "bitte laden sie folgende dokumente hoch"
       - "ihre bewerbung ist unvollständig"
+  extract:
+    org: {source: from_domain, transform: [domain_to_org]}
+    role:
+      source: subject
+      regex: "(?i)(?:bewerbung\\s*(?:als|f(?:ü|ue)r|:)|vorstellungsgespr(?:ä|ae)ch\\s*[–—-]|gespr(?:ä|ae)ch\\s*[–—-]|stelle\\s+als)\\s*(.{2,80}?)(?:\\s+bei\\s+.+)?$"
+      transform: [strip_org_suffix, strip, collapse]
+
+- id: generic-document-request-phrased-de
+  vendor: generic
+  description: >-
+    "Bitte senden Sie uns bis zum 30.09. Ihre Zeugnisse", "Bitte Ihre Zeugnisse
+    noch hochladen": please, a verb of sending and the documents, close
+    together. The window allows full stops, because German dates contain them.
+  category: document_request
+  priority: 84
+  match:
+    body_regex: '\bbitte\b[^!?]{0,30}?\b(?:senden|schicken|reichen|übermitteln|übersenden|laden|lassen)\b[^!?]{0,60}?(?:zeugnis|unterlagen|dokumente|nachweis|lebenslauf|zertifikat|urkunde)|\bbitte\b[^!?]{0,40}?(?:zeugnis|unterlagen|dokumente|nachweis|lebenslauf|zertifikat|urkunde)\w*[^!?]{0,40}?\b(?:senden|schicken|nachreichen|zukommen|hochladen|übermitteln|übersenden)'
+    body_none:
+      - "keine unterlagen"
+      - "keine weiteren unterlagen"
+      - "keine dokumente"
   extract:
     org: {source: from_domain, transform: [domain_to_org]}
     role:
