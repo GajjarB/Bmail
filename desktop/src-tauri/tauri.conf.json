@@ -22,9 +22,6 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "externalBin": [
-      "binaries/bmail"
-    ],
     "publisher": "Bmail",
     "copyright": "MIT licence",
     "homepage": "https://github.com/GajjarB/Bmail",
@@ -40,6 +37,9 @@
     "macOS": {
       "minimumSystemVersion": "11.0",
       "entitlements": "Entitlements.plist"
-    }
+    },
+    "resources": [
+      "engine/"
+    ]
   }
 }

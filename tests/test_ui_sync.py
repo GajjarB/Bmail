@@ -107,3 +107,29 @@ def test_setup_shows_each_account_and_can_turn_checks_off(live_page):
     page.wait_for_function(
         "() => document.querySelector('#sync-accounts').innerText.includes('Only when you check')")
     assert not errors
+
+
+def test_mail_arriving_while_you_read_never_redraws_the_page(live_page):
+    """It used to redraw the whole screen the moment a background check found
+    mail: the list jumped and the open message reloaded under the reader."""
+    page, errors, imap = live_page
+    page.wait_for_function(
+        "() => document.querySelector('#rail-meta').innerText.includes('1 message read')")
+    page.evaluate("location.hash = '#/mail'")
+    page.wait_for_selector('[data-list="mail"] .row')
+    page.click('[data-list="mail"] .row')
+    page.wait_for_selector(".aside .body-text")
+    page.evaluate("() => { window.__page = document.querySelector('#main .page'); }")
+
+    imap.mailbox.add(mail(2))
+    poll_until(page, "document.querySelector('#rail-meta').innerText.includes('2 messages read')")
+    page.wait_for_selector("#toast:not([hidden]) .toast-action")
+    assert "1 new message" in page.inner_text("#toast")
+    assert page.evaluate("() => document.querySelector('#main .page') === window.__page"), \
+        "the page was redrawn under the reader"
+    assert page.locator('[data-list="mail"] .row').count() == 1
+
+    page.click("#toast .toast-action")
+    page.wait_for_function(
+        "() => document.querySelectorAll('[data-list=\"mail\"] .row').length === 2")
+    assert not errors

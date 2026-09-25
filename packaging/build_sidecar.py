@@ -1,10 +1,12 @@
-"""Freeze the Bmail engine into one executable, and prove it works.
+"""Freeze the Bmail engine, and prove it works.
 
-The desktop shell ships the engine beside itself as a "sidecar", so installing
-Bmail does not mean installing Python. This builds that file with PyInstaller
-and names it the way Tauri's `externalBin` expects: `bmail-<target triple>`,
-under desktop/src-tauri/binaries/. Tauri strips the triple when it bundles, and
-the shell looks for a plain `bmail` beside itself.
+The desktop shell ships the engine with itself, so installing Bmail does not
+mean installing Python. This builds it with PyInstaller as a folder, not one
+file, into desktop/src-tauri/engine/, which the installer copies as it is. One
+file would have to unpack its whole Python into a temporary folder on every
+launch, and on Windows the virus scanner reads every unpacked file again each
+time: seconds of blank screen before the window could show anything. A folder
+is unpacked once, when Bmail is installed.
 
 Then it runs what it built: starts `bmail serve`, fetches the page, a script,
 and the state API. A frozen app that is missing a data file still builds
@@ -30,7 +32,7 @@ import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-BINARIES = ROOT / "desktop" / "src-tauri" / "binaries"
+ENGINE = ROOT / "desktop" / "src-tauri" / "engine"
 WORK = ROOT / "build" / "sidecar"
 
 # Big, optional, or never used by the engine: kept out so the download stays
@@ -60,15 +62,15 @@ def target_triple() -> str:
     return f"{arch}-unknown-linux-gnu"
 
 
-def sidecar_path(triple: str) -> Path:
-    return BINARIES / (f"bmail-{triple}" + (".exe" if "windows" in triple else ""))
+def engine_path(triple: str) -> Path:
+    return ENGINE / ("bmail.exe" if "windows" in triple else "bmail")
 
 
 def build(triple: str) -> Path:
     dist = WORK / "dist"
     command = [
         sys.executable, "-m", "PyInstaller", str(ROOT / "packaging" / "bmail_entry.py"),
-        "--name", "bmail", "--onefile", "--console", "--noconfirm", "--clean",
+        "--name", "bmail", "--onedir", "--console", "--noconfirm", "--clean",
         "--distpath", str(dist), "--workpath", str(WORK / "work"), "--specpath", str(WORK),
         # The UI, the packs, the template recipes and the schema are package data.
         "--collect-data", "bmail",
@@ -80,12 +82,14 @@ def build(triple: str) -> Path:
         command += ["--exclude-module", module]
     print("building:", " ".join(command[2:5]), "…", flush=True)
     subprocess.run(command, check=True, cwd=ROOT)
-    built = dist / ("bmail.exe" if sys.platform == "win32" else "bmail")
-    target = sidecar_path(triple)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(built, target)
-    size = target.stat().st_size / 1_000_000
-    print(f"built {target.relative_to(ROOT)} ({size:.1f} MB)", flush=True)
+    shutil.rmtree(ENGINE, ignore_errors=True)
+    # Real files, no links: the installer copies this folder as it is, and not
+    # every bundler keeps a symbolic link (macOS builds of Python contain them).
+    # The smoke test below runs from this copy, so it proves what ships.
+    shutil.copytree(dist / "bmail", ENGINE, symlinks=False)
+    size = sum(f.stat().st_size for f in ENGINE.rglob("*") if f.is_file()) / 1_000_000
+    target = engine_path(triple)
+    print(f"built {ENGINE.relative_to(ROOT)}/ ({size:.1f} MB, {target.name} to start)", flush=True)
     return target
 
 
@@ -101,7 +105,7 @@ def smoke_test(binary: Path) -> None:
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env,
         )
         try:
-            line = process.stdout.readline()     # onefile unpacks first; allow a while
+            line = process.stdout.readline()
             if not line:
                 raise SystemExit(f"the engine exited without a URL:\n{process.stderr.read()}")
             announced = json.loads(line)
@@ -142,7 +146,7 @@ def main() -> int:
     parser.add_argument("--test-only", action="store_true", help="test an existing build")
     args = parser.parse_args()
     triple = args.target or target_triple()
-    binary = sidecar_path(triple) if args.test_only else build(triple)
+    binary = engine_path(triple) if args.test_only else build(triple)
     if not args.no_test:
         started = time.monotonic()
         smoke_test(binary)

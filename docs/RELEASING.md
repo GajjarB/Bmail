@@ -36,18 +36,21 @@ on systems at least as new as the one it was built on.
 
 Each installer carries two programs:
 
-- **the engine** — the Python core frozen by PyInstaller into one file
-  (`packaging/build_sidecar.py`). The build script starts what it built and
+- **the engine** — the Python core frozen by PyInstaller into a folder
+  (`packaging/build_sidecar.py`), installed once. One self-unpacking file would
+  unpack its Python on every launch, and on Windows the virus scanner rereads
+  it each time: seconds of nothing before the window. The build script starts what it built and
   fetches the page, a script, a font, the packs and the API before the job is
   allowed to continue, because a frozen app missing one data file still builds
   cleanly and only fails on someone's machine.
-- **the shell** — the Tauri window (`desktop/`), which starts the engine beside
-  it, points a webview at it, and stops it when the window closes. If the window
-  is killed outright, the engine notices within two seconds and stops itself.
+- **the shell** — the Tauri window (`desktop/`), which opens at once on a start
+  screen, starts the engine from its resources, points the window at it, and
+  stops it when the window closes. If the window is killed outright, the engine
+  notices within two seconds and stops itself.
 
-Nobody needs Python installed. The engine is about 24 MB and the `.deb` about
-the same, compressed; the AppImage is about 95 MB because it carries its own
-WebKit.
+Nobody needs Python installed. The engine folder is about 64 MB on disk and
+the `.deb` about 27 MB, compressed; the AppImage is larger because it carries
+its own WebKit.
 
 The trainable classifier (numpy, scikit-learn) and the Gmail-API and Microsoft
 libraries are left out of the installers to keep them small. The app connects
@@ -129,8 +132,8 @@ needed; add these secrets:
 | `APPLE_SIGNING_IDENTITY` | e.g. `Developer ID Application: Your Name (TEAMID)` |
 | `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID` | For notarisation; the password is an app-specific one |
 
-`desktop/src-tauri/Entitlements.plist` lets the notarised app load the engine,
-which unpacks its Python libraries at run time.
+`desktop/src-tauri/Entitlements.plist` lets the notarised app load the
+engine's Python libraries.
 
 ### Windows
 

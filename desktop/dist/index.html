@@ -3,18 +3,66 @@
 <head>
 <meta charset="utf-8">
 <title>Bmail</title>
+<!--
+  What the window shows from the moment it opens until the engine is ready, and
+  then the app replaces it. It looks like the app's own start screen, the same
+  colours, mark and words, so the hand-over reads as the app arriving rather
+  than a page reloading. If the engine cannot start, the shell says why here.
+-->
 <style>
-  :root { color-scheme: light dark; }
-  body { font: 14px/1.6 system-ui, sans-serif; display: grid; place-items: center;
-         height: 100vh; margin: 0; text-align: center; }
-  code { display: block; margin-top: 12px; font-family: ui-monospace, monospace; opacity: .75; }
+  :root {
+    color-scheme: light dark;
+    --bg: #FFFFFF; --ink: #101114; --ink-2: #565962; --line: #E4E4E8; --accent: #2F55C4; --on-ink: #FFFFFF;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #1B1B1E; --ink: #ECEDEF; --ink-2: #A0A3AC; --line: #303238; --accent: #7E9CFF; --on-ink: #101114; }
+  }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg); color: var(--ink);
+    font: 14px/1.5 "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+    display: grid; place-items: center; padding: 24px; box-sizing: border-box;
+  }
+  .card { max-width: 420px; text-align: center; }
+  .mark { width: 40px; height: 40px; border-radius: 11px; margin: 0 auto 14px;
+          background: var(--ink); color: var(--on-ink); display: grid; place-items: center; }
+  .mark svg { width: 22px; height: 22px; }
+  h1 { font-size: 16px; font-weight: 600; margin: 0 0 4px; }
+  p { color: var(--ink-2); margin: 0; }
+  .bar { width: 120px; height: 3px; margin: 16px auto 0; border-radius: 3px;
+         background: var(--line); overflow: hidden; }
+  .bar::after { content: ""; display: block; width: 40%; height: 100%; border-radius: 3px;
+                background: var(--accent); animation: slide 1.1s ease-in-out infinite; }
+  @keyframes slide { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+  @media (prefers-reduced-motion: reduce) { .bar::after { animation: none; width: 100%; opacity: .5; } }
+  code { display: block; margin-top: 14px; padding: 10px 12px; border-radius: 8px;
+         border: 1px solid var(--line); font: 12.5px/1.5 ui-monospace, Menlo, Consolas, monospace;
+         color: var(--ink-2); text-align: left; white-space: pre-wrap; word-break: break-word; }
+  [hidden] { display: none !important; }
 </style>
 </head>
 <body>
-  <div>
-    <h1>Bmail could not start its engine</h1>
-    <p id="why">The local daemon did not come up.</p>
-    <code>pip install -e . &amp;&amp; bmail doctor</code>
+  <div class="card">
+    <div class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2.4" stroke-linecap="round"><path d="M5 7.5h14M5 12h14M5 16.5h8"/></svg></div>
+    <h1>Bmail</h1>
+    <p id="status">Starting the engine…</p>
+    <div class="bar" id="bar" aria-hidden="true"></div>
+    <code id="detail" hidden></code>
   </div>
+<script>
+  // Called by the shell when the engine could not start.
+  function showFailure(reason) {
+    document.getElementById("status").textContent =
+      "Bmail could not start its engine. Reinstalling usually fixes this.";
+    document.getElementById("bar").hidden = true;
+    const detail = document.getElementById("detail");
+    detail.textContent = reason || "The engine did not answer.";
+    detail.hidden = false;
+  }
+  // The shell replaces this page within seconds; if it never does, say so
+  // rather than showing a loading bar for ever.
+  setTimeout(() => showFailure("The engine did not start within a minute."), 60000);
+</script>
 </body>
 </html>

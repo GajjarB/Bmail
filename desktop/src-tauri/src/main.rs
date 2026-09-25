@@ -12,6 +12,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::io::{BufRead, BufReader};
+use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -24,14 +25,22 @@ struct Daemon(Mutex<Option<Child>>);
 /// How long to wait for the daemon to announce itself before giving up.
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(30);
 
-/// Candidate ways to run the core, in order of preference: a bundled sidecar,
-/// then `bmail` on PATH, then the module through whichever Python is available.
-fn candidates() -> Vec<(String, Vec<String>)> {
+/// Candidate ways to run the core, in order of preference: the engine folder
+/// the installer put in the app's resources, a sidecar beside the shell (older
+/// builds), then `bmail` on PATH, then the module through any Python.
+fn candidates(resources: Option<PathBuf>) -> Vec<(String, Vec<String>)> {
     let mut found: Vec<(String, Vec<String>)> = Vec::new();
+    let name = if cfg!(windows) { "bmail.exe" } else { "bmail" };
 
+    if let Some(dir) = resources {
+        let engine = dir.join("engine").join(name);
+        if engine.is_file() {
+            found.push((engine.to_string_lossy().into_owned(), Vec::new()));
+        }
+    }
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
-            let sidecar = dir.join(if cfg!(windows) { "bmail.exe" } else { "bmail" });
+            let sidecar = dir.join(name);
             if sidecar.is_file() {
                 found.push((sidecar.to_string_lossy().into_owned(), Vec::new()));
             }
@@ -50,10 +59,10 @@ fn candidates() -> Vec<(String, Vec<String>)> {
 }
 
 /// Start the daemon and read back the URL it is serving on.
-fn start_daemon() -> Result<(String, Child), String> {
+fn start_daemon(resources: Option<PathBuf>) -> Result<(String, Child), String> {
     let mut problems: Vec<String> = Vec::new();
 
-    for (program, prefix) in candidates() {
+    for (program, prefix) in candidates(resources) {
         let mut command = Command::new(&program);
         // The engine is a console program, so that it can print its URL. On
         // Windows that would open a black terminal window beside the app.
@@ -195,30 +204,34 @@ fn main() {
             let handle = app.handle().clone();
             #[cfg(feature = "updater")]
             update::fetch_in_background(handle.clone());
-            let (url, child) = match start_daemon() {
-                Ok(started) => started,
-                Err(message) => {
-                    // Fall back to the bundled page, which explains what to do,
-                    // rather than opening an empty window with no explanation.
-                    eprintln!("bmail-desktop: {message}");
-                    WebviewWindowBuilder::new(&handle, "main", WebviewUrl::default())
-                        .title("Bmail")
-                        .inner_size(720.0, 420.0)
-                        .build()?;
-                    return Ok(());
-                }
-            };
 
-            *app.state::<Daemon>().0.lock().unwrap() = Some(child);
-
-            let parsed = url
-                .parse()
-                .map_err(|err| format!("the engine reported an unusable URL: {err}"))?;
-            WebviewWindowBuilder::new(&handle, "main", WebviewUrl::External(parsed))
+            // The window first, showing the start screen bundled with the shell,
+            // and the engine after it. Waiting for the engine before opening
+            // anything left people looking at nothing and wondering whether
+            // they had clicked at all.
+            let window = WebviewWindowBuilder::new(&handle, "main", WebviewUrl::default())
                 .title("Bmail")
                 .inner_size(1280.0, 860.0)
                 .min_inner_size(880.0, 560.0)
                 .build()?;
+            let resources = app.path().resource_dir().ok();
+
+            std::thread::spawn(move || {
+                let started = start_daemon(resources).and_then(|(url, child)| {
+                    *handle.state::<Daemon>().0.lock().unwrap() = Some(child);
+                    url.parse::<tauri::Url>()
+                        .map_err(|err| format!("the engine reported an unusable URL: {err}"))
+                });
+                let shown = match started {
+                    Ok(url) => window.navigate(url).map_err(|err| err.to_string()),
+                    Err(message) => Err(message),
+                };
+                if let Err(message) = shown {
+                    eprintln!("bmail-desktop: {message}");
+                    let reason = serde_json::to_string(&message).unwrap_or_default();
+                    let _ = window.eval(&format!("showFailure({reason})"));
+                }
+            });
             Ok(())
         })
         .build(tauri::generate_context!())

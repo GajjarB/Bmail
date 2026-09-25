@@ -215,9 +215,18 @@ const post = (path, body) =>
     body: JSON.stringify({ ...(App.packChoice ? { pack: App.packChoice } : {}), ...(body || {}) }),
   });
 
-function toast(message, isError = false) {
+function toast(message, isError = false, action = null) {
   const node = $("#toast");
-  node.replaceChildren(icon(isError ? "alert" : "check", 15, 2), el("span", { text: message }));
+  const hide = () => {
+    node.classList.add("leaving");
+    toast.gone = setTimeout(() => { node.hidden = true; }, 220);
+  };
+  node.replaceChildren(icon(isError ? "alert" : "check", 15, 2), el("span", { text: message }),
+    action ? el("button", { class: "toast-action", onclick: () => {
+      clearTimeout(toast.timer);
+      hide();
+      action.run();
+    } }, action.label) : null);
   node.classList.toggle("error", Boolean(isError));
   node.classList.remove("leaving");
   node.hidden = false;
@@ -228,10 +237,8 @@ function toast(message, isError = false) {
   node.style.animation = "";
   clearTimeout(toast.timer);
   clearTimeout(toast.gone);
-  toast.timer = setTimeout(() => {
-    node.classList.add("leaving");
-    toast.gone = setTimeout(() => { node.hidden = true; }, 220);
-  }, isError ? 8000 : 3600);
+  // Something to do stays long enough to do it.
+  toast.timer = setTimeout(hide, isError || action ? 8000 : 3600);
 }
 
 /* ---------------------------------------------------------------- jobs --- */
@@ -326,7 +333,6 @@ const Sync = {
   status: null,
   generation: null,
   timer: null,
-  deferred: false,   // mail arrived while someone was typing; redraw later
 
   async poll() {
     clearTimeout(this.timer);
@@ -338,16 +344,20 @@ const Sync = {
       this.status = s;
       this.paint();
       // A check someone started by hand reports through its own job; only
-      // the ones that happened on their own need announcing here.
-      if (arrived && s.last_kind === "sync") {
-        toast(mailWords({ new: { all: s.last.new }, sorted: s.last.sorted }));
-        this.deferred = true;
-      }
-      // Redrawing under someone mid-sentence would take their text away.
-      const typing = document.activeElement?.matches("input, textarea, select");
-      if (this.deferred && !typing) {
-        this.deferred = false;
-        await refresh().catch(() => {});
+      // the ones that happened on their own need announcing here. They never
+      // redraw what you are reading: the counts change where they are, and
+      // the new mail is one click away. A screen with nothing on it yet (the
+      // first import filling an empty Today) has nothing to lose, so it fills.
+      if (arrived && s.last_kind === "sync" && App.state) {
+        const wasEmpty = !App.state.messages.total;
+        await loadState().catch(() => {});
+        if (wasEmpty || App.route === "welcome") {
+          const typing = document.activeElement?.matches("input, textarea, select");
+          if (!typing) await render().catch(() => {});
+        } else {
+          toast(mailWords({ new: { all: s.last.new }, sorted: s.last.sorted }), false,
+            { label: "Show", run: () => render() });
+        }
       }
     }
     if (!document.hidden) {
@@ -1816,6 +1826,13 @@ const NavPill = {
 /* --------------------------------------------------------------- boot --- */
 
 async function refresh() {
+  await loadState();
+  await render();
+}
+
+/* The state and everything drawn from it outside the page: the counts in the
+   sidebar and its footer. Never the page itself. */
+async function loadState() {
   App.packChoice = localStorage.getItem("bmail.pack") || null;
   const state = await api("/state");
   // The product should speak the domain's language, not the engine's.
@@ -1829,7 +1846,7 @@ async function refresh() {
     el("div", { text: `${state.cases.total} ${state.entity_plural} tracked` }),
     el("div", {}, el("span", { class: "dot", text: "●" }), " ",
       state.llm.available && state.llm.pulled ? state.llm.model : "rules + classifier"));
-  await render();
+  if (App.route) paintNav();
 }
 
 async function boot() {

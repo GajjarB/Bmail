@@ -65,7 +65,10 @@ It also happens on its own while the app is open: on an interval set in Setup,
 and within seconds for IMAP servers that push new mail. The line under the
 button says when the last check was — a breathing dot means the server is
 pushing — or which account needs attention. The page asks the engine every 15
-seconds and redraws only when something new actually arrived. See
+seconds. Mail that arrived on its own never redraws what you are reading: the
+counts in the sidebar change where they are, and the toast offers **Show**. An
+empty screen (a first import) fills in by itself, since there is nothing to
+lose. See
 [PROVIDERS.md](PROVIDERS.md#staying-up-to-date).
 
 Long jobs — ingest, triage, export, background checks — run on a single
@@ -133,9 +136,11 @@ cargo tauri build              # installers, if the Tauri CLI is installed
 macOS and Windows need no extra system packages beyond Xcode command-line tools
 and the MSVC build tools respectively.
 
-The shell finds the engine in this order: a `bmail` binary next to itself (a
-bundled sidecar), `$BMAIL_BIN`, `bmail` on `PATH`, then `python -m bmail`. If none
-of them starts, the window shows a page saying so rather than opening blank.
+The window opens at once on a start screen and switches to the app when the
+engine is ready. The shell finds the engine in this order: `engine/bmail` in the
+app's resources, a `bmail` binary next to itself (older builds), `$BMAIL_BIN`,
+`bmail` on `PATH`, then `python -m bmail`. If none of them starts, the start
+screen says why rather than waiting for ever.
 
 Installers are not signed. Signing needs an Apple Developer ID and a Windows
 code-signing certificate, both of which are per-developer and cannot be

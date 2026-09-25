@@ -19,18 +19,20 @@ To build installers with the engine inside, freeze the engine first, then
 bundle:
 
 ```bash
-python ../packaging/build_sidecar.py      # writes src-tauri/binaries/bmail-<target>
+python ../packaging/build_sidecar.py      # writes the engine folder, src-tauri/engine/
 npm ci && npx tauri build                 # installers under src-tauri/target/release/bundle/
 ```
 
 Releases do the same on GitHub Actions for every tag; see
 [../docs/RELEASING.md](../docs/RELEASING.md).
 
-The shell looks for the engine in this order: a `bmail` binary beside itself (a
-bundled sidecar), `$BMAIL_BIN`, `bmail` on `PATH`, then `python -m bmail`. It reads
-one JSON line from `bmail serve --json` to learn the loopback URL and session
-token, then points a webview at it. If nothing starts, the window shows
-`dist/index.html`, which says so.
+The window opens at once on `dist/index.html`, a start screen that looks like
+the app's own, while the engine starts. The shell looks for it in this order:
+`engine/bmail` in its resources (what the installer ships), a `bmail` binary
+beside itself (older builds), `$BMAIL_BIN`, `bmail` on `PATH`, then
+`python -m bmail`. It reads one JSON line from `bmail serve --json` to learn the
+loopback URL and session token, then points the window at it. If nothing
+starts, the start screen says why.
 
 If you have no Rust toolchain, `bmail ui` gives you the same application in a
 browser tab.
