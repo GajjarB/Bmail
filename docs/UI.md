@@ -71,8 +71,13 @@ Four rules are worth keeping:
   and every alternative offered. Each answer becomes a training row, which is
   what makes the classifier personal within a week.
 - **Setup**: add and remove mailboxes, choose how often to check, sort,
-  switch what is tracked, export, choose the layout, and see where things live
-  on disk.
+  switch what is tracked, export, choose light or dark colours and the layout,
+  and see where things live on disk.
+
+Colours are **Match system**, **Light** or **Dark**, and change the moment you
+pick one; the choice is remembered on this computer. Match system follows the
+operating system's setting as it changes. The same switch is in the command
+palette (`Ctrl+K`, "Switch to dark mode").
 
 Two layouts share the markup: **Studio** (the default, described above) and
 **Compact**, denser, for when ninety applications need to fit on a screen.

@@ -28,6 +28,28 @@ applyTheme((() => {
   try { return localStorage.getItem("bmail.theme"); } catch { return null; }
 })());
 
+/* Light or dark, or whatever the system is set to. The stylesheet reads the
+ * system's choice by itself; picking one here stamps it on the page, which
+ * wins over the system in both directions. Applied as the script loads, so
+ * the app never shows in the wrong colours first. */
+const SCHEMES = { system: "Match system", light: "Light", dark: "Dark" };
+
+function applyScheme(name) {
+  const scheme = SCHEMES[name] ? name : "system";
+  if (scheme === "system") document.documentElement.removeAttribute("data-scheme");
+  else document.documentElement.setAttribute("data-scheme", scheme);
+  try { localStorage.setItem("bmail.scheme", scheme); } catch { /* private window */ }
+  return scheme;
+}
+
+const currentScheme = () => document.documentElement.getAttribute("data-scheme") || "system";
+const looksDark = () => currentScheme() === "dark"
+  || (currentScheme() === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
+
+applyScheme((() => {
+  try { return localStorage.getItem("bmail.scheme"); } catch { return null; }
+})());
+
 const App = {
   token: null,
   state: null,
@@ -1620,6 +1642,17 @@ async function viewWelcome() {
 
 /* --- Setup -------------------------------------------------------------- */
 
+/* Takes effect on the click: nothing to save, nothing to reload. */
+function schemePicker() {
+  const picker = el("div", { class: "segmented", role: "group", "aria-label": "Colours" });
+  const paintPicker = () => picker.replaceChildren(...Object.entries(SCHEMES).map(([value, label]) =>
+    el("button", { "data-value": value, "aria-pressed": String(currentScheme() === value),
+      onclick: () => { applyScheme(value); paintPicker(); picker.querySelector('[aria-pressed="true"]')?.focus(); } },
+      label)));
+  paintPicker();
+  return picker;
+}
+
 function viewSetup() {
   const s = App.state;
   const path = el("input", { type: "text", class: "grow-field", placeholder: "~/mail/archive.mbox",
@@ -1697,6 +1730,8 @@ function viewSetup() {
       : "No local model. Rules and the classifier only, which handles most mail."),
 
     section("Appearance", null, "palette"),
+    group("Colours", schemePicker()),
+    note("Match system follows your computer's light or dark setting as it changes."),
     group("Layout",
       el("select", { "aria-label": "Layout", onchange: (e) => { applyTheme(e.target.value); render(); } },
         Object.entries(THEMES).map(([value, label]) =>
@@ -1944,6 +1979,8 @@ async function openPalette() {
     ["Do", "Sort new mail", "filter", () => run("triage", {}, "Sorting new mail")],
     ["Do", "Re-sort everything", "run", () => run("triage", { all: true }, "Sorting everything")],
     ["Do", "Show what has gone quiet", "quiet", () => go("cases", { quiet: "1" })],
+    ["Do", looksDark() ? "Switch to light mode" : "Switch to dark mode", "palette",
+      () => { applyScheme(looksDark() ? "light" : "dark"); if (App.route === "setup") render(); }],
     ["Do", "Keyboard shortcuts", "keys", () => openShortcuts()],
   ].map(([group, what, glyph, act]) => ({ group, what, glyph, where: "", act }));
 

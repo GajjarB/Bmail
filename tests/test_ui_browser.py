@@ -591,3 +591,37 @@ def test_a_long_html_mail_reads_in_full_in_the_message_pane(page_factory, ui):
     assert "My earlier question" not in body.inner_text()
     assert not errors
     page.close()
+
+
+def test_light_and_dark_can_be_chosen_and_apply_at_once(page_factory):
+    """The choice beats the system in both directions, and survives a restart."""
+    page, errors, _config = page_factory(color_scheme="light")
+    background = "getComputedStyle(document.body).backgroundColor"
+    light = page.evaluate(background)
+    page.click('[data-tab="setup"]')
+    picker = page.locator('.segmented[aria-label="Colours"]')
+    picker.wait_for()
+    assert picker.locator('[aria-pressed="true"]').inner_text() == "Match system"
+
+    picker.locator('button[data-value="dark"]').click()
+    assert page.evaluate("document.documentElement.dataset.scheme") == "dark"
+    dark = page.evaluate(background)
+    assert dark != light
+    assert page.evaluate("getComputedStyle(document.documentElement).colorScheme") == "dark"
+    assert picker.locator('[aria-pressed="true"]').inner_text() == "Dark"
+
+    page.reload(wait_until="networkidle")
+    page.wait_for_selector("#shell:not([hidden])")
+    assert page.evaluate(background) == dark, "the choice was forgotten"
+
+    # A dark system does not override a light choice.
+    page.emulate_media(color_scheme="dark")
+    page.click('[data-tab="setup"]')
+    page.locator('.segmented[aria-label="Colours"] button[data-value="light"]').click()
+    assert page.evaluate(background) == light
+
+    page.locator('.segmented[aria-label="Colours"] button[data-value="system"]').click()
+    assert page.evaluate("document.documentElement.hasAttribute('data-scheme')") is False
+    assert page.evaluate(background) == dark, "Match system should follow the dark system"
+    assert not errors
+    page.close()
