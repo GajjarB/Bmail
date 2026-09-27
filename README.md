@@ -329,9 +329,14 @@ not hypothetical.
   and only after you confirm it.
 - **Passwords live in the OS keychain**, never the config file. Plain-text IMAP
   is refused except to a bridge on your own machine.
-- **The local server is loopback-only**, on a random port, behind a session
-  token, with `Host` pinned against DNS rebinding and `Origin` checked on every
-  write. It never outlives its window.
+- **The local server is loopback-only**, behind a session token that is new
+  at every start, with `Host` pinned against DNS rebinding and `Origin` checked
+  on every write. It never outlives its window.
+- **Updates are signed.** The desktop app installs an update only if it carries
+  the project's signature, checked against a key built into the app.
+
+Found a security problem? Please report it privately: see
+[SECURITY.md](SECURITY.md).
 
 ## Commands
 

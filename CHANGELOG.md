@@ -38,6 +38,19 @@ straight away from Setup, with **Restart now**.
 - **Accessible.** Every screen passes an automated accessibility check in light
   and dark, and the whole app works from the keyboard.
 
+### Open and safe
+
+- **Every licence ships with the app.** The installers carry
+  THIRD_PARTY_NOTICES.md: each component inside, its licence, and where its
+  source is. Everything in them is free and open source, and the release build
+  stops if a dependency's licence is not on the allowed list.
+- **One less licence to comply with.** In the app, HTML is read with Python's
+  own parser instead of a library that bundles an old LGPL engine; the text is
+  identical.
+- **SECURITY.md** says how to report a security problem privately.
+- **The privacy notice lists the one outside contact** the desktop app makes:
+  the update check with GitHub, which carries no mail or account data.
+
 ### Fixed
 
 - **Setup is never asked twice.** Closing and opening Bmail no longer starts the

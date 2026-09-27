@@ -112,6 +112,17 @@ jobs:
         working-directory: desktop
         run: npm ci
 
+      # What the installer contains, and under which licences, goes into the
+      # installer with it: the notices beside the engine, and Bmail's own
+      # licence. The script stops the build if a dependency's licence is not
+      # on its allowed list.
+      - name: Third-party notices, into the installer
+        shell: bash
+        run: |
+          python -m pip install packaging
+          python packaging/notices.py --out desktop/src-tauri/engine/THIRD_PARTY_NOTICES.md
+          cp LICENSE desktop/src-tauri/engine/LICENSE.txt
+
       # Each credential is exported only when it exists. An empty variable is
       # not the same as a missing one to the bundler: it tries to use it, and
       # fails the build. Missing credentials simply mean an unsigned build.

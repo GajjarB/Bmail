@@ -1735,6 +1735,9 @@ function aboutBmail() {
     rows.push(line("You have the latest version."),
       el("div", { class: "setup-row" }, ask("Check again", SHELL_ASKS.check)));
   }
+  rows.push(el("p", { class: "about-status",
+    text: "Free and open source, under the MIT licence. The licences of what it is built "
+      + "from are in THIRD_PARTY_NOTICES.md, beside the app and in its source." }));
   box.append(...rows);
   return box;
 }

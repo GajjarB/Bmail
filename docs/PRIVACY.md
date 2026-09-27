@@ -15,18 +15,25 @@ anything — this area changes yearly.
 | Your mail provider | A label, if you explicitly enable and confirm write-back | Never by default |
 | `127.0.0.1:11434` | Message text, to a model running on your own machine | Only for messages that reach Stage 3 |
 | Notion | Case fields, if you configure a token and pass `--confirm` | Never by default |
+| GitHub (`github.com`, release downloads) | A request for the latest version's description, and the installer if there is a newer one. GitHub sees your IP address and that a copy of Bmail asked; no mail, account or setting is sent | Desktop app only, when it starts and when you press Check again in Setup |
 
-That is the complete list. There is no Bmail server, no telemetry, no analytics,
-no crash reporting and no update check. `bmail doctor` prints the current state of
-these settings, and warns if a password has ended up in the config file.
+That is the complete list. There is no Bmail server, no telemetry, no analytics
+and no crash reporting. The update check is the desktop app's only contact with
+anything but your mail server, and it goes to GitHub, not to the author:
+nobody behind Bmail receives or can see it. Running Bmail from source or from
+`pip` never checks for updates. `bmail doctor` prints the current state of these
+settings, and warns if a password has ended up in the config file.
 
 These guards enforce it rather than merely documenting it:
 
 - `OllamaClient` refuses any non-loopback host unless `llm.allow_remote = true`
   is set deliberately.
-- The local daemon binds `127.0.0.1` only, on a random port, behind a token
-  generated at startup, with the `Host` header pinned against DNS rebinding and
-  `Origin` checked on every request.
+- The local daemon binds `127.0.0.1` only (port 47113, or any free port when
+  that is taken), behind a token generated fresh at every start, with the
+  `Host` header pinned against DNS rebinding and `Origin` checked on every
+  request.
+- Every update is checked against a public key built into the app before it is
+  installed; an installer that was not signed with the project's key is refused.
 - The daemon stops when the window that started it goes away — including if that
   window is killed outright — so a mail-reading server never lingers.
 - The UI fetches nothing from the internet: no fonts, no CDN, no analytics. A

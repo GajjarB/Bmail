@@ -1,0 +1,29 @@
+# Free: Dependabot proposes updates to what Bmail is built from, once a week,
+# one grouped pull request per ecosystem, so a vulnerable dependency does not
+# sit unnoticed. Security alerts themselves are switched on in Settings, Code
+# security (also free).
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: /
+    schedule: { interval: weekly }
+    groups:
+      python: { patterns: ["*"] }
+
+  - package-ecosystem: cargo
+    directory: /desktop/src-tauri
+    schedule: { interval: weekly }
+    groups:
+      rust: { patterns: ["*"] }
+
+  - package-ecosystem: npm
+    directory: /desktop
+    schedule: { interval: weekly }
+    groups:
+      npm: { patterns: ["*"] }
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly }
+    groups:
+      actions: { patterns: ["*"] }

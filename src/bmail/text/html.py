@@ -28,7 +28,9 @@ from html import unescape
 from html.parser import HTMLParser
 
 try:  # pragma: no cover - import guard
-    from selectolax.parser import HTMLParser as _Selectolax
+    # Lexbor, not the older Modest engine: Lexbor is Apache-2.0 and maintained;
+    # Modest is LGPL-2.1 and no longer developed.
+    from selectolax.lexbor import LexborHTMLParser as _Selectolax
 except Exception:  # pragma: no cover
     _Selectolax = None
 

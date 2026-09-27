@@ -92,3 +92,16 @@ def test_release_notes_are_the_versions_own_section():
     assert notes.section("1.1.0", changelog) == "Newer."
     with pytest.raises(SystemExit):
         notes.section("2.0.0", changelog)
+
+
+def test_a_copyleft_dependency_would_stop_the_build():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("notices", ROOT / "packaging/notices.py")
+    notices = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(notices)
+    for fine in ("MIT", "MIT/Apache-2.0", "(MIT OR Apache-2.0) AND Unicode-3.0",
+                 "MIT OR Apache-2.0 OR LGPL-2.1-or-later", "MPL-2.0"):
+        assert notices.acceptable(fine), fine
+    for not_fine in ("GPL-3.0-only", "AGPL-3.0-or-later", "MIT AND GPL-2.0-only", "SSPL-1.0"):
+        assert not notices.acceptable(not_fine), not_fine

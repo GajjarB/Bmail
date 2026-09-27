@@ -41,7 +41,12 @@ WORK = ROOT / "build" / "sidecar"
 # back to the prototype classifier, and says so.
 EXCLUDE = ["tkinter", "numpy", "sklearn", "scipy", "torch", "sentence_transformers",
            "googleapiclient", "google_auth_oauthlib", "msal", "matplotlib", "IPython",
-           "pytest", "playwright"]
+           "pytest", "playwright",
+           # selectolax loads its old Modest engine (LGPL-2.1) whenever it is
+           # imported. Python's own parser gives the same text (the tests hold
+           # the two to it) at about the same speed, so the app ships without
+           # it and carries no copyleft code at all.
+           "selectolax"]
 
 
 def target_triple() -> str:
@@ -124,6 +129,7 @@ def smoke_test(binary: Path) -> None:
             assert "<title>Bmail</title>" in page, "the page was not bundled"
             assert b"function" in fetch("/app.js"), "the script was not bundled"
             assert fetch("/fonts/inter-latin.woff2"), "the font was not bundled"
+            assert not list(ENGINE.rglob("*selectolax*")), "selectolax (LGPL Modest) was bundled"
             state = json.loads(fetch("/api/state"))
             assert "job-seeker" in state["packs"], "the packs were not bundled"
             assert state["setup"]["first_run"] is True
