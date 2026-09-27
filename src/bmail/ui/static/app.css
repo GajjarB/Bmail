@@ -785,7 +785,7 @@ kbd {
 .toast.error { background: var(--urgent); color: #FFF; }
 /* The one thing to do about the message, sitting in it: plain text in the
    toast's own colour, underlined on hover, never a second box on a box. */
-.toast .toast-action {
+.toast .toast-action { white-space: nowrap; flex: 0 0 auto;
   margin-left: var(--s2); padding: 0; border: 0; background: none; color: inherit;
   font: 600 var(--t-small) var(--sans); cursor: pointer; text-underline-offset: 3px;
 }
