@@ -534,3 +534,73 @@ def test_a_bad_sync_interval_is_refused(live):
     with pytest.raises(urllib.error.HTTPError) as caught:
         request(base, "/api/sync", token=app.token, method="POST", body={"interval": 7})
     assert caught.value.code == 400
+
+
+# --------------------------------------------------------------------------- #
+# What a restart remembers
+# --------------------------------------------------------------------------- #
+
+
+def _restart(config):
+    """A new engine over the same store: what closing and opening the app does."""
+    from bmail.api import BmailApp
+
+    return BmailApp(config)
+
+
+def test_settings_are_kept_by_the_engine_and_checked(live):
+    base, app, config, _labels = live
+    status, prefs = request(base, "/api/prefs", token=app.token, method="POST",
+                            body={"scheme": "dark", "theme": "compact", "pack": "ignored"})
+    assert status == 200 and prefs == {"scheme": "dark", "theme": "compact"}
+    with pytest.raises(urllib.error.HTTPError) as bad:
+        request(base, "/api/prefs", token=app.token, method="POST", body={"scheme": "purple"})
+    assert bad.value.code == 400
+    # A new engine, which in a browser is often a new address with empty storage.
+    assert _restart(config).state({})["prefs"] == {"scheme": "dark", "theme": "compact"}
+
+
+def test_the_welcome_is_not_shown_again_after_a_restart(tmp_path):
+    from bmail.api import BmailApp
+
+    home = tmp_path / "home"
+    home.mkdir()
+    config = Config(home=home, db_path=home / "bmail.sqlite3")
+    app = BmailApp(config)
+    assert app.setup_state()["first_run"] is True
+
+    # Chose what to track, then closed the app: the welcome resumes after it.
+    app.setup({"pack": "job-seeker"})
+    again = _restart(config).setup_state()
+    assert again["first_run"] is True and again["pack_chosen"] is True
+
+    # Started reading sample mail, then closed the app before the last step:
+    # it counts as set up from the moment reading starts.
+    reading = _restart(config)
+    job = reading.start_samples({"no_llm": True})
+    assert _restart(config).setup_state()["first_run"] is False
+    deadline = time.time() + 60
+    while job.status not in ("done", "error", "cancelled") and time.time() < deadline:
+        time.sleep(0.1)
+    reading.shutdown()
+
+
+def test_the_engine_asks_for_the_same_port_every_start(tmp_path, monkeypatch):
+    import socket
+
+    from bmail import api
+
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        free = probe.getsockname()[1]
+    monkeypatch.setattr(api, "DEFAULT_PORT", free)
+    config = Config(home=tmp_path, db_path=tmp_path / "bmail.sqlite3")
+
+    first, app = build_server(config, port=None)
+    assert first.server_address[1] == free
+    # Something else holds it: any free port, rather than failing to start.
+    second, other = build_server(config, port=None)
+    assert second.server_address[1] != free
+    for server, running in ((first, app), (second, other)):
+        server.server_close()
+        running.shutdown()

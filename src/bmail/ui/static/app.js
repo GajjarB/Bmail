@@ -42,6 +42,32 @@ function applyScheme(name) {
   return scheme;
 }
 
+/* A setting the person chose: kept in this browser for the next paint, and in
+ * the engine's store, which outlives the browser's. A browser keeps storage
+ * per address, so when the address changes (another program held Bmail's
+ * port) only the store still knows. */
+function savePref(key, value) {
+  try { localStorage.setItem(`bmail.${key}`, String(value)); } catch { /* private window */ }
+  if (App.token) post("/prefs", { [key]: String(value) }).catch(() => {});
+}
+
+/* What the engine remembers wins over what this browser remembers. A choice
+ * made before the engine kept them is handed to it once, so nobody loses it. */
+function syncPrefs(stored) {
+  const local = (key) => { try { return localStorage.getItem(`bmail.${key}`); } catch { return null; } };
+  const missing = {};
+  for (const key of ["theme", "scheme", "window"]) {
+    if (stored && stored[key]) {
+      try { localStorage.setItem(`bmail.${key}`, stored[key]); } catch { /* private window */ }
+      if (key === "theme" && stored.theme !== document.documentElement.dataset.theme) applyTheme(stored.theme);
+      if (key === "scheme" && stored.scheme !== currentScheme()) applyScheme(stored.scheme);
+    } else if (local(key)) {
+      missing[key] = local(key);
+    }
+  }
+  if (Object.keys(missing).length) post("/prefs", missing).catch(() => {});
+}
+
 const currentScheme = () => document.documentElement.getAttribute("data-scheme") || "system";
 const looksDark = () => currentScheme() === "dark"
   || (currentScheme() === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
@@ -548,7 +574,7 @@ const empty = (title, body, action, glyph = "empty") =>
 /* --- Today ---------------------------------------------------------- */
 
 async function viewToday() {
-  const days = Number(localStorage.getItem("bmail.window") || 7);
+  const days = Number((() => { try { return localStorage.getItem("bmail.window"); } catch { return null; } })() || 7);
   const brief = await api(`/brief?days=${days}&limit=20`);
   const counts = brief.counts || {};
   const state = App.state;
@@ -604,7 +630,7 @@ async function viewToday() {
     el("span", { class: "meta", text: "Newsletters, alerts and automatic acknowledgements that asked nothing of you." }),
     el("span", { class: "grow" }),
     el("select", { "aria-label": "Count filed mail from", onchange: (e) => {
-        try { localStorage.setItem("bmail.window", e.target.value); } catch { /* private window */ }
+        savePref("window", e.target.value);
         render();
       } },
       [[1, "Today"], [7, "Last 7 days"], [30, "Last 30 days"], [3650, "Everything"]]
@@ -1487,7 +1513,7 @@ const PACK_WORDS = {
   "freelance-ops": ["Invoices", "What is due, what is overdue, and who to chase."],
 };
 
-const Wizard = { step: "track", job: null, source: "" };
+const Wizard = { step: "track", job: null, source: "", resumed: false };
 
 function wizardSteps(current) {
   const steps = [["track", "What to track"], ["connect", "Your mail"], ["read", "Reading"], ["done", "Ready"]];
@@ -1501,7 +1527,12 @@ function wizardSteps(current) {
 }
 
 async function finishSetup() {
-  try { await post("/setup", { done: true }); } catch { /* the next start asks again */ }
+  try { await post("/setup", { done: true }); }
+  catch (err) {
+    // Saying nothing here is how the welcome came back on every start.
+    toast(`Could not save that setup is finished: ${err.message}`, true);
+    return;
+  }
   Wizard.step = "track";
   Wizard.job = null;
   await refresh();
@@ -1510,6 +1541,9 @@ async function finishSetup() {
 }
 
 async function startReading(job, source) {
+  // Reading has started: whatever happens to the window now, the next start
+  // opens on the mail, not on the welcome.
+  post("/setup", { done: true }).catch(() => {});
   Wizard.job = job;
   Wizard.source = source;
   Wizard.step = "read";
@@ -1518,6 +1552,11 @@ async function startReading(job, source) {
 
 async function viewWelcome() {
   const s = App.state;
+  // What to track was answered on an earlier start: carry on from there.
+  if (!Wizard.resumed) {
+    Wizard.resumed = true;
+    if (Wizard.step === "track" && s.setup && s.setup.pack_chosen) Wizard.step = "connect";
+  }
   const page = (...nodes) => paint(el("div", { class: "wizard" }, wizardSteps(Wizard.step), ...nodes));
 
   if (Wizard.step === "track") {
@@ -1647,7 +1686,11 @@ function schemePicker() {
   const picker = el("div", { class: "segmented", role: "group", "aria-label": "Colours" });
   const paintPicker = () => picker.replaceChildren(...Object.entries(SCHEMES).map(([value, label]) =>
     el("button", { "data-value": value, "aria-pressed": String(currentScheme() === value),
-      onclick: () => { applyScheme(value); paintPicker(); picker.querySelector('[aria-pressed="true"]')?.focus(); } },
+      onclick: () => {
+        savePref("scheme", applyScheme(value));
+        paintPicker();
+        picker.querySelector('[aria-pressed="true"]')?.focus();
+      } },
       label)));
   paintPicker();
   return picker;
@@ -1733,7 +1776,8 @@ function viewSetup() {
     group("Colours", schemePicker()),
     note("Match system follows your computer's light or dark setting as it changes."),
     group("Layout",
-      el("select", { "aria-label": "Layout", onchange: (e) => { applyTheme(e.target.value); render(); } },
+      el("select", { "aria-label": "Layout",
+        onchange: (e) => { savePref("theme", applyTheme(e.target.value)); render(); } },
         Object.entries(THEMES).map(([value, label]) =>
           el("option", { value, selected: value === document.documentElement.dataset.theme },
             label)))),
@@ -1980,7 +2024,10 @@ async function openPalette() {
     ["Do", "Re-sort everything", "run", () => run("triage", { all: true }, "Sorting everything")],
     ["Do", "Show what has gone quiet", "quiet", () => go("cases", { quiet: "1" })],
     ["Do", looksDark() ? "Switch to light mode" : "Switch to dark mode", "palette",
-      () => { applyScheme(looksDark() ? "light" : "dark"); if (App.route === "setup") render(); }],
+      () => {
+        savePref("scheme", applyScheme(looksDark() ? "light" : "dark"));
+        if (App.route === "setup") render();
+      }],
     ["Do", "Keyboard shortcuts", "keys", () => openShortcuts()],
   ].map(([group, what, glyph, act]) => ({ group, what, glyph, where: "", act }));
 
@@ -2200,6 +2247,7 @@ async function loadState() {
   state.entity = humanise(state.entity || "case");
   state.entity_plural = state.entity.endsWith("s") ? state.entity : `${state.entity}s`;
   App.state = state;
+  syncPrefs(state.prefs);
 
   $("#rail-pack").textContent = (PACK_WORDS[state.pack] || [capital(humanise(state.pack))])[0];
   $("#btn-find span").textContent = `Search mail and ${state.entity_plural}`;

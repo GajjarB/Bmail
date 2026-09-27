@@ -752,13 +752,17 @@ def build_parser() -> argparse.ArgumentParser:
     accounts.set_defaults(func=cmd_accounts)
 
     ui = subparsers.add_parser("ui", help="open the desktop UI")
-    ui.add_argument("--port", type=int, default=0, help="0 picks a free port")
+    ui.add_argument("--port", type=int, default=None,
+                    help="default: the same port every time, so the page keeps its settings; "
+                         "0 picks a free port")
     ui.add_argument("--no-open", action="store_true", help="do not launch a browser")
     ui.set_defaults(func=cmd_ui)
 
     serve = subparsers.add_parser("serve", help="run the local API without opening a browser")
     serve.add_argument("--host", default="127.0.0.1")
-    serve.add_argument("--port", type=int, default=0, help="0 picks a free port")
+    serve.add_argument("--port", type=int, default=None,
+                       help="default: the same port every time, or a free one if it is taken; "
+                            "0 picks a free port")
     serve.add_argument("--json", action="store_true",
                        help="print one JSON line with the url and token, for a supervising process")
     serve.add_argument("--exit-with-parent", action="store_true",

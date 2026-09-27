@@ -75,7 +75,14 @@ Four rules are worth keeping:
   and see where things live on disk.
 
 Colours are **Match system**, **Light** or **Dark**, and change the moment you
-pick one; the choice is remembered on this computer. Match system follows the
+pick one.
+
+Nothing you set up is asked again. The engine keeps your settings (colours,
+layout, the period "filed" counts) in its own store, not only in the browser,
+and it serves the page from the same address every start (port 47113, or any
+free port when another program holds that one). The welcome counts as done
+the moment a mailbox is connected or mail starts being read; closed before
+that, it carries on from the step it reached. Match system follows the
 operating system's setting as it changes. The same switch is in the command
 palette (`Ctrl+K`, "Switch to dark mode").
 
@@ -113,7 +120,7 @@ writer and two triage runs at once is never what anyone wanted.
 
 ```
   Tauri window  ─┐
-                 ├──▶  http://127.0.0.1:<random>   ──▶  bmail.api  ──▶  SQLite
+                 ├──▶  http://127.0.0.1:47113      ──▶  bmail.api  ──▶  SQLite
   Browser tab   ─┘         (token-gated)                  │
                                                           └──▶ bmail.jobs (1 worker)
 ```
@@ -138,7 +145,7 @@ The local server reads mail, so it is guarded on five fronts:
 | Guard | Why |
 |---|---|
 | Binds `127.0.0.1` only, never `0.0.0.0` | Nothing outside the machine can reach it |
-| Random port, session token required | Another local process cannot read your mail by guessing a port |
+| Session token required, new on every start | Another local process that finds the port still cannot read your mail |
 | `Host` header pinned to loopback | Blocks DNS rebinding, which is how a web page reaches a localhost server |
 | `Origin` checked on every request | Blocks cross-site writes from a page you happen to have open |
 | Strict `Content-Security-Policy` | The page loads nothing from anywhere else, and says so |

@@ -146,3 +146,72 @@ def test_a_mailbox_can_be_added_and_removed_from_setup(fresh):
     assert store == {}
     assert app.config.accounts == []
     assert not errors
+
+
+def test_closing_and_opening_the_app_never_starts_setup_again(tmp_path, monkeypatch):
+    """What someone does on day one: start the welcome, close the app, open it
+    again (on a new address, so the browser has forgotten everything), connect
+    a mailbox, close it while it reads, and open it once more."""
+    store: dict[str, str] = {}
+    monkeypatch.setattr(secrets, "keychain_status",
+                        lambda: {"available": True, "backend": "memory", "hint": ""})
+    monkeypatch.setattr(secrets, "set_secret", lambda name, pw: store.__setitem__(name, pw))
+    monkeypatch.setattr(secrets, "get_secret", lambda name, user="": store.get(name, ""))
+    home = tmp_path / "home"
+    home.mkdir()
+
+    def start():
+        server, app = build_server(Config.load(home=home), port=0)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        return server, app, thread, f"http://127.0.0.1:{server.server_address[1]}"
+
+    def stop(server, app, thread):
+        server.shutdown()
+        server.server_close()
+        app.shutdown()
+        thread.join(timeout=5)
+
+    def open_app(browser, base, app):
+        # A fresh context each time: nothing kept in the browser between starts.
+        page = browser.new_context(viewport={"width": 1280, "height": 900}).new_page()
+        page.goto(f"{base}/?token={app.token}", wait_until="networkidle")
+        page.wait_for_selector("#shell:not([hidden])", timeout=15000)
+        return page
+
+    with FakeImapServer() as imap, playwright_api.sync_playwright() as p:
+        for n in (1, 2, 3):
+            imap.mailbox.add(mail(n))
+        browser = launch_chromium(p)
+
+        # Day one: what to track, and a colour choice, then the app is closed.
+        running = start()
+        page = open_app(browser, running[3], running[1])
+        page.click(".choice[data-pack='job-seeker']")
+        page.wait_for_selector(".connect-form")
+        page.evaluate("savePref('scheme', applyScheme('dark'))")
+        page.wait_for_timeout(300)
+        page.context.close()
+        stop(*running[:3])
+
+        # Opened again: the welcome carries on at the mailbox, in dark.
+        running = start()
+        page = open_app(browser, running[3], running[1])
+        page.wait_for_selector(".connect-form")
+        assert "Connect your mailbox" in page.inner_text(".headline")
+        assert page.evaluate("document.documentElement.dataset.scheme") == "dark"
+        fill_connection(page, imap, imap.password)
+        page.click(".connect-form button[type=submit]")
+        page.wait_for_selector(".wizard-progress, .wizard-facts", timeout=15000)
+        page.context.close()     # closed while it reads, before "Open Today"
+        stop(*running[:3])
+
+        # And again: straight to the mail, never the welcome.
+        running = start()
+        page = open_app(browser, running[3], running[1])
+        page.wait_for_timeout(500)
+        assert not page.url.endswith("#/welcome")
+        assert page.locator(".wizard").count() == 0
+        page.context.close()
+        stop(*running[:3])
+        browser.close()

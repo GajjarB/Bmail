@@ -6,8 +6,9 @@
 // deliberate: the core stays importable, scriptable and testable on its own,
 // and the shell is a client of it rather than a container for it.
 //
-// The daemon binds a random loopback port and prints one JSON line with its URL
-// and session token. Nothing is ever exposed beyond 127.0.0.1.
+// The daemon binds a loopback port (the same one each start, unless another
+// program holds it) and prints one JSON line with its URL and session token.
+// Nothing is ever exposed beyond 127.0.0.1.
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
@@ -77,7 +78,9 @@ fn start_daemon(resources: Option<PathBuf>) -> Result<(String, Child), String> {
             // --exit-with-parent is the backstop: the cleanup below handles a
             // normal window close, but only the daemon watching this process can
             // survive the shell being killed outright.
-            .args(["serve", "--json", "--port", "0", "--exit-with-parent"])
+            // No --port: the engine asks for the same port every start, so the
+            // page keeps one address and the webview keeps what it stored for it.
+            .args(["serve", "--json", "--exit-with-parent"])
             // Which process to outlive no longer: this one. The engine cannot
             // work it out itself when it runs under the frozen-app unpacker.
             .env("BMAIL_PARENT_PID", std::process::id().to_string())

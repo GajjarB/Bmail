@@ -45,6 +45,20 @@ LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1", "[::1]"}
 MAX_BODY = 1 << 20  # 1 MiB is far more than any request here needs
 PACK_KEY = "app.pack"
 SETUP_DONE_KEY = "setup.done"
+PREFS_KEY = "ui.prefs"
+
+# Settings the page remembers. They live in the store, not only in the
+# browser: a browser keeps its storage per address, and an address that
+# changed between starts would forget every one of them.
+PREFS = {
+    "theme": {"studio", "compact"},
+    "scheme": {"system", "light", "dark"},
+    "window": {"1", "7", "30", "3650"},
+}
+
+# The port Bmail asks for first. A fixed one keeps the page's address the same
+# from one start to the next; when something else holds it, any free port does.
+DEFAULT_PORT = 47113
 
 
 # Whether mimetypes knows .woff2 depends on the Python version and the system's
@@ -189,6 +203,7 @@ class BmailApp:
             # Who the app is for, to greet and to show at the foot of the sidebar.
             "owner": {"name": name, "address": next((a for a in addresses if "@" in a), "")},
             "setup": self.setup_state(counts["total"]),
+            "prefs": self.prefs(),
             "runs": runs,
             "llm": llm,
             "home": str(self.config.home),
@@ -536,7 +551,28 @@ class BmailApp:
             "done": done,
             "first_run": not done and not messages and not self.config.accounts,
             "pack": self.pack_name,
+            # Chosen on an earlier start: the welcome resumes after that step.
+            "pack_chosen": self._meta(PACK_KEY) is not None,
         }
+
+    def prefs(self) -> dict[str, str]:
+        try:
+            stored = json.loads(self._meta(PREFS_KEY) or "{}")
+        except ValueError:
+            return {}
+        return {k: str(v) for k, v in stored.items() if k in PREFS and str(v) in PREFS[k]} \
+            if isinstance(stored, dict) else {}
+
+    def set_prefs(self, body: dict[str, Any]) -> dict[str, str]:
+        prefs = self.prefs()
+        for key, value in body.items():
+            if key not in PREFS:
+                continue
+            if str(value) not in PREFS[key]:
+                raise ApiError(f"{key} cannot be {value!r}")
+            prefs[key] = str(value)
+        self._set_meta(PREFS_KEY, json.dumps(prefs, sort_keys=True))
+        return prefs
 
     def setup(self, body: dict[str, Any]) -> dict[str, Any]:
         if body.get("pack"):
@@ -566,6 +602,10 @@ class BmailApp:
 
     def add_account(self, body: dict[str, Any]) -> dict[str, Any]:
         added = mailboxes.add(self.config, body)
+        # A connected mailbox is a finished setup, whether or not the person
+        # waits for the welcome to end: closing the app now must not start it
+        # all over again.
+        self._set_meta(SETUP_DONE_KEY, "1")
         self.syncer.accounts_changed()
         # The first import starts straight away, as an ordinary check of this
         # account: fetch, then sort, on one progress bar.
@@ -582,6 +622,7 @@ class BmailApp:
         from bmail.samples import write_mbox
 
         directory = self.config.home / "samples"
+        self._set_meta(SETUP_DONE_KEY, "1")
 
         def work(job: Job) -> dict[str, Any]:
             job.update(step="writing sample mail", progress=0.01)
@@ -802,6 +843,8 @@ class _Handler(BaseHTTPRequestHandler):
             return app.sync_settings(body)
         if path == "/api/setup":
             return app.setup(body)
+        if path == "/api/prefs":
+            return app.set_prefs(body)
         if path == "/api/samples":
             return app.start_samples(body).as_dict()
         if path == "/api/accounts/check":
@@ -930,6 +973,10 @@ def _parent_pid_from_env() -> int | None:
 
 class _Server(ThreadingHTTPServer):
     daemon_threads = True
+    # On Windows SO_REUSEADDR lets a second program bind a port that is already
+    # in use, so two engines could answer on one address. Elsewhere it only
+    # skips the wait after a restart.
+    allow_reuse_address = os.name != "nt"
 
     def handle_error(self, request: Any, client_address: Any) -> None:
         # Same reasoning as the handler: a dropped connection is not news.
@@ -942,14 +989,21 @@ class _Server(ThreadingHTTPServer):
 
 
 def build_server(
-    config: Config, *, host: str = "127.0.0.1", port: int = 0, pack: str | None = None
+    config: Config, *, host: str = "127.0.0.1", port: int | None = 0, pack: str | None = None
 ) -> tuple[_Server, BmailApp]:
+    """`port=None` asks for `DEFAULT_PORT` and takes any free port if it is
+    taken; `0` always takes any free port."""
     if host not in LOCAL_HOSTS:
         raise BmailError(
             f"refusing to bind {host}: this server exposes mail content and is loopback-only"
         )
     app = BmailApp(config, pack=pack)
     handler = type("_BoundHandler", (_Handler,), {"app": app})
+    if port is None:
+        try:
+            return _Server((host, DEFAULT_PORT), handler), app
+        except OSError:
+            port = 0
     return _Server((host, port), handler), app
 
 
@@ -957,7 +1011,7 @@ def serve(
     config: Config,
     *,
     host: str = "127.0.0.1",
-    port: int = 0,
+    port: int | None = None,
     pack: str | None = None,
     open_browser: bool = False,
     machine_readable: bool = False,
