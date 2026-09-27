@@ -7,7 +7,8 @@ draft, try an installer, then publish it; nothing reaches anyone before that.
 ## Cutting a release
 
 ```bash
-python packaging/set_version.py 0.2.0     # writes the version into all seven files
+python packaging/set_version.py 0.2.0     # writes the version everywhere it lives
+# add a "## 0.2.0" section to CHANGELOG.md: it becomes the release notes
 git commit -am "Release 0.2.0"
 git tag v0.2.0
 git push origin main v0.2.0
@@ -16,6 +17,12 @@ git push origin main v0.2.0
 The workflow refuses a tag whose version does not match the files, and the test
 suite fails if the files disagree with each other, so the number the app reports
 is always the number it was released as.
+
+The release notes are that version's section of `CHANGELOG.md`
+(`packaging/release_notes.py`), followed by how to install. The same text
+travels with the update: an installed copy shows it under "What's new" in
+Setup when the version is ready to install. A version with no section stops
+the build, and the test suite says so first.
 
 To try the build without releasing anything, run **release** from the Actions
 tab, or push to the `release` branch (`git push origin main:release`), useful
@@ -66,7 +73,8 @@ Everything below is optional. Without it the workflow still builds working,
 
 With an update key, the app checks for a newer published release when it
 starts, downloads it in the background, and installs it when the window is
-closed. Every download is verified against the public key built into the app;
+closed. Setup, About shows where that stands, and once a version is ready,
+**Restart now** installs it straight away (so does the notice that appears). Every download is verified against the public key built into the app;
 without a key the updater is not built in at all. Copies installed before the
 key existed (0.1.0) have no updater: their owners install the next version once
 by hand, and it updates itself from then on.

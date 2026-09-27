@@ -31,6 +31,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
+from bmail import __version__
 from bmail import accounts as mailboxes
 from bmail import secrets as keystore
 from bmail.config import Config
@@ -206,6 +207,7 @@ class BmailApp:
             "prefs": self.prefs(),
             "runs": runs,
             "llm": llm,
+            "version": __version__,
             "home": str(self.config.home),
             "database": str(self.config.database),
         }

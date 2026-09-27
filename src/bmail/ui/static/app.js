@@ -87,6 +87,7 @@ const App = {
   overlay: null,      // the open sheet, if any, and how to close it
   drawer: null,       // the detail drawer over the board, if open
   refocus: null,      // where the keyboard goes back to once the drawer closes
+  shell: null,        // what the desktop shell said about this version and updates
   mailKey: null,      // the mail list on screen, so opening a message keeps it
   skeleton: false,    // a placeholder is on screen, so skip the entrance again
   arriving: false,    // this paint is a new screen, not a redraw of this one
@@ -1679,6 +1680,65 @@ async function viewWelcome() {
       el("button", { class: "primary", onclick: finishSetup }, "Open Today ", icon("arrow", 14))));
 }
 
+/* --- Updates -------------------------------------------------------------- */
+/* In the desktop app the shell checks for a new version and downloads it by
+ * itself; it tells this page how that is going by calling bmailShell() here,
+ * whenever it changes and each time the page loads. In a browser tab there is
+ * no shell and nothing calls it. To act, the page opens an address the shell
+ * recognises and cancels: it never loads. */
+
+const SHELL_ASKS = {
+  restart: "/__shell/restart-to-update",
+  check: "/__shell/check-for-updates",
+};
+
+window.bmailShell = (status) => {
+  const before = App.shell;
+  App.shell = status || null;
+  if (App.shell && App.shell.updates === "ready" && !(before && before.updates === "ready")) {
+    toast(`Bmail ${App.shell.available} is ready. It installs when you close Bmail.`, false,
+      { label: "Restart now", run: () => location.assign(SHELL_ASKS.restart) });
+  }
+  const about = $("#about-bmail");
+  if (about) about.replaceWith(aboutBmail());
+};
+
+function aboutBmail() {
+  const shell = App.shell;
+  const version = (shell && shell.version) || (App.state && App.state.version) || "";
+  const box = el("div", { class: "about", id: "about-bmail" });
+  const line = (text, tone) => el("p", { class: "about-status", "data-tone": tone || null, text });
+  const ask = (label, where, primary) => el("button", {
+    class: primary ? "primary" : "", onclick: () => location.assign(where) }, label);
+
+  const rows = [el("p", { class: "about-version" }, el("b", { text: "Bmail" }), ` ${version}`)];
+  if (!shell) {
+    rows.push(line("Running from the command line. Update it with git pull, then restart it."));
+  } else if (shell.updates === "off") {
+    rows.push(line("This copy was built without automatic updates. Install new versions from the releases page."));
+  } else if (shell.updates === "checking") {
+    rows.push(line("Checking for a new version…"));
+  } else if (shell.updates === "downloading") {
+    rows.push(line(`Downloading Bmail ${shell.available}…`));
+  } else if (shell.updates === "ready") {
+    rows.push(line(`Bmail ${shell.available} is ready to install. It installs by itself the next time you close Bmail.`, "live"),
+      el("div", { class: "setup-row" }, ask("Restart now", SHELL_ASKS.restart, true)));
+    if (shell.notes) {
+      rows.push(el("details", { class: "about-notes" },
+        el("summary", { text: "What's new" }),
+        el("div", { class: "body-text", text: shell.notes })));
+    }
+  } else if (shell.updates === "error") {
+    rows.push(line("Could not reach the update server. Bmail tries again the next time it starts.", "soon"),
+      el("div", { class: "setup-row" }, ask("Try again", SHELL_ASKS.check)));
+  } else {
+    rows.push(line("You have the latest version."),
+      el("div", { class: "setup-row" }, ask("Check again", SHELL_ASKS.check)));
+  }
+  box.append(...rows);
+  return box;
+}
+
 /* --- Setup -------------------------------------------------------------- */
 
 /* Takes effect on the click: nothing to save, nothing to reload. */
@@ -1798,6 +1858,9 @@ function viewSetup() {
         run("export", { kinds }, "Writing files");
       } }, "Write files")),
     note("A spreadsheet, or a calendar of every deadline and interview."),
+
+    section("About", null, "sparkle"),
+    aboutBmail(),
 
     section("Storage", null, "storage"),
     el("dl", { class: "facts set-facts" },

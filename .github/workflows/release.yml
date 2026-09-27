@@ -173,6 +173,15 @@ jobs:
             echo "Auto-update: off (no update-signing key; see docs/RELEASING.md)"
           fi
 
+      # The notes are the version's section of CHANGELOG.md, so the release
+      # page and the "What's new" an installed copy shows say the same thing.
+      # A version with no section stops the build here.
+      - name: Release notes, from CHANGELOG.md
+        id: notes
+        shell: bash
+        run: |
+          { echo "body<<__NOTES__"; python packaging/release_notes.py; echo "__NOTES__"; } >> "$GITHUB_OUTPUT"
+
       - uses: tauri-apps/tauri-action@v0
         env:
           # The built-in token can only write to this repository.
@@ -191,15 +200,4 @@ jobs:
           releaseName: Bmail __VERSION__
           releaseDraft: true
           prerelease: false
-          releaseBody: |
-            Download the installer for your computer:
-
-            - **macOS** (Apple silicon): the `.dmg`
-            - **Windows**: the `.msi`, or the `-setup.exe` to install without administrator rights
-            - **Linux**: the `.AppImage` (any distribution), or the `.deb` (Debian, Ubuntu)
-
-            Everything runs on your computer. Nothing is uploaded.
-
-            If this build is not signed, your system will warn you the first
-            time you open it. On macOS: System Settings → Privacy & Security →
-            Open Anyway. On Windows: More info → Run anyway.
+          releaseBody: ${{ steps.notes.outputs.body }}

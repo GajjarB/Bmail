@@ -127,7 +127,9 @@ More in [docs/PRIVACY.md](docs/PRIVACY.md).
 Installers for macOS (Apple silicon), Windows and Linux are on the
 [Releases page](https://github.com/GajjarB/Bmail/releases). Open the app and it
 walks you through connecting a mailbox. Nothing else to install: the engine is
-inside.
+inside. From 0.2.0 it keeps itself up to date: new versions download in the
+background and install when you close it. What changed in each version:
+[CHANGELOG.md](CHANGELOG.md).
 
 Until the builds are signed, your system will warn you the first time. On
 macOS: System Settings → Privacy & Security → Open Anyway. On Windows: More info

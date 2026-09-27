@@ -72,7 +72,8 @@ Four rules are worth keeping:
   what makes the classifier personal within a week.
 - **Setup**: add and remove mailboxes, choose how often to check, sort,
   switch what is tracked, export, choose light or dark colours and the layout,
-  and see where things live on disk.
+  see where things live on disk, and, under About, which version this is and
+  where its next update stands (with **Restart now** once one is ready).
 
 Colours are **Match system**, **Light** or **Dark**, and change the moment you
 pick one.

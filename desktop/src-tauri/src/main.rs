@@ -18,10 +18,54 @@ use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::webview::PageLoadEvent;
+use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 
 /// The child daemon, kept so it can be stopped when the window closes.
 struct Daemon(Mutex<Option<Child>>);
+
+/// What the page is told about this copy of Bmail: its version and where its
+/// next update stands. The page never asks; the shell tells it whenever this
+/// changes and each time a page finishes loading, so nothing is missed when
+/// the check finishes before the engine's page is up.
+struct Shell(Mutex<serde_json::Value>);
+
+/// Addresses the page opens to ask the shell for something. They are never
+/// loaded: the navigation handler recognises them and cancels them. That keeps
+/// the page an ordinary web page, with no bridge into the shell to secure.
+const RESTART_TO_UPDATE: &str = "/__shell/restart-to-update";
+const CHECK_FOR_UPDATES: &str = "/__shell/check-for-updates";
+
+fn tell_page(handle: &AppHandle) {
+    let status = handle.state::<Shell>().0.lock().unwrap().clone();
+    if let Some(window) = handle.get_webview_window("main") {
+        let _ = window.eval(format!("window.bmailShell && window.bmailShell({status})"));
+    }
+}
+
+// Only the updater changes the status after start-up.
+#[cfg_attr(not(feature = "updater"), allow(dead_code))]
+fn set_status(handle: &AppHandle, changes: serde_json::Value) {
+    {
+        let shell = handle.state::<Shell>();
+        let mut status = shell.0.lock().unwrap();
+        if let (Some(status), Some(changes)) = (status.as_object_mut(), changes.as_object()) {
+            for (key, value) in changes {
+                status.insert(key.clone(), value.clone());
+            }
+        }
+    }
+    tell_page(handle);
+}
+
+/// The daemon holds the mail store open, and on Windows its files cannot be
+/// replaced while it runs: stop it before anything else closes or installs.
+fn stop_daemon(handle: &AppHandle) {
+    if let Some(mut child) = handle.state::<Daemon>().0.lock().unwrap().take() {
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+}
 
 /// How long to wait for the daemon to announce itself before giving up.
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(30);
@@ -155,34 +199,70 @@ fn start_daemon(resources: Option<PathBuf>) -> Result<(String, Child), String> {
 mod update {
     use std::sync::Mutex;
 
+    use serde_json::json;
     use tauri::{AppHandle, Manager};
     use tauri_plugin_updater::{Update, UpdaterExt};
+
+    use super::set_status;
 
     #[derive(Default)]
     pub struct Pending(pub Mutex<Option<(Update, Vec<u8>)>>);
 
     pub fn fetch_in_background(handle: AppHandle) {
+        // One at a time: a second check while a download runs would fetch it twice.
+        if handle.state::<Pending>().0.lock().unwrap().is_some() {
+            return;
+        }
+        set_status(&handle, json!({ "updates": "checking" }));
         tauri::async_runtime::spawn(async move {
             let updater = match handle.updater() {
                 Ok(updater) => updater,
-                Err(err) => return eprintln!("bmail-desktop: updater unavailable: {err}"),
+                Err(err) => {
+                    eprintln!("bmail-desktop: updater unavailable: {err}");
+                    return set_status(&handle, json!({ "updates": "error" }));
+                }
             };
             match updater.check().await {
-                Ok(Some(update)) => match update.download(|_, _| {}, || {}).await {
-                    Ok(bytes) => {
-                        eprintln!(
-                            "bmail-desktop: {} downloaded; installs on quit",
-                            update.version
-                        );
-                        *handle.state::<Pending>().0.lock().unwrap() = Some((update, bytes));
+                Ok(Some(update)) => {
+                    set_status(&handle, json!({
+                        "updates": "downloading", "available": update.version,
+                    }));
+                    match update.download(|_, _| {}, || {}).await {
+                        Ok(bytes) => {
+                            eprintln!(
+                                "bmail-desktop: {} downloaded; installs on quit",
+                                update.version
+                            );
+                            set_status(&handle, json!({
+                                "updates": "ready", "available": update.version,
+                                "notes": update.body.clone().unwrap_or_default(),
+                            }));
+                            *handle.state::<Pending>().0.lock().unwrap() = Some((update, bytes));
+                        }
+                        Err(err) => {
+                            eprintln!("bmail-desktop: update download failed: {err}");
+                            set_status(&handle, json!({ "updates": "error" }));
+                        }
                     }
-                    Err(err) => eprintln!("bmail-desktop: update download failed: {err}"),
-                },
-                Ok(None) => {}
-                // Offline, or GitHub unreachable: try again next launch.
-                Err(err) => eprintln!("bmail-desktop: update check failed: {err}"),
+                }
+                Ok(None) => set_status(&handle, json!({ "updates": "current" })),
+                // Offline, or GitHub unreachable: say so, and try again next launch.
+                Err(err) => {
+                    eprintln!("bmail-desktop: update check failed: {err}");
+                    set_status(&handle, json!({ "updates": "error" }));
+                }
             }
         });
+    }
+
+    /// Install what was downloaded, now, and come back as the new version.
+    pub fn restart_into_update(handle: &AppHandle) {
+        if handle.state::<Pending>().0.lock().unwrap().is_none() {
+            return;
+        }
+        super::stop_daemon(handle);
+        install_pending(handle);
+        handle.restart();
     }
 
     pub fn install_pending(handle: &AppHandle) {
@@ -196,7 +276,13 @@ mod update {
 }
 
 fn main() {
-    let builder = tauri::Builder::default().manage(Daemon(Mutex::new(None)));
+    let builder = tauri::Builder::default()
+        .manage(Daemon(Mutex::new(None)))
+        .manage(Shell(Mutex::new(serde_json::json!({
+            "version": env!("CARGO_PKG_VERSION"),
+            // A build without an update key cannot update itself, and says so.
+            "updates": if cfg!(feature = "updater") { "checking" } else { "off" },
+        }))));
     #[cfg(feature = "updater")]
     let builder = builder
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -212,7 +298,28 @@ fn main() {
             // and the engine after it. Waiting for the engine before opening
             // anything left people looking at nothing and wondering whether
             // they had clicked at all.
+            let on_load = handle.clone();
+            let on_nav = handle.clone();
             let window = WebviewWindowBuilder::new(&handle, "main", WebviewUrl::default())
+                .on_page_load(move |_window, payload| {
+                    if payload.event() == PageLoadEvent::Finished {
+                        tell_page(&on_load);
+                    }
+                })
+                .on_navigation(move |url| {
+                    let path = url.path();
+                    #[cfg(feature = "updater")]
+                    {
+                        if path == RESTART_TO_UPDATE {
+                            update::restart_into_update(&on_nav);
+                        } else if path == CHECK_FOR_UPDATES {
+                            update::fetch_in_background(on_nav.clone());
+                        }
+                    }
+                    // A build that cannot update ignores both; neither ever loads.
+                    let _ = &on_nav;
+                    path != RESTART_TO_UPDATE && path != CHECK_FOR_UPDATES
+                })
                 .title("Bmail")
                 .inner_size(1280.0, 860.0)
                 .min_inner_size(880.0, 560.0)
@@ -232,7 +339,7 @@ fn main() {
                 if let Err(message) = shown {
                     eprintln!("bmail-desktop: {message}");
                     let reason = serde_json::to_string(&message).unwrap_or_default();
-                    let _ = window.eval(&format!("showFailure({reason})"));
+                    let _ = window.eval(format!("showFailure({reason})"));
                 }
             });
             Ok(())
@@ -240,14 +347,8 @@ fn main() {
         .build(tauri::generate_context!())
         .expect("failed to start the Bmail desktop shell")
         .run(|handle, event| match event {
-            tauri::RunEvent::ExitRequested { .. } => {
-                // The daemon holds the mail store open; never leave it running
-                // after the window it belongs to has gone.
-                if let Some(mut child) = handle.state::<Daemon>().0.lock().unwrap().take() {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                }
-            }
+            // Never leave the engine running after the window it belongs to.
+            tauri::RunEvent::ExitRequested { .. } => stop_daemon(handle),
             #[cfg(feature = "updater")]
             tauri::RunEvent::Exit => update::install_pending(handle),
             _ => {}

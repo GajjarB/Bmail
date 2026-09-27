@@ -625,3 +625,29 @@ def test_light_and_dark_can_be_chosen_and_apply_at_once(page_factory):
     assert page.evaluate(background) == dark, "Match system should follow the dark system"
     assert not errors
     page.close()
+
+
+def test_setup_says_which_version_this_is_and_where_its_update_stands(page_factory):
+    page, errors, _config = page_factory()
+    page.click('[data-tab="setup"]')
+    about = page.locator("#about-bmail")
+    about.wait_for()
+    version = page.evaluate("App.state.version")
+    assert f"Bmail {version}" in about.inner_text()
+    assert "git pull" in about.inner_text(), "a browser tab has no shell to update it"
+
+    # The desktop shell reports an update it has downloaded.
+    page.evaluate("""bmailShell({version: '0.2.0', updates: 'ready', available: '0.2.1',
+                                 notes: 'Faster start.'})""")
+    about = page.locator("#about-bmail")
+    assert "Bmail 0.2.1 is ready to install" in about.inner_text()
+    assert about.locator("button.primary").inner_text() == "Restart now"
+    assert "Faster start." in about.locator("details").inner_text() or about.locator("details").count() == 1
+    assert "0.2.1 is ready" in page.inner_text("#toast")
+    assert page.locator("#toast .toast-action").inner_text() == "Restart now"
+
+    # Offline: it says so, and offers to try again.
+    page.evaluate("bmailShell({version: '0.2.0', updates: 'error'})")
+    assert "Try again" in page.locator("#about-bmail").inner_text()
+    assert not errors
+    page.close()

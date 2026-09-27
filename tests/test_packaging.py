@@ -13,6 +13,8 @@ import fnmatch
 import pathlib
 import sys
 
+import pytest
+
 if sys.version_info >= (3, 11):
     import tomllib
 else:  # pragma: no cover - exercised on 3.10 only
@@ -63,3 +65,30 @@ def test_every_file_agrees_on_the_version():
     import bmail
 
     assert set(found.values()) == {bmail.__version__}
+
+
+def test_the_version_being_released_has_release_notes():
+    """The release build stops without them; find out here instead."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("release_notes", ROOT / "packaging/release_notes.py")
+    notes = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(notes)
+    text = notes.notes(notes.current_version())
+    assert "### Install" in text
+    assert "## " not in text.replace("### ", ""), "the next version's notes leaked in"
+    # Printed on Windows runners, whose console is not UTF-8.
+    text.encode("ascii")
+
+
+def test_release_notes_are_the_versions_own_section():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("release_notes", ROOT / "packaging/release_notes.py")
+    notes = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(notes)
+    changelog = "# Changelog\n\n## 1.1.0\n\nNewer.\n\n## 1.0.0\n\nOlder.\n"
+    assert notes.section("1.0.0", changelog) == "Older."
+    assert notes.section("1.1.0", changelog) == "Newer."
+    with pytest.raises(SystemExit):
+        notes.section("2.0.0", changelog)
