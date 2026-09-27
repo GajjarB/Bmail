@@ -370,3 +370,11 @@ def test_a_request_for_documents_by_a_date_needs_you(conn, pack):
     assert verdict.category == "document_request"
     assert verdict.action_required is True
     assert verdict.deadline is not None and verdict.deadline.isoformat() == "2026-09-30"
+
+
+def test_the_summary_skips_a_member_number_and_a_bare_link():
+    from bmail.rules.engine import _first_line
+
+    message = parse_message(make_raw(body="1234567890123456789\nshop.example/...\n"
+                                      "Autumn surprises are waiting for you in store."))
+    assert _first_line(message).startswith("Autumn surprises")

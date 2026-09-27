@@ -140,13 +140,35 @@ _STUB = re.compile(
 )
 
 
+# A stylesheet that leaked into the plain text: the sender's software made
+# that part from the HTML and took the <style> block with it.
+_CSS_IN_PLAIN = re.compile(r"!important|@media\b|@font-face|\{\s*[a-z-]{3,}\s*:[^{}\n]*[;}]", re.I)
+_LINK = re.compile(r"https?://\S+")
+
+
+def _words(text: str) -> int:
+    """How much there is to read, not counting links."""
+    return len(re.findall(r"[^\W\d_]{2,}", _LINK.sub(" ", text)))
+
+
+def _link_share(text: str) -> float:
+    """How much of a text is web addresses."""
+    visible = len(re.sub(r"\s", "", text)) or 1
+    return sum(len(link) for link in _LINK.findall(text)) / visible
+
+
 def _html_says_more(plain: str, html: str) -> bool:
     """Whether to read the HTML part instead of the plain-text one.
 
     The plain part wins when it is a real rendering of the mail: it is what
     the sender chose to write as text. It loses when it is missing, when it is
-    a stub pointing at the HTML ("view this email in your browser"), or when it
-    is a fraction of what the HTML says.
+    a stub pointing at the HTML ("view this email in your browser"), when it is
+    machine-made and shows it (a stylesheet, or more tracking links than
+    words), or when it leaves out much of what the HTML says. An HTML part with
+    almost nothing to read never wins.
+
+    Words, not characters, are compared: three tracking links make a plain part
+    long without making it say anything.
     """
     plain, html = plain.strip(), html.strip()
     if not plain:
@@ -155,7 +177,15 @@ def _html_says_more(plain: str, html: str) -> bool:
         return False
     if len(plain) < 600 and _STUB.search(plain) and len(html) > len(plain):
         return True
-    return len(plain) * 3 < len(html) and len(html) - len(plain) > 300
+    html_words = _words(html)
+    if html_words < 8:
+        return False
+    if _CSS_IN_PLAIN.search(plain):
+        return True
+    plain_words = _words(plain)
+    if _link_share(plain) > 0.35 and html_words * 1.6 >= plain_words:
+        return True
+    return html_words > plain_words * 1.5 + 20
 
 
 def synth_message_id(from_addr: str, date: datetime, subject: str, body: str) -> str:

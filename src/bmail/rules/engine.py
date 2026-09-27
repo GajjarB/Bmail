@@ -271,6 +271,8 @@ _GREETING = re.compile(
     re.IGNORECASE,
 )
 _SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
+_WORD = re.compile(r"[^\W\d_]{2,}")
+_BARE_LINK = re.compile(r"^\(?\s*(?:https?://)?[\w.-]+\.[a-z]{2,}(?:/\S*)?\s*\)?$", re.IGNORECASE)
 
 
 def _first_line(message: Message, limit: int = 120) -> str:
@@ -290,6 +292,9 @@ def _first_line(message: Message, limit: int = 120) -> str:
             if len(head) >= 60:
                 break
             stripped = rest.strip()
+        # A member number or a bare link is not a sentence, however long.
+        if len(_WORD.findall(stripped)) < 2 or _BARE_LINK.match(stripped):
+            continue
         if len(stripped) > 15:
             # A short opening sentence rarely carries the ask; take the next
             # one too while there is room.

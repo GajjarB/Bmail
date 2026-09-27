@@ -10,6 +10,10 @@ from __future__ import annotations
 import re
 import unicodedata
 
+# Raise this whenever `clean_body` changes what it produces: the store cleans
+# every body it holds again, once, the next time it is opened.
+TEXT_VERSION = 2
+
 # --- quoted-reply attribution lines -------------------------------------- #
 # Matching the *attribution* line and cutting there beats matching ">" prefixes,
 # because HTML mail frequently loses the ">" markers entirely.
@@ -56,6 +60,7 @@ _WEB_VIEW = re.compile(
     r"(?: online| (?:in|with) (?:your |a |the )?(?:web ?)?browser| as a web ?page)"
     r"|(?:(?:diese |die )?(?:e-?mail|nachricht|newsletter) )?(?:im|in ihrem) (?:web)?browser "
     r"(?:an(?:zeigen|sehen)|lesen|öffnen)(?: zu können)?"
+    r"|online (?:an)?(?:sehen|zeigen|lesen|öffnen)"
     r"|web ?version|online[- ]version|webansicht)"
     r"[^\w\n]*$",
     re.IGNORECASE | re.MULTILINE,
@@ -67,6 +72,90 @@ _INVISIBLE = dict.fromkeys(map(ord, "\u00ad\u034f\u180e\u200b\u200c\u2060\u2061\
 
 _URL = re.compile(r"https?://\S+")
 _TRACKING_PIXEL = re.compile(r"\[image:[^\]]*\]", re.IGNORECASE)
+
+# A plain-text part generated from HTML often carries the stylesheet with it.
+# A declaration ("font-size: 100% !important;"), a rule with its braces, a
+# selector list waiting for its brace: none of it is anything a person wrote.
+_CSS_DECLARATION = re.compile(r"[a-z-]{3,}\s*:\s*[^;{}\n]+(?:;|!important|\})", re.IGNORECASE)
+_CSS_BRACE_LINE = re.compile(r"^[\w\s,.#:>*+~()\[\]=\"'%@-]*\{[^{}\n]*$|^[^{}\n]*\}\s*[\w\s,.#:>*+~-]*\{?\s*$")
+_CSS_SELECTOR_LIST = re.compile(r"^[\w\s.#:>*+~\[\]=\"'-]+(?:,\s*[\w\s.#:>*+~\[\]=\"'-]+)*,\s*$")
+_CSS_AT_RULE = re.compile(r"^\s*@(?:media|font-face|import|supports|keyframes|charset)\b", re.IGNORECASE)
+
+# A long link wrapped at the plain-text line limit leaves a line that is one
+# unbroken run of query-string characters.
+_URL_TAIL = re.compile(r"^[\w=&%./~?#+:;@!$-]{16,}$")
+# The part of a link a person can read; everything after it is tracking.
+_READABLE_PATH = re.compile(r"^/?[\w./-]{0,40}$")
+_TOKEN = re.compile(r"[A-Za-z0-9_-]{20,}")
+_RULE_LINE = re.compile(r"^[-=*~#.•·]{10,}$", re.MULTILINE)
+
+
+def _is_css_line(line: str) -> bool:
+    stripped = line.strip()
+    if not stripped:
+        return False
+    if _CSS_AT_RULE.match(stripped):
+        return True
+    if "{" in stripped or "}" in stripped:
+        return bool(_CSS_DECLARATION.search(stripped) or _CSS_BRACE_LINE.match(stripped))
+    # A declaration on its own line, between the braces of a rule.
+    return bool(re.fullmatch(r"(?:[a-z-]{3,}\s*:\s*[^;{}]+;\s*)+", stripped, re.IGNORECASE))
+
+
+def strip_css(text: str) -> str:
+    """Remove stylesheet lines a sender's software left in the plain text."""
+    if "{" not in text and "!important" not in text:
+        return text
+    lines = text.split("\n")
+    css = [_is_css_line(line) for line in lines]
+    # A selector list that runs onto the next line ("body, table, td,") is CSS
+    # only when the rule it belongs to follows it.
+    for i in range(len(lines) - 2, -1, -1):
+        if not css[i] and css[i + 1] and _CSS_SELECTOR_LIST.match(lines[i].strip()):
+            css[i] = True
+    if not any(css):
+        return text
+    return "\n".join(line for line, drop in zip(lines, css, strict=True) if not drop)
+
+
+def join_wrapped_links(text: str) -> str:
+    """Put back together a link that the plain-text line limit broke in two."""
+    lines = text.split("\n")
+    out: list[str] = []
+    for line in lines:
+        tail = line.strip()
+        if out and out[-1].strip() and out[-1].split()[-1].startswith("http") \
+                and _URL_TAIL.match(tail) and not tail.startswith("http"):
+            out[-1] = out[-1].rstrip() + line.strip()
+            continue
+        out.append(line)
+    return "\n".join(out)
+
+
+def shorten_links(text: str) -> str:
+    """Show a link as where it goes, not as three lines of tracking code.
+
+    The address a person can read is kept ("netflix.com/title/81977145"); the
+    query string and any path that is only an opaque token is not. The full
+    text, with every link intact, is kept beside this one.
+    """
+
+    def _short(match: re.Match[str]) -> str:
+        url = match.group(0)
+        trail = ""
+        while url and url[-1] in ").,;:!?]>'\"":
+            trail = url[-1] + trail
+            url = url[:-1]
+        if len(url) <= 60:
+            return url + trail
+        rest = re.sub(r"^https?://(www\.)?", "", url)
+        host, _, path = rest.partition("/")
+        path = "/" + path.split("?")[0].split("#")[0] if path else ""
+        if path and _READABLE_PATH.match(path) and not _TOKEN.search(path):
+            return f"{host}{path.rstrip('/')}" + trail
+        return f"{host}/..." + trail
+
+    return _URL.sub(_short, text)
 
 
 def normalise_whitespace(text: str) -> str:
@@ -116,9 +205,13 @@ def clean_body(text: str) -> str:
     """Full cleaning pass used by the normaliser."""
     text = normalise_whitespace(text)
     text = _TRACKING_PIXEL.sub(" ", text)
+    text = strip_css(text)
+    text = join_wrapped_links(text)
     text = _WEB_VIEW.sub("", text)
     text = strip_quoted(text)
     text = strip_signature(text)
+    text = shorten_links(text)
+    text = _RULE_LINE.sub("", text)
     return normalise_whitespace(text)
 
 

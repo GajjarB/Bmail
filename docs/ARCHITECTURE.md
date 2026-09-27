@@ -39,7 +39,7 @@ projection, so every source is parsed by identical code. Where a provider knows
 the thread better than the headers do — Graph's `conversationId` — that is
 passed in as an override.
 
-Three details in the normaliser are load-bearing:
+Four details in the normaliser are load-bearing:
 
 - **HTML → text.** The text has to read the way the mail looks in a mail
   client, because the classifier reads its first few hundred characters and
@@ -47,8 +47,15 @@ Three details in the normaliser are load-bearing:
   `display:none` preheader, padded with invisible characters), paragraphs,
   bullets and table rows survive as plain text ("Date · Tuesday"), and inline
   markup never splits a word. The HTML part is read instead of the plain one
-  when the plain one is only a "view this email in your browser" stub; a part
-  in an unknown charset is decoded rather than dropped.
+  when the plain one is a "view this email in your browser" stub, carries a
+  stylesheet, is mostly tracking links, or says much less (counted in words,
+  not characters, so links do not count as content); a part in an unknown
+  charset is decoded rather than dropped.
+- **What a person reads.** CSS that a sender's software left in the plain
+  text is removed, a long link shows where it goes ("netflix.com/title/…")
+  instead of its tracking code, and ruler lines are dropped. The text as it
+  came out of the message is kept beside the cleaned one, so when these rules
+  improve, mail already in the store is cleaned again the next time it opens.
 - **Quoted history.** The biggest source of noise in mail summarisation — a
   three-reply thread is typically 80% repetition. Quoted chains, signatures
   and "view in browser" lines are stripped before anything downstream sees

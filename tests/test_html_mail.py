@@ -176,3 +176,103 @@ def test_invisible_padding_in_a_text_part_is_dropped():
 def test_every_way_of_saying_view_the_html_part_reads_the_html(stub):
     message = parse_message(_mail(plain=stub, html=ATS))
     assert "Backend Developer" in message.body_text
+
+
+# --- plain parts made by a marketing tool ----------------------------------- #
+# The shapes below are how bulk senders' plain-text parts really look; the
+# words are invented.
+
+PROMO_HTML = """<html><head><style>.cta{color:#fff}</style></head><body>
+<h1>Build new skills this autumn</h1>
+<p>Our evening courses start in October and fit around a full-time job.</p>
+<p>Enrol before 10 October and the first month is free.</p>
+<p><a href="https://click.mailer.example/?qs=AbCdEf0123456789AbCdEf0123456789">Enrol now</a></p>
+</body></html>"""
+
+
+def test_a_stylesheet_in_the_text_part_means_the_html_is_read():
+    plain = ("Build new skills this autumn\n"
+             "body, table, td, th, h1, h2, div, span, p, ul,\n"
+             "ol, li, a { font-family: Helvetica, sans-serif !important;} sup {\n"
+             "font-size: 100% !important; } .nudge-icon-column {\n"
+             "padding-left: 12px !important; }\n"
+             "Our evening courses start in October.")
+    text = parse_message(_mail(plain=plain, html=PROMO_HTML)).body_text
+    assert text.startswith("Build new skills this autumn\n\nOur evening courses start in October")
+    assert "{" not in text and "!important" not in text
+
+
+def test_a_text_part_that_is_mostly_tracking_links_gives_way_to_the_html():
+    link = "https://click.mailer.example/?qs=" + "AbCdEf0123456789" * 8
+    plain = f"Autumn courses\n{link}\nEnrol now\n{link}\nPrivacy\n{link}\n"
+    text = parse_message(_mail(plain=plain, html=PROMO_HTML)).body_text
+    assert "first month is free" in text
+    assert "qs=" not in text
+
+
+def test_a_text_part_that_leaves_out_most_of_the_html_gives_way():
+    plain = "SHOP NOW\n\nPrivacy\n\nYou are receiving this email because you subscribed."
+    html = ("<h1>Member days are here</h1>" + "<p>Exclusive drops, prize draws and member offers, "
+            "all in one place for members only, in the app and in store.</p>" * 3
+            + "<p>SHOP NOW</p><p>Privacy</p>")
+    assert "Member days are here" in parse_message(_mail(plain=plain, html=html)).body_text
+
+
+def test_an_html_part_with_nothing_to_read_does_not_replace_a_real_text_part():
+    plain = "Hi Jana,\n\nthanks, Tuesday at 10 works for me.\n\nBhargav"
+    html = '<img src="https://img.example/banner.png" alt="">'
+    assert parse_message(_mail(plain=plain, html=html)).body_raw_text == plain
+
+
+def test_a_stylesheet_in_a_text_only_mail_is_removed():
+    plain = ("@media only screen and (max-width: 600px) {\n"
+             ".col { width: 100% !important; }\n"
+             "}\n"
+             "Your order has shipped.\n"
+             "It will arrive on Thursday.")
+    assert parse_message(_mail(plain=plain)).body_text == "Your order has shipped.\nIt will arrive on Thursday."
+
+
+def test_a_long_link_is_shown_as_where_it_goes():
+    plain = ("Rate the show:\n"
+             "https://www.streaming.example/title/10000042?g=0f0f0f0f-aaaa-4bbb&trkid=11111111&lkid=URL_THUMBS\n"
+             "Your mentions:\n"
+             "https://www.papers.example/keypass/QmFzZTY0VG9rZW5Gb3JUZXN0aW5nT25seUFiY2RlZmdo==--0a1b2c3d4\n"
+             "Short links stay as they are: https://acme.example/jobs/42")
+    text = parse_message(_mail(plain=plain)).body_text
+    assert "streaming.example/title/10000042\n" in text
+    assert "papers.example/..." in text
+    assert "https://acme.example/jobs/42" in text
+    # The reader can still open the whole text, links and all.
+    assert parse_message(_mail(plain=plain)).body_raw_text == plain
+
+
+def test_a_link_broken_across_lines_is_joined_before_it_is_shortened():
+    plain = ("If you no longer wish to receive these emails, please\n"
+             "https://elink.mailer.example/vtrack?clientid=100001&ul=\n"
+             "Zm9vYmFyYmF6cXV4Zm9vYmFyYmF6cXV4Zm9vYmFyYmF6cXV4Zm9vYmFyYmF6==&ml=QUJDREVGR0hJSktM\n"
+             "Privacy")
+    text = parse_message(_mail(plain=plain)).body_text
+    assert "Zm9vYmFy" not in text
+    assert "elink.mailer.example/vtrack\nPrivacy" in text
+
+
+def test_ruler_lines_are_not_text():
+    plain = "Hackathons for you\n" + "-" * 140 + "\nRobotics Hackathon\n" + "=" * 40 + "\nEnds Friday"
+    assert parse_message(_mail(plain=plain)).body_text == "Hackathons for you\n\nRobotics Hackathon\n\nEnds Friday"
+
+
+def test_a_second_document_inside_the_body_keeps_its_stylesheet_out_of_the_text():
+    html = ('<!DOCTYPE html><html><body><div style="display:none!important">'
+            '<img src="https://t.example/px.gif" alt=""></div>\n<!DOCTYPE html>\n<html><head>'
+            '<style>@font-face{font-family:Inter;src:url(https://x.example/i.woff2)}'
+            '@media screen and (max-width:599px){.title{font-size:28px!important}}</style></head>'
+            '<body><h1>Leave the driving to someone else</h1>'
+            '<p>Request a ride instead of driving yourself.</p></body></html></body></html>')
+    assert html_to_text(html) == ("Leave the driving to someone else\n\n"
+                                  "Request a ride instead of driving yourself.")
+
+
+@pytest.mark.parametrize("line", ["Online ansehen", "Im Browser ansehen", "View online", "Webversion"])
+def test_view_it_online_lines_are_not_the_first_line(line):
+    assert parse_message(_mail(plain=f"{line}\nHej Anna,\nyour order is ready.")).body_text.startswith("Hej Anna")

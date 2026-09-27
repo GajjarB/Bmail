@@ -139,3 +139,26 @@ def test_the_owner_is_named_as_their_own_sent_mail_names_them(conn):
 def test_without_sent_mail_there_is_no_name_to_guess(conn):
     repo.bulk_upsert(conn, [parse_message(make_raw(sender="hr@acme.example", sender_name="Acme HR"))])
     assert repo.owner_name(conn) == ""
+
+
+def test_mail_read_before_a_better_cleaner_is_cleaned_again(tmp_path):
+    from bmail.store.db import connect
+
+    path = tmp_path / "store.sqlite3"
+    plain = ("sup { font-size: 100% !important; }\n"
+             "Your order has shipped.\n"
+             "https://track.example/?qs=" + "AbCdEf0123456789" * 6)
+    conn = connect(path)
+    message = parse_message(make_raw(body=plain))
+    repo.bulk_upsert(conn, [message])
+    # As an older version of Bmail would have stored it.
+    conn.execute("UPDATE bodies SET body_text = ?", (plain,))
+    conn.execute("UPDATE meta SET value = '1' WHERE key = 'text_version'")
+    conn.commit()
+    conn.close()
+
+    conn = connect(path)
+    text = conn.execute("SELECT body_text FROM bodies").fetchone()[0]
+    assert text == "Your order has shipped.\ntrack.example"
+    assert repo.search(conn, "shipped")          # the search index follows
+    conn.close()

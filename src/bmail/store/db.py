@@ -9,6 +9,7 @@ from importlib import resources
 from pathlib import Path
 
 from bmail.errors import StoreError
+from bmail.text.clean import TEXT_VERSION, clean_body
 
 SCHEMA_VERSION = 1
 
@@ -85,6 +86,41 @@ def migrate(conn: sqlite3.Connection) -> None:
             "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
             (str(SCHEMA_VERSION),),
         )
+    reclean_bodies(conn)
+
+
+def reclean_bodies(conn: sqlite3.Connection) -> int:
+    """Clean every stored body again when the cleaning rules have changed.
+
+    The text as it came out of the message is kept beside the cleaned one, so
+    a better cleaner reaches mail read months ago, not only the next message.
+    Runs once per change of `TEXT_VERSION`, and says how many bodies changed.
+    """
+    row = conn.execute("SELECT value FROM meta WHERE key = 'text_version'").fetchone()
+    if row and row["value"] == str(TEXT_VERSION):
+        return 0
+    changed = 0
+    with conn:
+        rows = conn.execute(
+            "SELECT b.message_id, b.body_text, b.body_raw_text, m.subject "
+            "FROM bodies b JOIN messages m USING(message_id) WHERE b.body_raw_text != ''"
+        ).fetchall()
+        for item in rows:
+            text = clean_body(item["body_raw_text"])
+            if text == item["body_text"]:
+                continue
+            changed += 1
+            conn.execute("UPDATE bodies SET body_text = ? WHERE message_id = ?",
+                         (text, item["message_id"]))
+            conn.execute("DELETE FROM messages_fts WHERE message_id = ?", (item["message_id"],))
+            conn.execute("INSERT INTO messages_fts(message_id, subject, body) VALUES (?,?,?)",
+                         (item["message_id"], item["subject"], text))
+        conn.execute(
+            "INSERT INTO meta(key, value) VALUES('text_version', ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (str(TEXT_VERSION),),
+        )
+    return changed
 
 
 def schema_version(conn: sqlite3.Connection) -> int:
