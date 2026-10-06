@@ -16,7 +16,7 @@ import urllib.request
 
 import pytest
 
-from bmail.api import build_server
+from bmail.api import _alive, build_server
 from bmail.config import Config
 from bmail.errors import BmailError
 from bmail.ingest import FileSource, ingest
@@ -164,6 +164,19 @@ def test_state_bootstraps_the_ui(live):
     assert any(c["name"] == "interview_invite" for c in state["categories"])
     assert "available" in state["llm"]
     assert "password" not in json.dumps(state["configured_accounts"])
+
+
+def test_the_model_is_asked_about_once_not_on_every_refresh(live, monkeypatch):
+    """The page fetches the state after nearly everything it does. Asking
+    Ollama each time put a network round trip in front of every screen."""
+    from bmail.llm.client import OllamaClient
+
+    base, app, _config, _ = live
+    asked = []
+    monkeypatch.setattr(OllamaClient, "available", lambda self: bool(asked.append(1)))
+    for _ in range(3):
+        assert get(base, app, "/api/state")["llm"]["available"] is False
+    assert len(asked) == 1
 
 
 def test_messages_filter_and_page(live):
@@ -401,6 +414,8 @@ def test_jobs_are_listed(live):
 # --------------------------------------------------------------------------- #
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Windows does not re-parent an orphan, so "
+                    "only the named parent can be watched there: the next test")
 def test_the_daemon_exits_when_its_parent_does(tmp_path):
     """A server that can read someone's mail must never outlive its window.
 
@@ -488,9 +503,8 @@ def test_the_daemon_exits_with_the_window_even_under_an_unpacker(tmp_path):
     try:
         deadline = time.time() + 30
         while time.time() < deadline:
-            try:
-                os.kill(engine_pid, 0)
-            except OSError:
+            # Not os.kill(pid, 0): on Windows that ends the process it asks about.
+            if not _alive(engine_pid):
                 return  # gone, as required, with the unpacker still running
             time.sleep(0.5)
         os.kill(engine_pid, 9)

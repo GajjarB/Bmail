@@ -5,6 +5,31 @@ is also its release notes: the release build copies it onto the release page,
 and the desktop app shows it under "What's new" when that version is ready to
 install.
 
+## 0.2.1
+
+0.2.0 with a new mark, and quick on Windows. Coming from 0.1.0? Everything
+listed under 0.2.0 in the changelog is new for you too.
+
+### New
+
+- **A new mark.** A cream postage stamp carrying a B, in place of the three
+  lines that read as a menu button: on the installers, the app's icon, the
+  window and the browser tab.
+
+### Fixed
+
+- **No two-second wait on every screen on Windows.** Bmail asked whether
+  Ollama was running each time a screen loaded, and without it Windows takes
+  two seconds to answer. It now asks quickly, and only every few seconds.
+- **The screen you opened is the one you see.** Opening a second screen while
+  the first was still loading could leave the first one's content on the page
+  under the second one's name.
+- **A message that takes a moment to load still opens.** On a busy computer the
+  reading pane could be left showing grey bars until you changed screen.
+- **No error in the terminal when a page is closed mid-load.** On Windows,
+  closing or reloading the page while Bmail was answering printed a stack
+  trace where `bmail` was started.
+
 ## 0.2.0
 
 The first version that keeps itself up to date: once it is installed, new

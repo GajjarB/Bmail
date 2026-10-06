@@ -325,6 +325,51 @@ def test_a_sync_job_runs_from_the_sidebar(page_factory):
     page.close()
 
 
+def test_a_second_screen_arriving_mid_fade_is_not_an_error(page_factory):
+    """Screens cross-fade in. When the next one arrives before the fade has
+    begun, the browser skips that fade and rejects its promise. Left unhandled,
+    that was an error on the page for doing nothing wrong; it turned up when a
+    screen followed the one before it within a frame."""
+    page, errors, _config = page_factory()
+    # Start a transition of our own the moment the app's has swapped the page
+    # in, which is as close behind it as anything can arrive.
+    page.evaluate("""() => new Promise((done) => {
+      new MutationObserver((_changes, observer) => {
+        observer.disconnect();
+        document.startViewTransition(() => {}).finished.then(done);
+      }).observe(document.querySelector("#main"), { childList: true });
+      location.hash = "#/cases";
+    })""")
+    page.wait_for_timeout(300)
+    assert page.locator("#main .page").count() == 1, "the skipped fade still swaps the page in"
+    assert not errors
+    page.close()
+
+
+def test_a_slow_screen_does_not_draw_over_the_one_asked_for_after_it(page_factory):
+    """Each screen loads, then draws. One asked for first and answered last
+    drew over the one asked for since: the address said Setup and the page
+    showed Today, with nothing to say so, until something else redrew it."""
+    page, errors, _config = page_factory()
+    page.evaluate("location.hash = '#/cases'")
+    page.wait_for_selector("#main .page:not(.skel)")
+
+    def late(route):
+        time.sleep(0.5)
+        route.continue_()
+
+    page.route("**/api/brief*", late)
+    with page.expect_response("**/api/brief*"):
+        page.evaluate("location.hash = '#/today'")
+        page.evaluate("location.hash = '#/setup'")
+        page.wait_for_selector("text=Add a mailbox")
+    page.wait_for_timeout(400)   # Today has its answer now, and has drawn if it is going to
+    assert page.locator("#main .hello").count() == 0, "Today drew over Setup"
+    assert page.locator("text=Add a mailbox").count() == 1
+    assert not errors
+    page.close()
+
+
 def test_keyboard_navigation(page_factory):
     page, errors, _config = page_factory()
     page.keyboard.press("2")

@@ -126,7 +126,7 @@ More in [docs/PRIVACY.md](docs/PRIVACY.md).
 ## Download
 
 Installers for macOS (Apple silicon), Windows and Linux are on the
-[Releases page](https://github.com/GajjarB/Bmail/releases). Open the app and it
+[latest release](https://github.com/GajjarB/Bmail/releases/latest). Open the app and it
 walks you through connecting a mailbox. Nothing else to install: the engine is
 inside. From 0.2.0 it keeps itself up to date: new versions download in the
 background and install when you close it. What changed in each version:

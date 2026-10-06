@@ -47,6 +47,8 @@ MAX_BODY = 1 << 20  # 1 MiB is far more than any request here needs
 PACK_KEY = "app.pack"
 SETUP_DONE_KEY = "setup.done"
 PREFS_KEY = "ui.prefs"
+# How long an answer about the local model is believed before asking again.
+MODEL_STATUS_SECONDS = 15.0
 
 # Settings the page remembers. They live in the store, not only in the
 # browser: a browser keeps its storage per address, and an address that
@@ -106,6 +108,7 @@ class BmailApp:
         # Built always, started only by `serve`: a server made for a test or a
         # script should not start reaching out to mail servers on its own.
         self.syncer = Syncer(self)
+        self._model_seen: tuple[tuple[str, str], float, dict[str, Any]] | None = None
 
     # -- helpers ---------------------------------------------------------------- #
 
@@ -126,6 +129,30 @@ class BmailApp:
     def pack(self, name: str | None = None):
         return load_pack(name or self.pack_name, tuple(self.config.pack_dirs))
 
+    def _model_status(self, model: str) -> dict[str, Any]:
+        """Whether the local model can be used, asked at most every few seconds.
+
+        The page fetches the state after nearly everything it does. Asking
+        Ollama each time put a network round trip in front of every screen.
+        """
+        from bmail.llm.client import OllamaClient
+
+        asked = (self.config.llm.host, model)
+        seen = self._model_seen
+        if seen and seen[0] == asked and time.monotonic() - seen[1] < MODEL_STATUS_SECONDS:
+            return seen[2]
+        status: dict[str, Any] = {}
+        try:
+            client = OllamaClient(
+                self.config.llm.host, allow_remote=self.config.llm.allow_remote
+            )
+            status["available"] = client.available()
+            status["pulled"] = status["available"] and client.has_model(model)
+        except BmailError as exc:
+            status["error"] = str(exc)
+        self._model_seen = (asked, time.monotonic(), status)
+        return status
+
     def read(self) -> sqlite3.Connection:
         return connect(self.config.database, read_only=True)
 
@@ -136,7 +163,7 @@ class BmailApp:
 
     def state(self, query: dict[str, list[str]]) -> dict[str, Any]:
         """Everything the UI needs to boot: packs, counts, accounts, model status."""
-        from bmail.llm.client import OllamaClient, detect_tier
+        from bmail.llm.client import detect_tier
 
         pack = self.pack(_one(query, "pack"))
         conn = self.read()
@@ -164,14 +191,7 @@ class BmailApp:
                                "tier": tier.name, "ram_gb": tier.ram_gb, "available": False,
                                "pulled": False, "host": self.config.llm.host}
         if self.config.llm.enabled:
-            try:
-                client = OllamaClient(
-                    self.config.llm.host, allow_remote=self.config.llm.allow_remote
-                )
-                llm["available"] = client.available()
-                llm["pulled"] = llm["available"] and client.has_model(model)
-            except BmailError as exc:
-                llm["error"] = str(exc)
+            llm.update(self._model_status(model))
 
         return {
             "pack": pack.name,
@@ -688,7 +708,8 @@ class _Handler(BaseHTTPRequestHandler):
         # normal, not an error worth printing a stack trace to someone's terminal.
         try:
             super().handle_one_request()
-        except (BrokenPipeError, ConnectionResetError):
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+            # ConnectionAbortedError is how Windows reports it (WinError 10053).
             self.close_connection = True
 
 
@@ -795,6 +816,8 @@ class _Handler(BaseHTTPRequestHandler):
             self._send(exc.status, {"error": str(exc)})
         except BmailError as exc:
             self._send(400, {"error": str(exc)})
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+            raise  # the client is gone; there is no one to send a 500 to
         except Exception as exc:  # never leak a stack trace to the page
             self._send(500, {"error": f"{type(exc).__name__}: {exc}"})
 

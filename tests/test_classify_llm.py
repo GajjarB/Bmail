@@ -286,6 +286,52 @@ def test_remote_hosts_are_refused():
     OllamaClient("http://example.com:11434", allow_remote=True)  # opt-in is fine
 
 
+def test_a_machine_without_ollama_says_so_at_once():
+    """Windows takes two seconds to refuse a connection to a local port nobody
+    is listening on. The app asks whether Ollama is there every time it loads
+    its state, and most machines have none: every screen waited for it."""
+    import socket
+    import time
+
+    from bmail.llm.client import OllamaClient
+
+    with socket.socket() as taken:
+        taken.bind(("127.0.0.1", 0))
+        port = taken.getsockname()[1]   # free again once this closes
+
+    started = time.monotonic()
+    assert OllamaClient(f"http://127.0.0.1:{port}").available() is False
+    assert time.monotonic() - started < 1.5
+
+
+def test_an_ollama_that_is_running_is_still_found():
+    import threading
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    from bmail.llm.client import OllamaClient
+
+    class Tags(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            body = b'{"models": [{"name": "qwen2.5:7b"}]}'
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *_args) -> None:
+            pass
+
+    server = HTTPServer(("127.0.0.1", 0), Tags)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        client = OllamaClient(f"http://127.0.0.1:{server.server_address[1]}")
+        assert client.available() is True
+        assert client.has_model("qwen2.5") is True
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
 def test_a_bundle_from_another_vectoriser_is_discarded(pack, tmp_path):
     """Mixing vectors from two backends would produce confident nonsense."""
     stale = ClassifierBundle(vectoriser="st:some-other-model", dim=384, pack=pack.name)

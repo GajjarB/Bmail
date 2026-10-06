@@ -8,6 +8,7 @@ there and nowhere else, not the keychain itself.
 from __future__ import annotations
 
 import json
+import os
 import threading
 import time
 import urllib.error
@@ -170,7 +171,10 @@ def test_adding_an_account_keeps_the_password_in_the_keychain_only(live, imap, k
     saved = (app.config.home / "accounts.json").read_text()
     assert imap.password not in saved
     assert json.loads(saved)["accounts"][0]["address"] == imap.user
-    assert (app.config.home / "accounts.json").stat().st_mode & 0o077 == 0
+    if os.name == "posix":
+        # Windows has no group or other bits to clear: it reports 0o666 for
+        # any writable file, and keeps the file private by its folder instead.
+        assert (app.config.home / "accounts.json").stat().st_mode & 0o077 == 0
     assert result["account"]["removable"] is True
     assert "password" not in result["account"]
 

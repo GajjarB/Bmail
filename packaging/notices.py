@@ -127,11 +127,7 @@ def _python_packages() -> list[dict[str, str]]:
     packages = []
     for _key, dist in sorted(found.items()):
         meta = dist.metadata
-        expression = meta.get("License-Expression") or ""
-        if not expression or len(expression) > 60:
-            classifiers = [c.split("::")[-1].strip() for c in meta.get_all("Classifier") or []
-                           if c.startswith("License ::")]
-            expression = _from_classifier(classifiers) or expression[:60]
+        expression = _declared_licence(meta)
         texts = [p.read_text(encoding="utf-8", errors="replace")
                  for p in _licence_files(dist)]
         packages.append({"name": meta["Name"], "version": dist.version,
@@ -143,6 +139,21 @@ def _python_packages() -> list[dict[str, str]]:
             packages.append({"name": name, "version": f"({where} only)", "licence": licence,
                              "source": source, "texts": []})
     return packages
+
+
+def _declared_licence(meta) -> str:
+    """The licence a package's metadata names: its SPDX expression, else its
+    classifier, else an old-style License field short enough to be a name
+    rather than the whole text (all pywin32-ctypes gives)."""
+    expression = meta.get("License-Expression") or ""
+    if expression and len(expression) <= 60:
+        return expression
+    classifiers = [c.split("::")[-1].strip() for c in meta.get_all("Classifier") or []
+                   if c.startswith("License ::")]
+    named = (meta.get("License") or "").strip()
+    if "\n" in named or len(named) > 60:
+        named = ""
+    return _from_classifier(classifiers) or expression[:60] or named
 
 
 def _from_classifier(classifiers: list[str]) -> str:
@@ -168,7 +179,9 @@ def _licence_files(dist: md.Distribution) -> list[Path]:
 def _rust_crates() -> list[dict[str, str]]:
     raw = subprocess.run(
         ["cargo", "metadata", "--format-version", "1", "--features", "updater"],
-        cwd=SHELL, capture_output=True, text=True, check=True).stdout
+        # cargo writes UTF-8 whatever the system's code page is, and authors'
+        # names are not all ASCII: read as cp1252, Windows stops on the first.
+        cwd=SHELL, capture_output=True, encoding="utf-8", check=True).stdout
     meta = json.loads(raw)
     used = {node["id"] for node in meta["resolve"]["nodes"]}
     crates = []

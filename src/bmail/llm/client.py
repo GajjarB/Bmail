@@ -19,6 +19,7 @@ import os
 import platform
 import re
 import shutil
+import socket
 import subprocess
 import time
 import urllib.error
@@ -159,10 +160,30 @@ class OllamaClient:
     # -- capabilities ----------------------------------------------------------- #
 
     def available(self) -> bool:
+        if not self._listening():
+            return False
         try:
             self.list_models()
             return True
         except LLMError:
+            return False
+
+    def _listening(self, wait: float = 0.3) -> bool:
+        """Whether anything accepts connections at a local host, asked quickly.
+
+        Windows takes two seconds to say that nobody is listening on a local
+        port, and most machines running Bmail have no Ollama: asked the slow
+        way, every screen waited those two seconds. Whatever is listening on
+        this machine answers in a millisecond, so a short wait loses nothing.
+        """
+        url = urlparse(self.host)
+        if (url.hostname or "") not in _LOCAL_HOSTS:
+            return True  # a remote host gets the request's own, longer wait
+        port = url.port or (443 if url.scheme == "https" else 80)
+        try:
+            with socket.create_connection((url.hostname, port), timeout=wait):
+                return True
+        except OSError:
             return False
 
     def list_models(self) -> list[str]:

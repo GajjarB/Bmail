@@ -1,7 +1,7 @@
 {
   "name": "bmail-desktop",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Build tooling for the Bmail desktop shell. The app itself is Rust and the Python engine.",
   "scripts": {
     "tauri": "tauri"
