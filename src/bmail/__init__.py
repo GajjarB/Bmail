@@ -5,5 +5,5 @@ is limited to the mail providers you configure and, optionally, a language
 model running on 127.0.0.1.
 """
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 __all__ = ["__version__"]
