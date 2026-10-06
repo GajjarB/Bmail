@@ -12,6 +12,12 @@ imageio-ffmpeg` provides one):
 The -ss trims the browser starting up, which the capture includes and the film
 does not want.
 
+The launch cut is scored to its picture instead. Its recording writes a cue
+sheet, the moments the picture lands on, and the score puts something under
+each of them and takes its length from the sheet:
+
+    python tools/compose_score.py --cues film/launch/cues.json --peak -7 --out bed.wav
+
 Written rather than sourced: a synthesised bed carries no licence and no
 attribution, and it can be cut to the exact length of the picture.
 
@@ -21,19 +27,26 @@ is to stop the silence feeling like a fault; anything with an opinion competes
 with the thing being demonstrated.
 """
 import argparse
+import json
 import wave
 
 import numpy as np
 
 ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-ap.add_argument("seconds", type=float, help="length of the picture it sits under")
+ap.add_argument("seconds", type=float, nargs="?",
+                help="length of the picture it sits under; a cue sheet knows its own")
+ap.add_argument("--cues", help="cue sheet written by record_film.py --cut launch")
 ap.add_argument("--out", default="bed.wav")
 ap.add_argument("--peak", type=float, default=-10.0,
                 help="dBFS. Quiet enough to leave room for a voiceover later.")
 args = ap.parse_args()
 
+CUES = json.load(open(args.cues, encoding="utf-8")) if args.cues else {}
+if args.seconds is None and "length" not in CUES:
+    ap.error("give the length in seconds, or a cue sheet")
+
 SR = 48_000
-SECONDS = args.seconds
+SECONDS = args.seconds if args.seconds is not None else CUES["length"]
 OUT = args.out
 
 BPM = 68
@@ -135,6 +148,71 @@ for bar in range(bars):
     sub = np.sin(2 * np.pi * root * t) * env * 0.055
     left += sub
     right += sub
+
+# ---- cues -----------------------------------------------------------------
+# Only with a cue sheet. Without one none of this plays, and the bed is note
+# for note what it always was.
+#
+#   hit    something lands: a low thump, and a breath of noise drawn in ahead
+#          of it so the thump arrives instead of just happening
+#   open   the picture starts moving: the pad, held back until now, comes up,
+#          and a plucked figure comes in under it
+#   close  both step back again, and the last word has room
+def place(mono, start, pan=0.5):
+    a = int(start * SR)
+    if a < 0:
+        mono, a = mono[-a:], 0
+    span = min(mono.size, N - a)
+    if span > 0:
+        left[a:a + span] += mono[:span] * (1 - pan) * 2
+        right[a:a + span] += mono[:span] * pan * 2
+
+
+def soften(noise, width):
+    """White noise with the top taken off: a running mean, `width` samples wide."""
+    return np.convolve(noise, np.hanning(width) / np.hanning(width).sum(), mode="same")
+
+
+grain = np.random.default_rng(11)          # its own, so the bells above do not move
+OPENED = CUES.get("open", [None])[0]
+CLOSED = CUES.get("close", [None])[0]
+
+if OPENED is not None and CLOSED is not None:
+    # Before anything else is laid on it: everything so far is the bed.
+    held = np.interp(t, [OPENED - 1.0, OPENED + 1.5, CLOSED, CLOSED + 2.0], [.5, 1, 1, .66])
+    left *= held
+    right *= held
+
+for moment in CUES.get("hit", []):
+    local = np.arange(int(1.8 * SR)) / SR
+    # The pitch falls as it rings, which is what makes it a thump and not a tone.
+    fall = 2 * np.pi * np.cumsum(41 + 62 * np.exp(-local * 9)) / SR
+    body = np.sin(fall) * np.exp(-local * 3.0)
+    air = soften(grain.standard_normal(local.size), 48) * np.exp(-local * 12)
+    place(body * 0.34 + air * 0.20, moment)
+
+    drawn = np.arange(int(1.5 * SR)) / SR
+    breath = soften(grain.standard_normal(drawn.size), 20) * (drawn / 1.5) ** 2.6
+    breath[-int(0.03 * SR):] *= np.linspace(1, 0, int(0.03 * SR))
+    place(breath * 0.12, moment - 1.5)
+
+if OPENED is not None and CLOSED is not None:
+    step = BAR / 8                          # eighth notes
+    count, beat = 0, np.ceil(OPENED / step) * step
+    while beat < CLOSED:
+        chord = PROG[int(beat / BAR) % len(PROG)]
+        # Up the chord and up again an octave higher, six notes to the pattern.
+        f = hz(chord[1 + count % 3] + (12 if count % 6 >= 3 else 0))
+        local = np.arange(int(0.55 * SR)) / SR
+        pluck = (np.sin(2 * np.pi * f * local) + 0.3 * np.sin(4 * np.pi * f * local))             * np.exp(-local * 8.5)
+        # In over two bars and out over one, so it is never switched on or off.
+        level = min(1.0, (beat - OPENED) / (2 * BAR)) * min(1.0, (CLOSED - beat) / BAR)
+        place(pluck * 0.055 * level, beat, pan=0.36 if count % 2 else 0.64)
+        if count % 2 == 0:                  # and a soft pulse on the beat
+            thud = np.sin(2 * np.pi * 55 * local) * np.exp(-local * 16)
+            place(thud * 0.08 * level, beat)
+        count += 1
+        beat += step
 
 # ---- master ---------------------------------------------------------------
 # Gentle top and tail so the track arrives and leaves rather than starting and
