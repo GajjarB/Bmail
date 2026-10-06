@@ -24,6 +24,16 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 PACKAGE = ROOT / "src" / "bmail"
 
 
+def _script(name: str):
+    """A script from packaging/, which is not a package and cannot be imported."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(name, ROOT / "packaging" / f"{name}.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def _globs() -> list[str]:
     config = tomllib.loads((ROOT / "pyproject.toml").read_text())
     return config["tool"]["setuptools"]["package-data"]["bmail"]
@@ -105,3 +115,22 @@ def test_a_copyleft_dependency_would_stop_the_build():
         assert notices.acceptable(fine), fine
     for not_fine in ("GPL-3.0-only", "AGPL-3.0-or-later", "MIT AND GPL-2.0-only", "SSPL-1.0"):
         assert not notices.acceptable(not_fine), not_fine
+
+
+def test_every_copy_of_the_mark_is_the_same_drawing():
+    """The mark is saved as the README logo and inlined in three pages that
+    must paint before anything can be fetched. A copy left behind when the
+    drawing changes shows one logo in the tab and another in the window."""
+    assert _script("make_icons").stale() == []
+
+
+def test_the_mark_is_made_of_closed_outlines():
+    """Each outline is a start point and relative steps; one that does not
+    return to its start is filled along a stray edge at every size."""
+    icons = _script("make_icons")
+    for variant in (icons.FULL, icons.SMALL):
+        for start, steps in icons.mark_outlines(variant):
+            drift = [sum(step[axis] for step in steps) for axis in (-2, -1)]
+            assert max(map(abs, drift)) < 1e-9, (variant, start, drift)
+            end = icons.flatten((start, steps))[-1]
+            assert abs(end[0] - start[0]) < 1e-9 and abs(end[1] - start[1]) < 1e-9
