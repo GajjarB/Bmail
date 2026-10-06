@@ -27,7 +27,7 @@ left, and mux; the ffmpeg line is in the header of `compose_score.py`:
 python tools/compose_score.py 110.0 --out bed.wav
 ```
 
-The films in `media/` are `bmail-film.mp4` (the full tour, 1:50) and
+The films in `media/` are `bmail-film.mp4` (the full tour, 1:49) and
 `bmail-film-short.mp4` (37 s, for the README).
 
 For the README itself the film has to become an **animated image**, because

@@ -375,7 +375,7 @@ def film_full(page):
     reel.push(".schedule", 1.45, 1800)
     reel.beat(300)
     reel.say("Every date it found, on a calendar. Press a day to see what falls on it.")
-    hand.click(".calendar button.day", 1, ms=900, settle=2200)
+    hand.click(".calendar button.day", 0, ms=900, settle=2200)
     hand.click(".due-filter button", ms=700, settle=900)
     reel.hush()
     reel.beat(300)
@@ -478,7 +478,7 @@ def film_short(page):
 
     reel.push(".schedule", 1.45, 1100)
     reel.say("Every date it found, on a calendar.")
-    hand.click(".calendar button.day", 1, ms=650, settle=1500)
+    hand.click(".calendar button.day", 0, ms=650, settle=1500)
     reel.hush()
     reel.beat(200)
     reel.pull(1000)

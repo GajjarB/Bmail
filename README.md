@@ -46,7 +46,7 @@
 <p align="center">
   <sub>
     Under forty seconds, looping. <b><a href="media/bmail-film-short.mp4">Watch with sound</a></b> ·
-    <a href="media/bmail-film.mp4">the full 1:50 tour</a>, with the board, the calendar and dark mode<br>
+    <a href="media/bmail-film.mp4">the full 1:49 tour</a>, with the board, the calendar and dark mode<br>
     Every frame is the running app on the sample corpus, with no mockups. The films are
     produced by a script, so they are remade whenever the interface changes (<a href="tools/">tools/</a>).
   </sub>
@@ -67,27 +67,27 @@ The same brief in the terminal, on the sample mailbox (`bmail brief --limit 3`,
 first half):
 
 ```
-Bmail brief · Wed 23 Sep 2026 16:01 UTC · pack: job-seeker
+Bmail brief · Tue 06 Oct 2026 14:18 UTC · pack: job-seeker
 ========================================================================
 4 need you · 2 deadlines · 1 upcoming · 8 stalled · 1 archived
 
 NEEDS YOU
  1. Your application to MSc Computer Science
-    Rug Example · MSc Computer Science · document request · Your application for MSc Computer Science is incomplete.
-    deadline 2026-09-14
-    evidence: "Please upload your certified transcript and language certificate no later than 14 September 2026."
+    Nordholm Example · MSc Computer Science · document request · Your application for MSc Computer Science is incomplete.
+    deadline 2026-09-27
+    evidence: "Please upload your certified transcript and language certificate no later than 27 September 2026."
  2. Ihre Bewerbung: MSc Data Science
     Tu Rheinland Example · MSc Data Science · document request · Ihre Bewerbung für MSc Data Science ist unvollständig.
-    deadline 2026-09-04
-    evidence: "Bitte reichen Sie noch die beglaubigte Übersetzung Ihrer Zeugnisse bis zum 04.09.2026 nach."
+    deadline 2026-09-17
+    evidence: "Bitte reichen Sie noch die beglaubigte Übersetzung Ihrer Zeugnisse bis zum 17.09.2026 nach."
  3. Interview invitation – Platform Engineer
     Cobalt Health · Platform Engineer · interview invite · We would like to invite you to an interview for the Platform Engineer position.
-    Wed 07 Oct 09:00 UTC
-    evidence: "We propose 07 October 2026 at 10:00 CET."
+    Tue 20 Oct 09:00 UTC
+    evidence: "We propose 20 October 2026 at 10:00 CET."
 
 DEADLINES
- · Ihre Bewerbung: MSc Data Science · overdue by 19 d (2026-09-04)
- · Your application to MSc Computer Science · overdue by 9 d (2026-09-14)
+ · Ihre Bewerbung: MSc Data Science · overdue by 19 d (2026-09-17)
+ · Your application to MSc Computer Science · overdue by 9 d (2026-09-27)
 ```
 
 ## Why this exists
@@ -396,9 +396,18 @@ detection; Excel, CSV, ICS and Notion export; Gmail label and Outlook category
 write-back; the evaluation harness and ablations; the app in the browser and in
 a native window.
 
-**Not built yet:** `sqlite-vec` embedding storage, and signed installers:
-signing needs per-developer Apple and Windows certificates that cannot live in a
-repository.
+**In the desktop app, today:** mailboxes over IMAP (Gmail, GMX, WEB.DE,
+Yahoo, iCloud, T-Online, Posteo, mailbox.org and any other IMAP server) and
+export files. Outlook and Microsoft 365, and Gmail through Google's API, work
+when Bmail runs from source, with the free registrations described above.
+
+**Not built yet:** signing in with Google or Microsoft from inside the desktop
+app, and `sqlite-vec` embedding storage.
+
+**Not signed, on purpose:** code-signing certificates cost money every year, so
+Windows and macOS warn once, the first time the installer runs. Updates are
+signed regardless, with the project's own key, and an installed copy refuses any
+update without that signature. See [docs/COSTS.md](docs/COSTS.md).
 
 **Not planned: compose and send.** The moment Bmail becomes a mail client the
 project doubles: rendering, offline sync, threading, MIME edge cases. Bmail

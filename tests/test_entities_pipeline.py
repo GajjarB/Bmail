@@ -388,8 +388,8 @@ def test_three_roles_at_one_employer_stay_three_cases(conn, pack):
     for index, role in enumerate(roles):
         message = parse_message(
             make_raw(
-                message_id=f"<apply-{index}@fraunhofer-ipt.de>",
-                sender=f"noreply-{index}@fraunhofer-ipt.de",
+                message_id=f"<apply-{index}@kranwerk-institut.example>",
+                sender=f"noreply-{index}@kranwerk-institut.example",
                 subject=f"Ihre Bewerbung {index}",
                 body="Vielen Dank für Ihre Bewerbung.",
             )
@@ -398,7 +398,7 @@ def test_three_roles_at_one_employer_stay_three_cases(conn, pack):
         verdict = Verdict(
             message_id=message.message_id, pack=pack.name,
             category="acknowledgement", confidence=0.9,
-            org="Fraunhofer IPT", role=role,
+            org="Kranwerk Institut", role=role,
         )
         resolved = resolver.resolve(conn, message, verdict)
         assert resolved.case is not None

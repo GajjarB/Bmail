@@ -1,0 +1,53 @@
+name: Something does not work
+description: A bug, a crash, or mail sorted the wrong way.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reporting it. **Please never paste real mail, addresses, names
+        or passwords here**, yours or anyone else's: this page is public. Rewrite
+        an example with invented details that keep the same shape. A security
+        problem goes through [SECURITY.md](https://github.com/GajjarB/Bmail/blob/main/SECURITY.md)
+        instead, privately.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what Bmail did instead.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Bmail version
+      description: Setup, About, in the app. Or `bmail --version`.
+      placeholder: "0.2.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: how
+    attributes:
+      label: How you run it
+      options:
+        - Desktop app (installer)
+        - From source (bmail ui or the command line)
+    validations:
+      required: true
+  - type: dropdown
+    id: system
+    attributes:
+      label: System
+      options: [Windows, macOS, Linux]
+    validations:
+      required: true
+  - type: input
+    id: provider
+    attributes:
+      label: Mail provider, if it matters
+      placeholder: "Gmail over IMAP, GMX, an mbox file..."
+  - type: textarea
+    id: example
+    attributes:
+      label: An example, with invented details
+      description: For mail sorted wrongly, the shape of the message (sender type, subject, the sentence that matters) with every real detail replaced.

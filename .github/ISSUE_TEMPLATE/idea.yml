@@ -1,0 +1,16 @@
+name: An idea
+description: Something Bmail should do, or do better.
+labels: [idea]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What you are trying to do
+      description: The situation, in your own words. What gets in the way today?
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would help
+      description: Rough is fine. Ideas that need mail to leave your computer will be weighed against Bmail's promise that it never does.

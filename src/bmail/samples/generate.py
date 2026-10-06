@@ -24,7 +24,7 @@ COMPANIES = [
     ("Helios Robotics", "heliosrobotics.com", "en"),
     ("Bergblick Software", "bergblick.de", "de"),
     ("Cobalt Health", "cobalthealth.com", "en"),
-    ("Fraunhofer Institut IPT", "ipt-example.de", "de"),
+    ("Kranwerk Institut", "kranwerk-example.de", "de"),
     ("Lumen Mobility", "lumenmobility.eu", "en"),
     ("Weser Data GmbH", "weserdata.de", "de"),
     ("Atlas Payments", "atlaspayments.com", "en"),
@@ -32,7 +32,7 @@ COMPANIES = [
 
 UNIVERSITIES = [
     ("Technische Universität Rheinland", "tu-rheinland-example.de", "de"),
-    ("University of Groningen", "rug-example.nl", "en"),
+    ("University of Nordholm", "nordholm-example.nl", "en"),
     ("RWTH Beispiel", "rwth-example.de", "de"),
 ]
 

@@ -73,7 +73,7 @@ def test_an_english_request_for_missing_documents_is_recognised():
     incomplete" fell to the classifier and lost its deadline to "acknowledgement"."""
     message = parse_message(
         make_raw(
-            sender="admissions@rug-example.nl",
+            sender="admissions@nordholm-example.nl",
             subject="Your application to MSc Computer Science",
             body=(
                 "Dear applicant, Your application for MSc Computer Science is incomplete. "
