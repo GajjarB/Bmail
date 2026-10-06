@@ -37,22 +37,29 @@ it — the player and any fallback alike. Only `<img>` survives, so motion on a
 README means an animated WebP:
 
 ```sh
-ffmpeg -i media/bmail-launch.mp4 \
-  -vf "fps=8,scale=1120:-2:flags=lanczos" \
+ffmpeg -ss 14.587 -t 41.143 -i media/bmail-launch.mp4 \
+  -vf "fps=10,scale=1000:-2:flags=lanczos" \
   -c:v libwebp_anim -lossless 0 -q:v 86 -compression_level 4 -loop 0 -an \
   media/film.webp
 ```
 
-About 5.4 MB for the minute. The quality is that high for the launch film's
-dark room and white window: at 72 both come out in blotches, because each
-frame is stored as its difference from the last and the errors pile up. Eight
-frames a second pays for it. The 37-second walkthrough as a 160-colour GIF was
-13 MB and mangled 13px type as well.
+That is the middle of the launch film and nothing else: bars 9 to 32, from
+the window arriving to the window leaving. Someone landing on the README is
+already reading about Bmail; the six words and the mark that open the film
+are for someone who is not, and here they would be fourteen seconds before
+anything of the app is on screen. Cut this way the loop also closes on
+itself: the window leaves, and arrives.
+
+About 5.3 MB. The quality is that high for the film's dark room and white
+window: at 72 both come out in blotches, because each frame is stored as its
+difference from the last and the errors pile up. The width, 1000 rather than
+1120, pays for it; a README column is no wider. The 37-second walkthrough as a
+160-colour GIF was 13 MB and mangled 13px type as well.
 
 ffmpeg can encode animated WebP but cannot decode it, so to check the output,
 parse the RIFF chunks: count the `ANMF` frames and add up their durations, the
-three bytes at offset 12 of each. Held frames are merged, so the count is well
-under eight a second; the durations still add up to the film's length.
+three bytes at offset 12 of each. Held frames are merged, so the count is under
+ten a second; the durations still add up to the length of the cut.
 
 Needs Playwright's Chromium (`python -m playwright install chromium`) and, for
 the mux, any ffmpeg with libx264 and aac — `pip install imageio-ffmpeg` brings

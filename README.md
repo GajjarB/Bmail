@@ -45,7 +45,7 @@
 
 <p align="center">
   <sub>
-    A minute, looping. <b><a href="media/bmail-launch.mp4">Watch with sound</a></b> ·
+    Forty seconds, looping. <b><a href="media/bmail-launch.mp4">Watch the full minute, with sound</a></b> ·
     <a href="media/bmail-film-short.mp4">the 37-second walkthrough</a> ·
     <a href="media/bmail-film.mp4">the full 1:49 tour</a>, with search and review<br>
     Every frame is the running app on the sample corpus, with no mockups. The films are
