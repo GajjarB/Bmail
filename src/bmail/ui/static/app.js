@@ -549,7 +549,11 @@ function paint(...nodes) {
   };
   App.skeleton = false;
   App.arriving = false;
-  if (crossFade) document.startViewTransition(swap);
+  // A screen arriving before this fade has begun makes the browser skip it:
+  // the page is still swapped in, and `ready` is rejected to say the fade never
+  // ran. That is not an error. One thrown by the swap itself still surfaces,
+  // through the transition's other promises.
+  if (crossFade) document.startViewTransition(swap).ready.catch(() => {});
   else swap();
 }
 
@@ -2196,7 +2200,12 @@ const ROUTES = {
   welcome: viewWelcome,
 };
 
+// A screen loads, then draws, so the one asked for first can be the last to
+// draw. These count the screens asked for, and name the newest one drawn.
+const Renders = { asked: 0, drawn: 0 };
+
 async function render() {
+  const mine = ++Renders.asked;
   closeDrawer();
   const [path, rawQuery] = location.hash.replace(/^#\/?/, "").split("?");
   let route = ROUTES[path] ? path : "today";
@@ -2228,6 +2237,15 @@ async function render() {
   } finally {
     clearTimeout(placeholder);
   }
+  if (mine !== Renders.asked) {
+    // Another screen has been asked for since. If it is still loading it will
+    // draw over this one. If it had already drawn, this one has just drawn
+    // over it, and the address names a screen the page no longer shows: draw
+    // that one again.
+    if (Renders.drawn === Renders.asked) render();
+    return;
+  }
+  Renders.drawn = mine;
   // A closed drawer hands the keyboard back to the card it was opened from,
   // which the redraw has just replaced with an identical one.
   if (App.refocus && !App.drawer) {
