@@ -12,10 +12,10 @@
 <style>
   :root {
     color-scheme: light dark;
-    --bg: #F3F3F1; --ink: #18191C; --ink-2: #50535B; --line: #E4E3DF; --accent: #2C55C4; --on-ink: #FFFFFF;
+    --bg: #F3F3F1; --ink: #18191C; --ink-2: #50535B; --line: #E4E3DF; --accent: #2C55C4;
   }
   @media (prefers-color-scheme: dark) {
-    :root { --bg: #101012; --ink: #ECECEE; --ink-2: #AEB0B8; --line: #2B2B30; --accent: #90A9FF; --on-ink: #18191C; }
+    :root { --bg: #101012; --ink: #ECECEE; --ink-2: #AEB0B8; --line: #2B2B30; --accent: #90A9FF; }
   }
   html, body { height: 100%; margin: 0; }
   body {
@@ -25,8 +25,9 @@
   }
   .card { max-width: 420px; text-align: center; }
   .mark { width: 40px; height: 40px; border-radius: 11px; margin: 0 auto 14px;
-          background: var(--ink); color: var(--on-ink); display: grid; place-items: center; }
-  .mark svg { width: 22px; height: 22px; }
+          background: #10111A; box-shadow: inset 0 0 0 1px #2C2E3A; color: #F4ECDF;
+          display: grid; place-items: center; }
+  .mark svg { width: 100%; height: 100%; }
   h1 { font-size: 16px; font-weight: 600; margin: 0 0 4px; }
   p { color: var(--ink-2); margin: 0; }
   .bar { width: 120px; height: 3px; margin: 16px auto 0; border-radius: 3px;
@@ -43,8 +44,8 @@
 </head>
 <body>
   <div class="card">
-    <div class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
-      stroke-width="2.4" stroke-linecap="round"><path d="M5 7.5h14M5 12h14M5 16.5h8"/></svg></div>
+    <div class="mark" aria-hidden="true"><svg viewBox="0 0 64 64" fill="currentColor"
+      fill-rule="evenodd"><path transform="rotate(-6 32 32)" d="M12.5 6h1.3a2.6 2.6 0 0 0 5.2 0h2.6a2.6 2.6 0 0 0 5.2 0h2.6a2.6 2.6 0 0 0 5.2 0h2.6a2.6 2.6 0 0 0 5.2 0h2.6a2.6 2.6 0 0 0 5.2 0h1.3a1.5 1.5 0 0 1 1.5 1.5v1.48a2.6 2.6 0 0 0 0 5.2v2.97a2.6 2.6 0 0 0 0 5.2v2.97a2.6 2.6 0 0 0 0 5.2v2.97a2.6 2.6 0 0 0 0 5.2v2.97a2.6 2.6 0 0 0 0 5.2v2.97a2.6 2.6 0 0 0 0 5.2v1.48a1.5 1.5 0 0 1 -1.5 1.5h-1.3a2.6 2.6 0 0 0 -5.2 0h-2.6a2.6 2.6 0 0 0 -5.2 0h-2.6a2.6 2.6 0 0 0 -5.2 0h-2.6a2.6 2.6 0 0 0 -5.2 0h-2.6a2.6 2.6 0 0 0 -5.2 0h-1.3a1.5 1.5 0 0 1 -1.5 -1.5v-1.48a2.6 2.6 0 0 0 0 -5.2v-2.97a2.6 2.6 0 0 0 0 -5.2v-2.97a2.6 2.6 0 0 0 0 -5.2v-2.97a2.6 2.6 0 0 0 0 -5.2v-2.97a2.6 2.6 0 0 0 0 -5.2v-2.97a2.6 2.6 0 0 0 0 -5.2v-1.48a1.5 1.5 0 0 1 1.5 -1.5zM23.4 16h8.4a8 8 0 0 1 4.46 14.64a8.8 8.8 0 0 1 -2.06 17.36h-10.8a2.4 2.4 0 0 1 -2.4 -2.4v-27.2a2.4 2.4 0 0 1 2.4 -2.4zM27.4 22h3.6a3 3 0 0 1 0 6h-3.6v-6zM27.4 34h5.8a4 4 0 0 1 0 8h-5.8v-8z"/></svg></div>
     <h1>Bmail</h1>
     <p id="status">Starting the engine…</p>
     <div class="bar" id="bar" aria-hidden="true"></div>

@@ -138,18 +138,20 @@ function icon(name, size = 16, stroke = 1.75) {
   return svg;
 }
 
-/* The mark: the same three lines as the favicon, so the tab and the window
- * agree about what this is. */
+/* The mark: a postage stamp with a B cut out of it, the same drawing as the
+ * favicon, so the tab and the window agree about what this is. The path is
+ * written by packaging/make_icons.py, whose --check fails if this copy drifts. */
+const MARK_PATH = "M12.5 6h1.3a2.6 2.6 0 0 0 5.2 0h2.6a2.6 2.6 0 0 0 5.2 0h2.6a2.6 2.6 0 0 0 5.2 0h2.6a2.6 2.6 0 0 0 5.2 0h2.6a2.6 2.6 0 0 0 5.2 0h1.3a1.5 1.5 0 0 1 1.5 1.5v1.48a2.6 2.6 0 0 0 0 5.2v2.97a2.6 2.6 0 0 0 0 5.2v2.97a2.6 2.6 0 0 0 0 5.2v2.97a2.6 2.6 0 0 0 0 5.2v2.97a2.6 2.6 0 0 0 0 5.2v2.97a2.6 2.6 0 0 0 0 5.2v1.48a1.5 1.5 0 0 1 -1.5 1.5h-1.3a2.6 2.6 0 0 0 -5.2 0h-2.6a2.6 2.6 0 0 0 -5.2 0h-2.6a2.6 2.6 0 0 0 -5.2 0h-2.6a2.6 2.6 0 0 0 -5.2 0h-2.6a2.6 2.6 0 0 0 -5.2 0h-1.3a1.5 1.5 0 0 1 -1.5 -1.5v-1.48a2.6 2.6 0 0 0 0 -5.2v-2.97a2.6 2.6 0 0 0 0 -5.2v-2.97a2.6 2.6 0 0 0 0 -5.2v-2.97a2.6 2.6 0 0 0 0 -5.2v-2.97a2.6 2.6 0 0 0 0 -5.2v-2.97a2.6 2.6 0 0 0 0 -5.2v-1.48a1.5 1.5 0 0 1 1.5 -1.5zM23.4 16h8.4a8 8 0 0 1 4.46 14.64a8.8 8.8 0 0 1 -2.06 17.36h-10.8a2.4 2.4 0 0 1 -2.4 -2.4v-27.2a2.4 2.4 0 0 1 2.4 -2.4zM27.4 22h3.6a3 3 0 0 1 0 6h-3.6v-6zM27.4 34h5.8a4 4 0 0 1 0 8h-5.8v-8z";
+
 function mark() {
   const svg = document.createElementNS(SVG_NS, "svg");
-  svg.setAttribute("viewBox", "0 0 24 24");
-  svg.setAttribute("fill", "none");
-  svg.setAttribute("stroke", "currentColor");
-  svg.setAttribute("stroke-width", "2.4");
-  svg.setAttribute("stroke-linecap", "round");
+  svg.setAttribute("viewBox", "0 0 64 64");
+  svg.setAttribute("fill", "currentColor");
+  svg.setAttribute("fill-rule", "evenodd");
   svg.setAttribute("aria-hidden", "true");
   const path = document.createElementNS(SVG_NS, "path");
-  path.setAttribute("d", "M5 7.5h14M5 12h14M5 16.5h8");
+  path.setAttribute("transform", "rotate(-6 32 32)");
+  path.setAttribute("d", MARK_PATH);
   svg.append(path);
   return svg;
 }
