@@ -17,7 +17,6 @@ venv/
 htmlcov/
 
 # Local agent/editor state
-.claude/
 .idea/
 .vscode/
 
