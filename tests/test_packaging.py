@@ -117,6 +117,47 @@ def test_a_copyleft_dependency_would_stop_the_build():
         assert not notices.acceptable(not_fine), not_fine
 
 
+def test_a_licence_named_only_in_the_old_field_is_read():
+    """pywin32-ctypes, which only Windows installs, names its licence in the
+    old License field and nowhere else. Read as no licence at all, it stopped
+    the Windows build. A whole licence text in that field is not a name."""
+    from email.message import Message
+
+    notices = _script("notices")
+
+    def meta(**fields: str) -> Message:
+        message = Message()
+        for name, value in fields.items():
+            message[name.replace("_", "-")] = value
+        return message
+
+    assert notices._declared_licence(meta(License="BSD-3-Clause")) == "BSD-3-Clause"
+    assert notices._declared_licence(meta(License_Expression="MIT", License="other")) == "MIT"
+    assert notices._declared_licence(
+        meta(Classifier="License :: OSI Approved :: MIT License", License="other")) == "MIT"
+    assert notices._declared_licence(meta(License="Permission is hereby granted\nfree of charge")) == ""
+    assert notices._declared_licence(meta()) == ""
+
+
+def test_cargo_metadata_is_read_as_utf8(monkeypatch):
+    """cargo writes UTF-8 whatever the system's code page is. Read as cp1252,
+    the second byte of an Á has no character, and the first crate author with
+    one in their name stopped the Windows build at the notices."""
+    import subprocess
+
+    notices = _script("notices")
+    meta = '{"resolve": {"nodes": []}, "packages": [{"id": "a", "name": "a", "authors": ["Á"]}]}'
+    real = subprocess.run
+
+    def cargo(_command, **kwargs):
+        kwargs.pop("cwd")
+        emit = f"import sys; sys.stdout.buffer.write({meta!r}.encode('utf-8'))"
+        return real([sys.executable, "-c", emit], **kwargs)
+
+    monkeypatch.setattr(notices.subprocess, "run", cargo)
+    assert notices._rust_crates() == []
+
+
 def test_every_copy_of_the_mark_is_the_same_drawing():
     """The mark is saved as the README logo and inlined in three pages that
     must paint before anything can be fetched. A copy left behind when the
