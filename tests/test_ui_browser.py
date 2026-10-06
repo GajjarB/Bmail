@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 import re
 import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -211,6 +212,28 @@ def test_mail_rows_do_not_collide(page_factory):
       return t.bottom > s.top + 1;
     }""")
     assert overlap is False
+    assert not errors
+    page.close()
+
+
+def test_a_message_that_loads_slowly_still_opens(page_factory):
+    """Opening a message redraws only the reading panes. When the daemon took
+    longer than the placeholder waits, the placeholder was painted over the
+    whole mailbox and the message arrived in a pane no longer on the page:
+    grey bars, for good, until you left the screen."""
+    page, errors, _config = page_factory()
+    page.click('#nav a[data-tab="mail"]')
+    page.wait_for_selector('[data-list="mail"] .row')
+
+    def late(route):
+        time.sleep(0.4)          # well past the 120ms the placeholder waits
+        route.continue_()
+
+    page.route("**/api/messages/*", late)
+    page.locator('[data-list="mail"] .row').first.click()
+    page.wait_for_selector(".context .sureness", timeout=5000)
+    assert page.locator(".skel").count() == 0
+    assert page.locator('[data-list="mail"] .row').count() > 0, "the list was thrown away"
     assert not errors
     page.close()
 

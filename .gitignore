@@ -42,3 +42,6 @@ desktop/src-tauri/binaries/
 desktop/src-tauri/engine/
 desktop/node_modules/
 desktop/src-tauri/tauri.updater.local.json
+
+# Film takes: gigabytes of frames, and music that is not ours to pass on
+/film/

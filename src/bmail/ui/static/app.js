@@ -2215,7 +2215,10 @@ async function render() {
 
   // 120ms is about where a blank frame stops reading as "instant" and starts
   // reading as "stalled". Under that, showing a placeholder would flash.
-  const placeholder = setTimeout(() => paintSkeleton(route), 120);
+  // Only for a screen that is arriving. One already showing keeps what it has
+  // until the new content is ready: the placeholder would wipe it, and with it
+  // the panes a view updates in place, leaving their content nowhere to land.
+  const placeholder = moved ? setTimeout(() => paintSkeleton(route), 120) : null;
   try {
     await ROUTES[route](new URLSearchParams(rawQuery || ""));
   } catch (err) {
