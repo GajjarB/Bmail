@@ -112,9 +112,17 @@ def reclean_bodies(conn: sqlite3.Connection) -> int:
             changed += 1
             conn.execute("UPDATE bodies SET body_text = ? WHERE message_id = ?",
                          (text, item["message_id"]))
-            conn.execute("DELETE FROM messages_fts WHERE message_id = ?", (item["message_id"],))
-            conn.execute("INSERT INTO messages_fts(message_id, subject, body) VALUES (?,?,?)",
-                         (item["message_id"], item["subject"], text))
+        if changed:
+            # The search index is rebuilt whole. It has no index on message_id,
+            # so replacing rows one at a time reads all of it for each: nine
+            # minutes for eight thousand messages, with the store locked and
+            # the app showing the old text throughout.
+            conn.execute("DELETE FROM messages_fts")
+            conn.execute(
+                "INSERT INTO messages_fts(message_id, subject, body) "
+                "SELECT m.message_id, m.subject, b.body_text "
+                "FROM messages m JOIN bodies b USING(message_id)"
+            )
         conn.execute(
             "INSERT INTO meta(key, value) VALUES('text_version', ?) "
             "ON CONFLICT(key) DO UPDATE SET value = excluded.value",

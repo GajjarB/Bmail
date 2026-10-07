@@ -16,11 +16,13 @@ anything — this area changes yearly.
 | `127.0.0.1:11434` | Message text, to a model running on your own machine | Only for messages that reach Stage 3 |
 | Notion | Case fields, if you configure a token and pass `--confirm` | Never by default |
 | GitHub (`github.com`, release downloads) | A request for the latest version's description, and the installer if there is a newer one. GitHub sees your IP address and that a copy of Bmail asked; no mail, account or setting is sent | Desktop app only, when it starts and when you press Check again in Setup |
+| Whoever sent a message | A request for each picture the message links to. The sender's server sees your IP address and that the message was opened; the request does not say which page or program asked | Only when you open that message in the reader, and never if **Setup → Pictures in mail** is set to *Ask first* |
 
 That is the complete list. There is no Bmail server, no telemetry, no analytics
-and no crash reporting. The update check is the desktop app's only contact with
-anything but your mail server, and it goes to GitHub, not to the author:
-nobody behind Bmail receives or can see it. Running Bmail from source or from
+and no crash reporting. Besides your mail server, the desktop app contacts two
+things: GitHub, for the update check, and the servers a message's pictures are
+on, when you open that message. Neither goes to the author: nobody behind Bmail
+receives or can see either. Running Bmail from source or from
 `pip` never checks for updates. `bmail doctor` prints the current state of these
 settings, and warns if a password has ended up in the config file.
 
@@ -95,12 +97,21 @@ The options, in increasing order of effort:
 ## Data handling inside Bmail
 
 - The store lives in your data directory with `0700` permissions.
-- Attachment *payloads* are never stored, only filenames, types and sizes.
+- Attachment *payloads* are never stored, only filenames, types and sizes. The
+  one exception is a small picture a message shows inside itself (a logo, a
+  signature; up to 300 KB each): it is kept with the message's layout, or the
+  message could not be shown as it was sent.
+- A message's HTML is kept beside its text, compressed, so the reader can show
+  it as it was laid out. It is shown in a frame that can run no script, submit
+  no form and open no window, and its links open in your own browser only when
+  you click one.
 - Passwords go to the OS keychain (macOS Keychain, Windows DPAPI, libsecret) or
   the environment. Never the config file — `bmail doctor` warns if one is there.
 - OAuth token files are written `0600`.
-- URLs are reduced to their host before any text reaches a prompt, so no
-  tracking pixel is loaded and no link is followed.
+- URLs are reduced to their host before any text reaches a prompt, so sorting
+  loads no tracking pixel and follows no link. Reading is different: opening a
+  message shows its pictures, and a picture fetched from a sender tells them the
+  message was opened. *Ask first* in Setup stops that until you choose.
 - Nothing is ever deleted from your mailbox. The only outward write is a label,
   and only after you confirm it.
 

@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import mimetypes
 import os
+import re
 import secrets
 import sqlite3
 import threading
@@ -47,6 +48,10 @@ MAX_BODY = 1 << 20  # 1 MiB is far more than any request here needs
 PACK_KEY = "app.pack"
 SETUP_DONE_KEY = "setup.done"
 PREFS_KEY = "ui.prefs"
+# A ticket to show one message's layout: long enough for a slow machine to
+# load the frame, short enough to be worthless to anyone it leaks to.
+TICKET_SECONDS = 60.0
+TICKETS_AT_ONCE = 64
 # How long an answer about the local model is believed before asking again.
 MODEL_STATUS_SECONDS = 15.0
 
@@ -57,6 +62,8 @@ PREFS = {
     "theme": {"studio", "compact"},
     "scheme": {"system", "light", "dark"},
     "window": {"1", "7", "30", "3650"},
+    # Whether a message's remote pictures load without being asked for.
+    "pictures": {"ask", "always"},
 }
 
 # The port Bmail asks for first. A fixed one keeps the page's address the same
@@ -99,6 +106,9 @@ class BmailApp:
         self.config = config
         self.jobs = JobRunner()
         self.token = secrets.token_urlsafe(24)
+        # Tickets for showing one message's layout once: see `view_ticket`.
+        self._tickets: dict[str, tuple[str, bool, float]] = {}
+        self._tickets_lock = threading.Lock()
         config.ensure_home()
         connect(config.database).close()  # create and migrate the store up front
         # What the person chose in the app outranks the config file's default,
@@ -318,6 +328,68 @@ class BmailApp:
         finally:
             conn.close()
 
+    def view_ticket(self, body: dict[str, Any]) -> dict[str, Any]:
+        """A one-time address for showing one message as it was laid out.
+
+        The frame that shows a message has to be given an address, and an
+        address reaches places a header never does: a message can ask the
+        browser to send it, as the referrer, to whoever serves its pictures.
+        So the session key never goes in one. The page asks for a ticket with
+        the key, and the ticket opens that one message, once, for a minute.
+        A ticket that leaks is already spent.
+        """
+        message_id = str(body.get("message_id") or "")
+        if not message_id:
+            raise ApiError("missing message_id")
+        ticket = secrets.token_urlsafe(24)
+        now = time.monotonic()
+        with self._tickets_lock:
+            for stale in [key for key, (_, _, until) in self._tickets.items() if until < now]:
+                del self._tickets[stale]
+            if len(self._tickets) >= TICKETS_AT_ONCE:
+                self._tickets.pop(next(iter(self._tickets)))
+            self._tickets[ticket] = (message_id, bool(body.get("pictures")), now + TICKET_SECONDS)
+        return {"url": f"/api/view/{ticket}"}
+
+    def original(self, ticket: str) -> tuple[bytes, str]:
+        """A message as it was laid out, and the policy it must be served with."""
+        from bmail.text import original
+
+        with self._tickets_lock:
+            found = self._tickets.pop(ticket, None)
+        if found is None or found[2] < time.monotonic():
+            raise ApiError("this view has expired; open the message again", 404)
+        message_id, pictures, _ = found
+        conn = self.read()
+        try:
+            html = repo.get_original(conn, message_id)
+        finally:
+            conn.close()
+        if html is None:
+            raise ApiError("this message was not kept as it was laid out", 404)
+        return original.page(html, pictures=pictures), original.policy(pictures=pictures)
+
+    def open_link(self, body: dict[str, Any]) -> dict[str, Any]:
+        """Open a link from a message in the person's own browser.
+
+        A message is shown in a frame that may not open windows, and the
+        desktop shell has no address bar to open one in anyway. So a click on
+        a link is handed to the page, the page asks here, and the browser the
+        person actually uses opens it. Only what a browser or a mail program
+        opens: never a file, never a program.
+        """
+        url = str(body.get("url") or "").strip()
+        scheme = urlparse(url).scheme.lower()
+        if scheme not in ("http", "https", "mailto") or len(url) > 4096 or any(
+                ch.isspace() or ord(ch) < 32 or ch in '"\\`' for ch in url):
+            raise ApiError("that is not a link Bmail can open")
+        if scheme == "mailto" and re.search(r"[?&]attach(?:ment)?=", url, re.IGNORECASE):
+            # Some mail programs honour it: a link must not pick files to send.
+            raise ApiError("that is not a link Bmail can open")
+        if not webbrowser.open(url):
+            raise ApiError("no browser could be opened for that link", 500)
+        return {"ok": True}
+
     def stats(self, query: dict[str, list[str]]) -> dict[str, Any]:
         conn = self.read()
         try:
@@ -494,11 +566,15 @@ class BmailApp:
         `span` is the slice of the job's progress bar this stage owns, so a
         job that fetches first and sorts second fills one bar, not two.
         """
-        from bmail.pipeline import build_pipeline
+        from bmail.pipeline import build_pipeline, sorted_by_older_rules
 
         low, high = span
         pack = self.pack(pack_name)
         job.update(step="loading messages", progress=low + 0.02 * (high - low))
+        # The first sort after an update that changed the rules covers
+        # everything, once: see sorted_by_older_rules.
+        outdated = limit is None and sorted_by_older_rules(conn, pack.name)
+        retriage = retriage or outdated
         messages = repo.iter_messages(
             conn, limit=limit, only_untriaged_for=None if retriage else pack.name
         )
@@ -507,6 +583,9 @@ class BmailApp:
             # and asks the local LLM what it is, which a quiet sync can skip.
             return {"processed": 0, "notes": ["nothing new to triage"]}
         pipeline, notes = build_pipeline(conn, pack, self.config, use_llm=use_llm)
+        if outdated:
+            notes.append("Bmail was updated: everything was sorted again with the new rules "
+                         "(your own corrections were kept)")
 
         total = len(messages)
 
@@ -514,7 +593,8 @@ class BmailApp:
             job.raise_if_cancelled()
             job.update(progress=low + (high - low) * index / total, step=f"sorting {index} of {total}")
 
-        stats = pipeline.triage(conn, messages, progress=progress)
+        stats = pipeline.triage(conn, messages, progress=progress,
+                                fresh=retriage and limit is None)
         job.update(step="training the classifier", progress=low + 0.99 * (high - low))
         trained: dict[str, Any] = {}
         if pipeline.classifier is not None and self.config.classifier.distil_after_backfill:
@@ -732,11 +812,29 @@ class _Handler(BaseHTTPRequestHandler):
         self.send_header(
             "Content-Security-Policy",
             "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; "
-            "connect-src 'self'; form-action 'none'; frame-ancestors 'none'; base-uri 'none'",
+            "connect-src 'self'; frame-src 'self'; form-action 'none'; frame-ancestors 'none'; "
+            "base-uri 'none'",
         )
         self.end_headers()
         if self.command != "HEAD":
             self.wfile.write(body)
+
+    def _send_original(self, page: bytes, policy: str) -> None:
+        """Someone else's HTML: served under its own, much stricter policy.
+
+        Not `_send`: that policy is for Bmail's own pages and forbids being
+        framed at all, and this one is only ever shown in the reader's frame.
+        """
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(page)))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("Content-Security-Policy", policy)
+        self.end_headers()
+        if self.command != "HEAD":
+            self.wfile.write(page)
 
     # -- guards -------------------------------------------------------------------- #
 
@@ -801,6 +899,12 @@ class _Handler(BaseHTTPRequestHandler):
                     self._send(405, {"error": "method not allowed"})
                 else:
                     self._serve_static(path)
+                return
+            if method == "GET" and path.startswith("/api/view/"):
+                # The ticket in the address is the permission: asked for with
+                # the session key a moment ago, good for this one request.
+                page, policy = self.app.original(_tail(path, "/api/view/"))
+                self._send_original(page, policy)
                 return
             if path != "/api/health" and not self._authorised():
                 self._send(401, {"error": "missing or invalid token"})
@@ -870,6 +974,10 @@ class _Handler(BaseHTTPRequestHandler):
             return app.setup(body)
         if path == "/api/prefs":
             return app.set_prefs(body)
+        if path == "/api/open":
+            return app.open_link(body)
+        if path == "/api/view":
+            return app.view_ticket(body)
         if path == "/api/samples":
             return app.start_samples(body).as_dict()
         if path == "/api/accounts/check":

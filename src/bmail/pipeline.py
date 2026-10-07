@@ -8,6 +8,7 @@ expensive stage is earning its keep.
 
 from __future__ import annotations
 
+import re
 import sqlite3
 from collections import Counter
 from collections.abc import Callable
@@ -15,6 +16,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 from bmail.classify.stage2 import Classifier
+from bmail.entities.resolve import is_ats_domain
 from bmail.entities.stage4 import CaseResolver, refresh_derived
 from bmail.errors import LLMError
 from bmail.llm.stage3 import LLMStage
@@ -22,8 +24,30 @@ from bmail.models import Lane, Message, Stage, Verdict
 from bmail.packs import Pack
 from bmail.rules.engine import RulesEngine, Stage1Result
 from bmail.store import repo
+from bmail.store.db import get_meta, set_meta
 
 ProgressHook = Callable[[int, int, Message], None]
+
+# What the foot of a mailing says, and one person's mail to another never does.
+_MAILING_FOOTER = re.compile(
+    r"unsubscribe|opt[- ]out|e-?mail preferences|notification settings|"
+    r"manage (?:your )?(?:preferences|subscriptions?)|abmelden|abbestellen|austragen",
+    re.IGNORECASE,
+)
+# Shortened links have lost their scheme, so a host with a path counts too.
+_LINK = re.compile(r"https?://\S+|\b[\w-]+(?:\.[\w-]+)+/\S*")
+_MANY_LINKS = 5
+_BROADCAST_MAILBOX = re.compile(
+    r"^(?:hello|hi|hey|yo|team|news|newsletter|notify|info|marketing|community|digest|"
+    r"updates?|mail|mailer|email|contact|connect|discover|recommendations?|offers?|deals?|"
+    r"promo\w*|learn|academy|events?)$",
+    re.IGNORECASE,
+)
+
+# Raise this whenever the rules, the recipes or a pack would sort stored mail
+# differently: the app sorts everything it holds again, once, after an update.
+# Answers a person typed in are kept.
+TRIAGE_VERSION = 2
 
 
 @dataclass(slots=True)
@@ -83,6 +107,7 @@ class Pipeline:
     def triage_one(
         self, conn: sqlite3.Connection, message: Message, stats: TriageStats
     ) -> Verdict:
+        existing = None
         if self.respect_manual:
             # A human correction outranks anything the pipeline would decide.
             # Re-triaging must not quietly undo the answer someone typed in — and
@@ -96,6 +121,7 @@ class Pipeline:
 
         stage1 = self.rules.run(conn, message)
         verdict = stage1.verdict
+        kept = False
 
         if not stage1.resolved and self.classifier is not None:
             stage2 = self.classifier.run(message, verdict)
@@ -117,10 +143,17 @@ class Pipeline:
                 else:
                     verdict.needs_review = True
                 if verdict.stage is Stage.classifier:
-                    self._when_unsure(stage1, verdict)
+                    if existing is not None and existing.stage is Stage.llm:
+                        # The local model read this one on an earlier run and
+                        # cannot be asked now (switched off, or this run's
+                        # calls are spent). Its reading beats today's guess.
+                        verdict, kept = existing, True
+                    else:
+                        self._when_unsure(message, stage1, verdict)
             # Feed the settled answer forward so later duplicates inherit it.
             self.rules.remember(message, verdict)
-            if self.distil and verdict.stage is Stage.llm and not verdict.needs_review:
+            if (self.distil and verdict.stage is Stage.llm and not verdict.needs_review
+                    and not kept):
                 # Distillation: the expensive stage teaches the cheap one, so the
                 # same mail shape costs nothing next month.
                 repo.add_training_row(
@@ -143,8 +176,21 @@ class Pipeline:
     # you as a person does, and must never be shown as if it had.
     HUMAN_BELOW = 0.25
 
-    def _when_unsure(self, stage1: Stage1Result, verdict: Verdict) -> None:
-        """Nothing settled this message; fail towards showing it to you.
+    def _written_by_a_person(self, message: Message, stage1: Stage1Result) -> bool:
+        headers = stage1.headers
+        if headers.score >= self.HUMAN_BELOW:
+            return False
+        # Carried by a sending service and nothing else: a recruiter writing
+        # through an applicant system arrives like this, and so does every shop
+        # and every digest. What it is about tells them apart, and whether it
+        # offers a way off its list.
+        return not headers.is_relayed or (self._on_topic(message) and not _is_mailing(message))
+
+    def _on_topic(self, message: Message) -> bool:
+        return self.pack.is_on_topic(f"{message.subject}\n{message.body_text}")
+
+    def _when_unsure(self, message: Message, stage1: Stage1Result, verdict: Verdict) -> None:
+        """Nothing settled this message; a guess must not pass for a reading.
 
         With no local model — the default install — an unsure classifier guess
         used to be the final answer. On day one that guess comes from a handful
@@ -152,23 +198,50 @@ class Pipeline:
         as an automatic acknowledgement and never shown: the one outcome the
         asymmetric-routing rule exists to prevent. A message a person wrote,
         which the classifier cannot place with confidence and would otherwise
-        file as needing nothing, is surfaced as personal mail instead. It stays
-        in the review queue, so the correction still teaches the classifier.
+        file as needing nothing, is surfaced as personal mail instead.
+
+        The same guess about mail a machine sent failed the other way: a DSL
+        order, a bank notice and a freelance platform's welcome series were
+        shown as job offers to answer today, each on a probability barely above
+        chance. Software that wants something from you says so in words a
+        recipe knows; an unsure guess that it does is filed as what the sender
+        is. Both stay in the review queue, so a correction still teaches.
         """
-        if verdict.action_required or "personal" not in self.pack.categories:
+        person = self._written_by_a_person(message, stage1)
+        if person:
+            if not verdict.action_required and "personal" in self.pack.categories:
+                self._refile(verdict, "personal", "written by a person and the guess "
+                             f"'{verdict.category}' is unsure: shown, not filed")
             return
-        if stage1.headers.score >= self.HUMAN_BELOW:
+        # A guess that only files machine mail somewhere quiet does no harm.
+        # One that says it needs you, or that it is the outcome of something
+        # you applied for, has to be about that.
+        claims = verdict.action_required or self.pack.spec(verdict.category).on_topic
+        accept = self.classifier.accept_threshold if self.classifier is not None else 1.0
+        if not claims or verdict.confidence >= accept:
             return
-        guessed = verdict.category
-        spec = self.pack.spec("personal")
-        verdict.category = "personal"
+        # One kind of software does write to you alone about the pack's
+        # subject: an applicant system, or a company's own no-reply mailbox.
+        # A mailing does not, and a job board never sends the outcome of one.
+        # (A campaign header alone is no mailing: the large sending services
+        # stamp one on every message, an interview invitation included.)
+        headers = stage1.headers
+        mailing = headers.is_list or headers.is_campaign or _is_mailing(message)
+        if (self._on_topic(message) and not self.rules.is_job_board_mail(message)
+                and (not mailing or is_ats_domain(message.sender_domain))):
+            return
+        fallback = self.rules.category_for_machine_mail(message, stage1.headers)
+        self._refile(verdict, fallback, f"sent by a machine and the guess '{verdict.category}' "
+                     f"is unsure: filed as {fallback}")
+
+    def _refile(self, verdict: Verdict, category: str, reason: str) -> None:
+        spec = self.pack.spec(category)
+        verdict.category = category
         verdict.action_required = spec.action_required
         verdict.urgency = spec.urgency
         verdict.next_action = spec.next_action
         verdict.needs_review = True
-        verdict.reasons.append(
-            f"written by a person and the guess '{guessed}' is unsure: shown, not filed"
-        )
+        verdict.reasons.append(reason)
 
     def _keep_to_topic(self, message: Message, stage1: Stage1Result, verdict: Verdict) -> None:
         """Only mail about the pack's subject gets the pack's subject categories.
@@ -181,7 +254,7 @@ class Pipeline:
         And mail from a machine is never "personal".
         """
         machine = (
-            stage1.headers.score >= self.HUMAN_BELOW
+            not self._written_by_a_person(message, stage1)
             or verdict.lane in (Lane.bulk, Lane.template)
         )
         spec = self.pack.spec(verdict.category)
@@ -230,8 +303,21 @@ class Pipeline:
         *,
         progress: ProgressHook | None = None,
         commit_every: int = 25,
+        fresh: bool = False,
     ) -> TriageStats:
+        """Sort `messages`. `fresh` says they are the whole store, being sorted
+        again: what an earlier run decided is then no reference for a repeat,
+        because that earlier answer is exactly what is being replaced."""
         stats = TriageStats()
+        self.rules.trust_since = repo._dt_to_text(datetime.now(timezone.utc)) if fresh else None
+        first = not _sorted_before(conn, self.pack.name)
+        if fresh:
+            # The cards are built from the answers being replaced, and a card
+            # only ever moves forward: one opened by a digest misread as an
+            # assessment would stay "Indeed, assessment" for good. They hold
+            # nothing a person typed (one with notes is kept), so they are
+            # built again from the mail.
+            conn.execute("DELETE FROM cases WHERE pack = ? AND notes = ''", (self.pack.name,))
         # Oldest first: a case's state machine only makes sense in arrival order.
         ordered = sorted(messages, key=lambda m: m.date)
         for index, message in enumerate(ordered, start=1):
@@ -247,7 +333,47 @@ class Pipeline:
         derived = refresh_derived(conn, self.pack)
         stats.cases_transitioned += derived["transitioned"]
         _record_run(conn, self.pack.name, stats)
+        if fresh or first:
+            # Every answer the store now holds was given by these rules.
+            set_meta(conn, _version_key(self.pack.name), str(TRIAGE_VERSION))
         return stats
+
+
+def _is_mailing(message: Message) -> bool:
+    """A way off the list, and a second sign of one: a digest or a promotion.
+
+    Two signs, because the footer alone is also true of mail that matters: a
+    recruiter's applicant system puts "unsubscribe" under a three-line note.
+    The second is a page of links, or a mailbox that greets everyone at once
+    (hello@, news@, notify@) rather than a person's or a hiring desk's.
+    """
+    text = message.body_raw_text or message.body_text
+    if _MAILING_FOOTER.search(text) is None:
+        return False
+    local = message.from_.address.split("@")[0]
+    return (len(_LINK.findall(text)) >= _MANY_LINKS
+            or _BROADCAST_MAILBOX.match(local) is not None)
+
+
+def _version_key(pack: str) -> str:
+    return f"triage_version:{pack}"
+
+
+def _sorted_before(conn: sqlite3.Connection, pack: str) -> bool:
+    # An answer a person typed in was not given by any version of the rules.
+    row = conn.execute(
+        "SELECT 1 FROM verdicts WHERE pack = ? AND stage != 'manual' LIMIT 1", (pack,)).fetchone()
+    return row is not None
+
+
+def sorted_by_older_rules(conn: sqlite3.Connection, pack: str) -> bool:
+    """Whether the store holds answers an earlier version of the rules gave.
+
+    Mail sorted by an older version keeps that version's answers until it is
+    sorted again, and nobody thinks to ask for that after an update: the
+    mistakes a release fixed stayed on screen.
+    """
+    return _sorted_before(conn, pack) and get_meta(conn, _version_key(pack)) != str(TRIAGE_VERSION)
 
 
 def _record_run(conn: sqlite3.Connection, pack: str, stats: TriageStats) -> None:

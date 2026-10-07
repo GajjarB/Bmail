@@ -65,6 +65,13 @@ CREATE TABLE IF NOT EXISTS bodies (
     body_raw_text TEXT NOT NULL DEFAULT ''
 );
 
+-- The HTML part as it was sent, compressed: what the reader shows when asked
+-- for the message as its sender laid it out. Never read by the pipeline.
+CREATE TABLE IF NOT EXISTS originals (
+    message_id TEXT PRIMARY KEY REFERENCES messages(message_id) ON DELETE CASCADE,
+    html       BLOB NOT NULL
+);
+
 CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
     message_id UNINDEXED,
     subject,

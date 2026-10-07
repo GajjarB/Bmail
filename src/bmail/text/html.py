@@ -40,6 +40,13 @@ _VOID_TAGS = {
     "br", "hr", "img", "wbr", "meta", "link", "input", "col", "area", "base",
     "source", "embed", "track", "param",
 }
+# Dropped because they draw rather than say; read through when they turn out
+# to hold the message (see _Writer.swallowed).
+_EMBEDDED_TAGS = {"svg", "object", "template"}
+# What a head may hold. Anything else starting inside one means the head is
+# over, said or not: mail that never writes </head> is common, and reading it
+# as "still in the head" throws the whole message away.
+_HEAD_TAGS = {"head", "title", "meta", "link", "style", "script", "base", "noscript", "template"}
 # A blank line before and after.
 _PARAGRAPH_TAGS = {"p", "h1", "h2", "h3", "h4", "h5", "h6", "blockquote", "pre", "table", "ul", "ol", "dl"}
 # A line of their own.
@@ -115,9 +122,11 @@ def _is_hidden(attrs: dict[str, str | None], classes: set[str]) -> bool:
 class _Writer:
     """Turns start/end/text events into readable text."""
 
-    def __init__(self, classes: set[str], honour_hidden: bool = True) -> None:
+    def __init__(self, classes: set[str], honour_hidden: bool = True,
+                 transparent: frozenset[str] = frozenset()) -> None:
         self.classes = classes
         self.honour_hidden = honour_hidden
+        self.transparent = transparent            # dropped tags to read through instead
         self.parts: list[str] = []
         self.open: list[tuple[str, bool]] = []   # (tag, skips its content)
         self.skipping = 0
@@ -126,6 +135,7 @@ class _Writer:
         self.space = False                        # whitespace seen since the last word
         self.lead = ""                            # bullet or cell separator owed to the next word
         self.hidden_chars = 0
+        self.embedded: dict[str, int] = {}        # text inside each kind of embedded element
         self.shown_chars = 0
 
     # --- layout -------------------------------------------------------------
@@ -165,6 +175,11 @@ class _Writer:
 
     def start(self, tag: str, attrs: dict[str, str | None]) -> None:
         tag = tag.lower()
+        if tag not in _HEAD_TAGS:
+            for index, (name, _) in enumerate(self.open):
+                if name == "head":
+                    self._close_to(index)
+                    break
         if tag in _VOID_TAGS:
             if self.skipping:
                 return
@@ -187,7 +202,8 @@ class _Writer:
                 if name in closes:
                     self._close_to(index)
                     break
-        skips = tag in _DROP_TAGS or (self.honour_hidden and _is_hidden(attrs, self.classes))
+        skips = (tag in _DROP_TAGS and tag not in self.transparent) or (
+            self.honour_hidden and _is_hidden(attrs, self.classes))
         self.open.append((tag, skips))
         if skips:
             self.skipping += 1
@@ -248,6 +264,10 @@ class _Writer:
         if self.skipping:
             if not (self.open and self.open[-1][0] in _DROP_TAGS):
                 self.hidden_chars += len(data.strip())
+            outer = next(name for name, skips in self.open if skips)
+            # A drawing's own stylesheet is not the message it might have swallowed.
+            if outer in _EMBEDDED_TAGS and self.open[-1][0] not in ("style", "script", "title"):
+                self.embedded[outer] = self.embedded.get(outer, 0) + len(data.strip())
             return
         if self.pre:
             for number, line in enumerate(data.split("\n")):
@@ -264,6 +284,15 @@ class _Writer:
             self._word(word)
         if data[-1:].isspace():
             self.space = True
+
+    @property
+    def swallowed(self) -> frozenset[str]:
+        """Embedded elements that held more text than the rest of the mail showed.
+
+        An <svg> or <object> that is never closed takes everything after it
+        along; a drawing with a caption does not hold the message.
+        """
+        return frozenset(tag for tag, chars in self.embedded.items() if chars > self.shown_chars)
 
     @property
     def result(self) -> str:
@@ -296,17 +325,47 @@ class _Stdlib(HTMLParser):
 _STYLE_BLOCK = re.compile(r"<style\b[^>]*>(.*?)</style\s*>", re.I | re.S)
 
 
-def _stdlib_text(html: str, honour_hidden: bool) -> tuple[str, _Writer]:
-    writer = _Writer(hidden_classes(_STYLE_BLOCK.findall(html)), honour_hidden)
+_RAW_TEXT_OPEN = re.compile(r"<(style|script)\b[^>]*>", re.I)
+_HEAD_ENDS = re.compile(r"</head\b|<body\b", re.I)
+
+
+def _close_raw_text(html: str) -> str:
+    """End a <style> or <script> its author never ended.
+
+    The stdlib parser reads everything after one as stylesheet, to the end of
+    the mail. A browser does too, strictly, but mail clients do not, and the
+    message is there to be read: the element ends where the head does.
+    """
+    out, at = [], 0
+    for match in _RAW_TEXT_OPEN.finditer(html):
+        if match.start() < at:
+            continue
+        closing = re.compile(rf"</{match.group(1)}\s*>", re.I).search(html, match.end())
+        if closing:
+            out.append(html[at:closing.end()])
+            at = closing.end()
+            continue
+        stop = _HEAD_ENDS.search(html, match.end())
+        end = stop.start() if stop else match.end()
+        out.append(html[at:end] + f"</{match.group(1)}>")
+        at = end
+    return "".join(out) + html[at:]
+
+
+def _stdlib_text(html: str, honour_hidden: bool,
+                 transparent: frozenset[str] = frozenset()) -> tuple[str, _Writer]:
+    writer = _Writer(hidden_classes(_STYLE_BLOCK.findall(html)), honour_hidden, transparent)
     parser = _Stdlib(writer)
     parser.feed(html)
     parser.close()
     return writer.result, writer
 
 
-def _selectolax_text(html: str, honour_hidden: bool) -> tuple[str, _Writer]:
+def _selectolax_text(html: str, honour_hidden: bool,
+                     transparent: frozenset[str] = frozenset()) -> tuple[str, _Writer]:
     tree = _Selectolax(html)
-    writer = _Writer(hidden_classes([node.text() for node in tree.css("style")]), honour_hidden)
+    writer = _Writer(hidden_classes([node.text() for node in tree.css("style")]), honour_hidden,
+                     transparent)
     root = tree.root
     if root is None:
         return "", writer
@@ -339,11 +398,14 @@ def html_to_text(html: str) -> str:
         return ""
     convert = _selectolax_text if _Selectolax is not None else _stdlib_text
     try:
+        html = _close_raw_text(html)
         text, writer = convert(html, True)
         # Hiding is a judgement about styles. If it hid more than it showed,
         # that judgement was wrong for this mail: show everything instead.
         if writer.hidden_chars > max(writer.shown_chars, 200):
-            text, _ = convert(html, False)
+            text, writer = convert(html, False)
+        if writer.swallowed:
+            text, _ = convert(html, writer.honour_hidden, writer.swallowed)
         return text
     except Exception:
         stripped = re.sub(r"<[^>]+>", " ", html).translate(_INVISIBLE)

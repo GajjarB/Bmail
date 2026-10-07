@@ -56,6 +56,11 @@ def fold(text: str) -> str:
     return " ".join(text.translate(_QUOTES).lower().split())
 
 
+# A recipe's own phrases never change; folding them again for every message
+# was most of the time Stage 1 took.
+_fold_phrase = lru_cache(maxsize=4096)(fold)
+
+
 class FieldSpec(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -98,11 +103,11 @@ class Recipe(BaseModel):
             token.lower() in message.subject.lower() for token in spec.subject_any
         ):
             return False
-        if spec.body_any and not any(fold(token) in lowered for token in spec.body_any):
+        if spec.body_any and not any(_fold_phrase(token) in lowered for token in spec.body_any):
             return False
-        if spec.body_all and not all(fold(token) in lowered for token in spec.body_all):
+        if spec.body_all and not all(_fold_phrase(token) in lowered for token in spec.body_all):
             return False
-        if spec.body_none and any(fold(token) in lowered for token in spec.body_none):
+        if spec.body_none and any(_fold_phrase(token) in lowered for token in spec.body_none):
             return False
         # Against the folded text, like the phrases: lower case, straight
         # quotes, one space for any line break.

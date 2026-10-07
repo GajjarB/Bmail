@@ -56,7 +56,7 @@ function savePref(key, value) {
 function syncPrefs(stored) {
   const local = (key) => { try { return localStorage.getItem(`bmail.${key}`); } catch { return null; } };
   const missing = {};
-  for (const key of ["theme", "scheme", "window"]) {
+  for (const key of ["theme", "scheme", "window", "pictures"]) {
     if (stored && stored[key]) {
       try { localStorage.setItem(`bmail.${key}`, stored[key]); } catch { /* private window */ }
       if (key === "theme" && stored.theme !== document.documentElement.dataset.theme) applyTheme(stored.theme);
@@ -1226,7 +1226,7 @@ async function readPane(messageId) {
         onclick: () => go("mail", { ...here(), id: "" }) }, icon("close", 14))),
     m.attachments.length ? el("ul", { class: "attachments", "aria-label": "Attachments" }, m.attachments.map((a) =>
       el("li", { class: "attachment" }, icon("download", 14), a.filename))) : null,
-    messageText(m));
+    messageBody(m));
 
   const context = el("aside", { class: "aside context", "aria-label": "What Bmail made of it" },
     v ? el("section", {},
@@ -1260,7 +1260,177 @@ async function readPane(messageId) {
   return el("div", { class: "read-pane" }, reader, context);
 }
 
-// The cleaned text first: what this mail says, without the thread it quotes
+/* The message the way its sender laid it out, with the text Bmail read one
+ * click away. The layout is someone else's HTML, so it is shown in a frame
+ * that can do nothing but be looked at: no scripts, no forms, an origin of
+ * its own. The engine serves it under a policy that says the same again.
+ *
+ * Pictures a message carries with it are shown. Pictures it would fetch are
+ * not, until asked for: fetching one tells the sender that this mail was
+ * opened, when, and from where. */
+function messageBody(m) {
+  const text = messageText(m);
+  if (!m.original) {
+    if (!m.has_html) return text;
+    // Read in before Bmail kept layouts; reading the mailbox again fills them in.
+    return el("div", {},
+      el("p", { class: "reader-note" },
+        "Bmail read this message before it kept the original layout. ",
+        el("button", { class: "quiet sm",
+          onclick: () => run("ingest", { reset: true }, "Reading your mail again") },
+          "Read my mail again")),
+      text);
+  }
+
+  // Shown unless someone chose otherwise in Setup: a message without its
+  // pictures is not the message, and most people never ask.
+  let pictures = storedPref("pictures") !== "ask";
+  // Same origin, and nothing else: enough for this page to measure the message
+  // and hear a click in it, while the message itself can run nothing at all.
+  const frame = el("iframe", { class: "mail-frame", title: "The message as it was sent",
+    sandbox: "allow-same-origin", referrerpolicy: "no-referrer" });
+  // The frame is given a one-time address, never the session key: an address
+  // can be passed on, as the referrer, to whoever serves a message's pictures.
+  const load = async () => {
+    frame.dataset.pictures = pictures ? "1" : "0";
+    try {
+      const view = await post("/view", { message_id: m.message_id, pictures });
+      frame.src = view.url;
+    } catch (err) { toast(err.message, true); }
+  };
+  frame.dataset.message = m.message_id;
+  frame.addEventListener("load", () => fitMessageFrame(frame));
+
+  const blocked = el("p", { class: "reader-note", hidden: !m.original.remote_pictures || pictures },
+    "Pictures are not loaded: loading them tells the sender you opened this. ",
+    el("button", { class: "quiet sm", onclick: () => show(false) }, "Show pictures"),
+    el("button", { class: "quiet sm", onclick: () => show(true) }, "Always show"));
+  function show(always) {
+    pictures = true;
+    if (always) savePref("pictures", "always");
+    blocked.hidden = true;
+    load();
+  }
+
+  const asSent = el("button", { "aria-pressed": "true", onclick: () => choose(true) }, "As sent");
+  const asText = el("button", { "aria-pressed": "false", onclick: () => choose(false) }, "Text");
+  const original = el("div", {}, blocked, frame);
+  const plain = el("div", { hidden: true }, text);
+  function choose(sent) {
+    asSent.setAttribute("aria-pressed", String(sent));
+    asText.setAttribute("aria-pressed", String(!sent));
+    original.hidden = !sent;
+    plain.hidden = sent;
+  }
+
+  load();
+  return el("div", {},
+    el("div", { class: "reader-view" },
+      el("div", { class: "segmented", role: "group", "aria-label": "How to show this message" },
+        asSent, asText)),
+    original, plain);
+}
+
+function storedPref(key) {
+  try { return localStorage.getItem(`bmail.${key}`); } catch { return null; }
+}
+
+/* How to lay each message frame out again when the window changes size. Weak,
+ * so a message that has been closed takes its entry with it. */
+const MessageFrames = new WeakMap();
+window.addEventListener("resize", () => {
+  for (const frame of document.querySelectorAll("iframe.mail-frame.fitted")) {
+    const again = MessageFrames.get(frame);
+    if (again) again();
+  }
+});
+
+/* Give the frame the height of the message in it, so the message reads as part
+ * of the page and the page is what scrolls, and send a click on a link to the
+ * person's own browser. Both from out here: nothing inside the frame can run. */
+function fitMessageFrame(frame) {
+  // The empty page a frame holds before it is given an address loads too.
+  if (!frame.getAttribute("src")) return;
+  let doc;
+  try { doc = frame.contentDocument; } catch { doc = null; }
+  if (!doc || !doc.documentElement) return;   // refused: the frame keeps its own scrollbar
+  frame.classList.add("fitted");
+
+  const root = doc.documentElement;
+  // A message laid out wider than the pane is shown smaller, the way a phone
+  // shows it, down to a size that can still be read; beyond that it scrolls
+  // sideways. Measured at full size each time, so widening the window undoes it.
+  const scale = () => {
+    root.style.zoom = "";
+    const natural = root.scrollWidth;
+    const room = root.clientWidth;
+    // A pixel under, so rounding never leaves a sliver to scroll sideways for.
+    if (natural > room + 1) root.style.zoom = String(Math.max(0.6, (room - 1) / natural));
+  };
+  const fit = () => {
+    // Still wider than the frame: leave room for the bar it scrolls with.
+    const sideways = root.scrollWidth > root.clientWidth + 1 ? 18 : 0;
+    // Never the root's own scroll height: it is at least the frame's, so a
+    // message that pads a "height: 100%" body would grow the frame for ever.
+    const wanted = Math.ceil(Math.max(root.getBoundingClientRect().height,
+      doc.body ? doc.body.scrollHeight : 0)) + sideways;
+    if (Math.abs(wanted - frame.offsetHeight) > 1) frame.style.height = `${wanted}px`;
+    // What such a message still overflows by is its own padding, the same at
+    // any height. No scrollbar for that; a real remainder keeps one.
+    const left = root.scrollHeight - root.clientHeight;
+    root.style.overflowY = left > 0 && left <= 64 ? "hidden" : "";
+  };
+  // Start small: a frame only ever reports content at least as tall as itself.
+  frame.style.height = "120px";
+  scale();
+  fit();
+  // Pictures arrive after the text and push everything below them down.
+  new ResizeObserver(fit).observe(root);
+  if (doc.body) new ResizeObserver(fit).observe(doc.body);
+  MessageFrames.set(frame, () => {
+    frame.style.height = "120px";
+    scale();
+    fit();
+  });
+
+  // Through the prototypes, never the document's own properties: an element
+  // named "addEventListener" or "getElementById" in a message replaces them.
+  EventTarget.prototype.addEventListener.call(doc, "click", (event) => {
+    const link = event.target instanceof Element || (event.target && event.target.nodeType === 1)
+      ? Element.prototype.closest.call(event.target, "a, area") : null;
+    if (!link) return;
+    // Whatever it is, a click in a message never moves the frame anywhere.
+    event.preventDefault();
+    const href = Element.prototype.getAttribute.call(link, "href") || "";
+    if (href.startsWith("#")) {
+      const target = Document.prototype.getElementById.call(doc, href.slice(1));
+      if (target) Element.prototype.scrollIntoView.call(target, { block: "start" });
+      return;
+    }
+    if (/^(https?:\/\/|mailto:)/i.test(href)) {
+      post("/open", { url: href }).catch((err) => toast(err.message, true));
+    }
+  });
+}
+
+/* Takes effect on the next message opened. */
+function picturesPicker() {
+  const choices = { always: "Show", ask: "Ask first" };
+  const picker = el("div", { class: "segmented", role: "group", "aria-label": "Pictures in mail" });
+  const paintPicker = () => picker.replaceChildren(...Object.entries(choices).map(([value, label]) =>
+    el("button", { "data-value": value,
+      "aria-pressed": String((storedPref("pictures") === "ask" ? "ask" : "always") === value),
+      onclick: () => {
+        savePref("pictures", value);
+        paintPicker();
+        picker.querySelector('[aria-pressed="true"]')?.focus();
+      } },
+      label)));
+  paintPicker();
+  return picker;
+}
+
+// The cleaned text: what this mail says, without the thread it quotes
 // or the footer it carries. The rest is one click away, never gone.
 function messageText(m) {
   const short = m.body_text || "";
@@ -1844,6 +2014,9 @@ function viewSetup() {
     section("Appearance", null, "palette"),
     group("Colours", schemePicker()),
     note("Match system follows your computer's light or dark setting as it changes."),
+    group("Pictures in mail", picturesPicker()),
+    note("A picture fetched from a sender tells them you opened their mail. "
+      + "Ask first keeps them from knowing until you choose to see it."),
     group("Layout",
       el("select", { "aria-label": "Layout",
         onchange: (e) => { savePref("theme", applyTheme(e.target.value)); render(); } },

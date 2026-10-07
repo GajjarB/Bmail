@@ -132,6 +132,10 @@ class Message(BaseModel):
     body_text: str = ""       # cleaned: html stripped, quotes and signature removed
     body_raw_text: str = ""   # full plain text before quote removal, for evidence checks
     has_html: bool = False
+    # The HTML part as sent, for showing the message the way it was laid out.
+    # Only filled when a message is read in; the store keeps it apart from the
+    # text, and loading messages to sort them does not load it.
+    body_html: str = ""
     language: str = "und"
     attachments: list[Attachment] = Field(default_factory=list)
 

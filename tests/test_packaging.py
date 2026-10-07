@@ -175,3 +175,23 @@ def test_the_mark_is_made_of_closed_outlines():
             assert max(map(abs, drift)) < 1e-9, (variant, start, drift)
             end = icons.flatten((start, steps))[-1]
             assert abs(end[0] - start[0]) < 1e-9 and abs(end[1] - start[1]) < 1e-9
+
+
+def test_every_windows_program_carries_the_mark():
+    """Windows shows a program's own icon in the taskbar while it runs, the
+    installer included. Left unset, the installer and uninstaller show the
+    installer maker's icon and the engine shows the freezer's."""
+    import json
+
+    tauri = ROOT / "desktop" / "src-tauri"
+    nsis = json.loads((tauri / "tauri.conf.json").read_text())["bundle"]["windows"]["nsis"]
+    for key in ("installerIcon", "uninstallerIcon"):
+        assert (tauri / nsis[key]).samefile(tauri / "icons" / "icon.ico"), key
+
+    sidecar = _script("build_sidecar")
+    flag, icon = sidecar.icon_arguments("x86_64-pc-windows-msvc")
+    assert flag == "--icon" and pathlib.Path(icon).samefile(tauri / "icons" / "icon.ico")
+    # Elsewhere a console program has no icon, and the freezer would need
+    # Pillow to turn an .ico into anything else.
+    assert sidecar.icon_arguments("aarch64-apple-darwin") == []
+    assert sidecar.icon_arguments("x86_64-unknown-linux-gnu") == []
