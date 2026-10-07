@@ -5,6 +5,43 @@ is also its release notes: the release build copies it onto the release page,
 and the desktop app shows it under "What's new" when that version is ready to
 install.
 
+## 0.2.2
+
+Mail that reads the way it was sent, and sorting you can trust after an update.
+
+### New
+
+- **Messages look like they do in your mail program.** The reader shows a
+  message as its sender laid it out: logos, pictures, buttons, columns. *Text*
+  beside it shows what Bmail read. A link opens in your own browser.
+- **Mail you already have** was read in before layouts were kept. Open one and
+  choose *Read my mail again* to fetch them.
+
+### Changed
+
+- **Pictures in a message are shown when you open it.** A picture fetched from
+  a sender tells them the message was opened. To be asked first, open Setup
+  and set **Pictures in mail** to *Ask first*. Sorting still fetches nothing.
+
+### Fixed
+
+- **A broadband order is not a job offer.** An unsure guess about mail a
+  machine sent was final, so orders, bank notices and promotions were shown as
+  offers and interviews to answer today. They are now filed as what they are.
+- **Fixes reach the mail you already have.** After an update that changes the
+  rules, everything is sorted again once, and the application cards are rebuilt.
+  Your own corrections are kept.
+- **Job digests stay job alerts**, whatever the adverts in them say.
+- **Recommendation and digest mailers are not "personal mail".**
+- **Mail that came out empty or as code is readable.** Messages whose HTML
+  never closed its header were blank; others showed tags, `&amp;` and
+  `%placeholders%`, or one tracking link over and over.
+- **Opening Bmail after an update is quick.** Re-reading stored text took nine
+  minutes on a large mailbox, and started over if Bmail was closed first. It
+  now takes seconds.
+- **The installer and uninstaller carry Bmail's mark** on Windows, as does the
+  engine in Task Manager.
+
 ## 0.2.1
 
 0.2.0 with a new mark, and quick on Windows. Coming from 0.1.0? Everything

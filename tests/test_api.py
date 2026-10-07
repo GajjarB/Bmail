@@ -618,3 +618,138 @@ def test_the_engine_asks_for_the_same_port_every_start(tmp_path, monkeypatch):
     for server, running in ((first, app), (second, other)):
         server.server_close()
         running.shutdown()
+
+
+def test_after_an_update_changes_the_rules_everything_is_sorted_again_once(live, tmp_path):
+    """Mail an older version sorted kept that version's answers: a broadband
+    order stayed a job offer through every update, because sorting only ever
+    looked at mail it had not seen. Nobody presses "re-sort" after updating."""
+    base, app, config, _ = live
+    conn = connect(config.database)
+    total = conn.execute("SELECT count(*) FROM verdicts").fetchone()[0]
+    wrong, corrected = [row[0] for row in conn.execute(
+        "SELECT message_id FROM verdicts WHERE stage = 'rules' AND category != 'offer' "
+        "ORDER BY message_id LIMIT 2")]
+    # What an earlier release left behind: its answers, and no record of the rules.
+    conn.execute("UPDATE verdicts SET category = 'offer', action_required = 1 "
+                 "WHERE message_id = ?", (wrong,))
+    repo.correct_verdict(conn, corrected, "job-seeker", "personal")
+    conn.execute("DELETE FROM meta WHERE key LIKE 'triage_version:%'")
+    conn.commit()
+    conn.close()
+
+    mbox, _ = write_mbox(tmp_path / "more", applications=1, noise=1, seed=7)
+    started = request(base, "/api/ingest", token=app.token, method="POST",
+                      body={"path": str(mbox), "account": "second", "no_llm": True})[1]
+    result = _await_job(base, app, started["id"])["result"]
+    assert result["sorted"] >= total, "the stored mail was sorted again, not only the new"
+    assert any("sorted again" in note for note in result["triage"]["notes"])
+
+    conn = connect(config.database)
+    categories = dict(conn.execute("SELECT message_id, category FROM verdicts"))
+    conn.close()
+    assert categories[wrong] != "offer"
+    assert categories[corrected] == "personal", "an answer a person gave is kept"
+
+    # Once: the next check for mail sorts only what is new.
+    again = request(base, "/api/ingest", token=app.token, method="POST",
+                    body={"path": str(mbox), "account": "second", "no_llm": True})[1]
+    assert _await_job(base, app, again["id"])["result"]["sorted"] == 0
+
+
+def test_a_message_as_sent_is_served_under_its_own_policy(live):
+    """Someone else's HTML is the one thing here that is not Bmail's own page.
+    It is served sandboxed, with no scripts and no remote content, and it is
+    the only response that may be shown in a frame at all."""
+    from email.message import EmailMessage
+
+    from bmail.ingest.raw import parse_message
+
+    base, app, config, _ = live
+    mail = EmailMessage()
+    mail["From"], mail["To"] = "Shop <news@shop.example>", "you@example.com"
+    mail["Subject"], mail["Message-ID"] = "Laid out", "<served@shop.example>"
+    mail.set_content("Hello")
+    mail.add_alternative("<html><body><h1>Hello</h1><script>x()</script>"
+                         "<img src='https://t.shop.example/o.gif'></body></html>", subtype="html")
+    conn = connect(config.database)
+    repo.bulk_upsert(conn, [parse_message(bytes(mail))])
+    conn.commit()
+    conn.close()
+
+    def ticket(message_id="<served@shop.example>", **extra):
+        return request(base, "/api/view", token=app.token, method="POST",
+                       body={"message_id": message_id, **extra})[1]["url"]
+
+    def fetch(url):
+        with urllib.request.urlopen(base + url, timeout=15) as response:
+            return response.headers, response.read().decode()
+
+    url = ticket()
+    assert app.token not in url, "the session key is never part of an address a message can see"
+    headers, page = fetch(url)
+    policy = headers["Content-Security-Policy"]
+    assert headers["Content-Type"].startswith("text/html")
+    assert policy.startswith("sandbox allow-same-origin;") and "allow-scripts" not in policy
+    assert "default-src 'none'" in policy and "frame-ancestors 'self'" in policy
+    assert "https:" not in policy
+    assert headers["Referrer-Policy"] == "no-referrer"
+    assert "<h1>Hello</h1>" in page and "<script" not in page
+
+    # Once. An address that leaked is an address already used.
+    with pytest.raises(urllib.error.HTTPError) as spent:
+        fetch(url)
+    assert spent.value.code == 404
+    with pytest.raises(urllib.error.HTTPError) as invented:
+        fetch("/api/view/not-a-ticket")
+    assert invented.value.code == 404
+
+    headers, _page = fetch(ticket(pictures=True))
+    assert "img-src data: https:;" in headers["Content-Security-Policy"]
+
+    with pytest.raises(urllib.error.HTTPError) as absent:
+        fetch(ticket("<nobody@example.com>"))
+    assert absent.value.code == 404
+
+    # Every other response still refuses to be framed.
+    with urllib.request.urlopen(f"{base}/api/health", timeout=15) as response:
+        assert "frame-ancestors 'none'" in response.headers["Content-Security-Policy"]
+
+
+def test_a_ticket_does_not_outlive_its_minute(live, monkeypatch):
+    import bmail.api as api
+
+    base, app, _config, _ = live
+    monkeypatch.setattr(api, "TICKET_SECONDS", -1.0)
+    url = request(base, "/api/view", token=app.token, method="POST",
+                  body={"message_id": "<anything@example.com>"})[1]["url"]
+    with pytest.raises(urllib.error.HTTPError) as late:
+        urllib.request.urlopen(base + url, timeout=15)
+    assert late.value.code == 404
+
+
+def test_a_link_from_a_message_opens_in_the_persons_own_browser(live, monkeypatch):
+    """A message cannot open a window, and the desktop shell has no address
+    bar. The page asks the engine, and the engine opens only what a browser
+    or a mail program opens."""
+    import webbrowser
+
+    base, app, _config, _ = live
+    opened: list[str] = []
+    monkeypatch.setattr(webbrowser, "open", lambda url, *a, **k: opened.append(url) or True)
+
+    def ask(url):
+        return request(base, "/api/open", token=app.token, method="POST", body={"url": url})
+
+    assert ask("https://jobs.example/view/1?ref=mail&x=2")[1] == {"ok": True}
+    assert ask("mailto:nina@tessera.example")[1] == {"ok": True}
+    assert opened == ["https://jobs.example/view/1?ref=mail&x=2", "mailto:nina@tessera.example"]
+
+    for refused in ("file:///C:/Windows/System32/calc.exe", "javascript:alert(1)",
+                    'https://a.example/"&calc', "https://a.example/`x`",
+                    "mailto:a@b.example?subject=x&attach=C:/secret.txt",
+                    "C:\\\\Windows\\\\notepad.exe", "ms-settings:privacy", "", "https://a.example/ b"):
+        with pytest.raises(urllib.error.HTTPError) as error:
+            ask(refused)
+        assert error.value.code == 400, refused
+    assert len(opened) == 2

@@ -50,6 +50,9 @@ class RulesEngine:
         self.recipe_dir = recipe_dir
         self.dedupe_radius = dedupe_radius
         self._seen: dict[int, tuple[str, Verdict]] = {}  # simhash -> first (id, verdict) this run
+        # When set, a stored verdict older than this is not copied by a repeat:
+        # see Pipeline.triage(fresh=True).
+        self.trust_since: str | None = None
 
     # -- main entry point ---------------------------------------------------- #
 
@@ -67,7 +70,7 @@ class RulesEngine:
             # A job board's mailing has the same unsubscribe footer as any
             # newsletter; what it carries is jobs.
             if (verdict.category == "newsletter" and "job_alert" in self.pack.categories
-                    and self._is_job_board_mail(message)):
+                    and self.is_job_board_mail(message)):
                 verdict.category = "job_alert"
                 verdict.reasons.append("a job board's mailing: filed with job alerts")
             result.template = template
@@ -93,7 +96,7 @@ class RulesEngine:
             result.resolved = True
         elif self._is_bulk(headers, contacts):
             verdict.lane = Lane.bulk
-            verdict.category = self._bulk_category(message, headers)
+            verdict.category = self.category_for_machine_mail(message, headers)
             verdict.confidence = round(0.6 + 0.4 * headers.score, 2)
             verdict.summary = _first_line(message)
             verdict.reasons.extend(headers.reasons)
@@ -154,7 +157,7 @@ class RulesEngine:
     _JOB_BOARDS = (
         "indeed.com", "indeedemail.com", "stepstone.de", "stepstone.com", "glassdoor.com",
         "glassdoor.de", "monster.de", "monster.com", "jobware.de", "kimeta.de",
-        "jobs2web.com", "join.com", "arbeitsagentur.de", "jobs.ch", "karriere.at",
+        "jobs2web.com", "arbeitsagentur.de", "jobs.ch", "karriere.at",
     )
     # These also send posts, people and events: only their job mail is an alert.
     _SOCIAL_BOARDS = ("linkedin.com", "xing.com")
@@ -168,7 +171,7 @@ class RulesEngine:
     )
 
     @classmethod
-    def _is_job_board_mail(cls, message: Message) -> bool:
+    def is_job_board_mail(cls, message: Message) -> bool:
         domain = message.sender_domain
         if any(domain == board or domain.endswith(f".{board}") for board in cls._JOB_BOARDS):
             return True
@@ -177,14 +180,17 @@ class RulesEngine:
             return "job" in message.from_.address.lower()
         return bool(cls._JOB_SUBJECT.search(message.subject))
 
-    def _bulk_category(self, message: Message, headers: HeaderSignals) -> str:
-        """Give bulk mail the most specific category the pack actually declares."""
+    def category_for_machine_mail(self, message: Message, headers: HeaderSignals) -> str:
+        """Give mail a machine sent the most specific category the pack declares."""
         preferences: list[str] = []
-        if self._is_job_board_mail(message):
+        if self.is_job_board_mail(message):
             preferences.append("job_alert")
         if headers.is_list:
             preferences.append("newsletter")
         if headers.is_automated or headers.is_noreply:
+            preferences.append("admin")
+        if headers.is_system and not headers.is_bulk:
+            # service@, billing@, orders@: a shop or a bank about your account.
             preferences.append("admin")
         preferences.extend(("newsletter", "admin", "other"))
         for candidate in preferences:
@@ -206,9 +212,10 @@ class RulesEngine:
             SELECT m.message_id, m.simhash FROM messages m
             JOIN verdicts v ON v.message_id = m.message_id AND v.pack = ?
             WHERE m.message_id != ? AND m.simhash != 0 AND m.from_domain = ?
+              AND (v.stage = 'manual' OR v.created_at >= ?)
             ORDER BY m.date_utc DESC LIMIT 200
             """,
-            (self.pack.name, message.message_id, message.sender_domain),
+            (self.pack.name, message.message_id, message.sender_domain, self.trust_since or ""),
         ).fetchall()
         for candidate in row:
             if hamming(candidate["simhash"], fingerprint) <= self.dedupe_radius:

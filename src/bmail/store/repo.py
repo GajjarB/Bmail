@@ -17,6 +17,7 @@ from bmail.models import (
     Message,
     Verdict,
 )
+from bmail.text import original
 from bmail.text.simhash import simhash
 
 # --------------------------------------------------------------------------- #
@@ -149,7 +150,17 @@ def upsert_message(conn: sqlite3.Connection, message: Message) -> bool:
         "body_raw_text = excluded.body_raw_text",
         (message.message_id, message.body_text, message.body_raw_text),
     )
-    conn.execute("DELETE FROM messages_fts WHERE message_id = ?", (message.message_id,))
+    stored = original.pack(message.body_html)
+    if stored is not None:
+        conn.execute(
+            "INSERT INTO originals(message_id, html) VALUES (?,?) "
+            "ON CONFLICT(message_id) DO UPDATE SET html = excluded.html",
+            (message.message_id, stored),
+        )
+    if existing is not None:
+        # Only a message seen before can have a row to replace, and finding it
+        # reads the whole index: skipped for new mail, which is nearly all of it.
+        conn.execute("DELETE FROM messages_fts WHERE message_id = ?", (message.message_id,))
     conn.execute(
         "INSERT INTO messages_fts(message_id, subject, body) VALUES (?,?,?)",
         (message.message_id, message.subject, message.body_text),
@@ -831,6 +842,12 @@ def _is_fts_syntax_error(exc: sqlite3.OperationalError) -> bool:
     return any(hint in str(exc).lower() for hint in _FTS_SYNTAX_HINTS)
 
 
+def get_original(conn: sqlite3.Connection, message_id: str) -> str | None:
+    """The HTML a message was sent as, or None when it was not kept."""
+    row = conn.execute("SELECT html FROM originals WHERE message_id = ?", (message_id,)).fetchone()
+    return original.unpack(row["html"]) if row else None
+
+
 def message_detail(conn: sqlite3.Connection, message_id: str, pack: str) -> dict[str, Any] | None:
     """One message with its body, verdict and owning case — the detail pane."""
     row = conn.execute(
@@ -841,6 +858,7 @@ def message_detail(conn: sqlite3.Connection, message_id: str, pack: str) -> dict
     if row is None:
         return None
     message = row_to_message(row, row)
+    html = get_original(conn, message_id)
     verdict = get_verdict(conn, message_id, pack)
     case = find_case_by_message(conn, pack, message_id)
     return {
@@ -856,6 +874,10 @@ def message_detail(conn: sqlite3.Connection, message_id: str, pack: str) -> dict
             "provider": message.provider,
             "has_html": message.has_html,
             "attachments": [a.model_dump() for a in message.attachments],
+            # Whether the reader can show it as it was laid out, and whether
+            # doing that fully would fetch pictures from the sender.
+            "original": None if html is None else {
+                "remote_pictures": original.has_remote_pictures(html)},
             "body_text": message.body_text,
             # Everything the cleaning set aside (quoted replies, signature,
             # footer), for the reader who wants it; absent when nothing was.

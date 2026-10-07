@@ -71,6 +71,14 @@ def engine_path(triple: str) -> Path:
     return ENGINE / ("bmail.exe" if "windows" in triple else "bmail")
 
 
+def icon_arguments(triple: str) -> list[str]:
+    """The engine has no window, but Windows still draws its icon in Task
+    Manager and in any prompt about it. Unset, that is the freezer's own."""
+    if "windows" not in triple:
+        return []
+    return ["--icon", str(ENGINE.parent / "icons" / "icon.ico")]
+
+
 def build(triple: str) -> Path:
     dist = WORK / "dist"
     command = [
@@ -82,6 +90,7 @@ def build(triple: str) -> Path:
         # Connectors and stages are imported lazily, by name, at run time.
         "--collect-submodules", "bmail",
         "--copy-metadata", "bmail",
+        *icon_arguments(triple),
     ]
     for module in EXCLUDE:
         command += ["--exclude-module", module]

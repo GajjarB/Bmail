@@ -560,6 +560,7 @@ class GraphSource:
             headers=headers,
             body_text=body_clean,
             body_raw_text=body_raw,
+            body_html=content if is_html else "",
         )
 
     # -- write-back ---------------------------------------------------------------- #

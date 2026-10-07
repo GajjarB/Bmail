@@ -378,3 +378,87 @@ def test_the_summary_skips_a_member_number_and_a_bare_link():
     message = parse_message(make_raw(body="1234567890123456789\nshop.example/...\n"
                                       "Autumn surprises are waiting for you in store."))
     assert _first_line(message).startswith("Autumn surprises")
+
+
+def test_mail_a_sending_service_delivers_is_not_from_a_person():
+    """A recommendations mailer with no list header and an ordinary-looking
+    address scored 0.0, "clearly a person", and its ninety-seven mails were
+    shown as personal mail to answer. The envelope says who really sent it."""
+    relayed = parse_message(make_raw(
+        sender="recommendations@discover.pins.example", sender_name="Pins",
+        extra={"Return-Path": "<bounce+90a8d5.56089b-you=example.com@discover.pins.example>"}))
+    signals = header_signals(relayed)
+    assert signals.is_relayed and signals.machine
+    assert signals.score == 0.0, "relayed is not bulk: an applicant system relays a recruiter too"
+
+    serial = parse_message(make_raw(
+        sender="cloud@vendor.example",
+        extra={"Return-Path": "<808-GJW-314.0.3103398.0.0.1048067.9.40144490-28@em.vendor.example>"}))
+    assert header_signals(serial).machine
+
+    service = parse_message(make_raw(sender="yo@digest.example", extra={"X-SG-EID": "u001.abc"}))
+    assert header_signals(service).machine
+
+
+def test_a_persons_own_mail_is_never_called_relayed():
+    own = parse_message(make_raw(sender="jonas@gmx.de", extra={"Return-Path": "<jonas@gmx.de>"}))
+    assert not header_signals(own).machine
+    # A forwarder or a spam filter rewrites a person's envelope address.
+    for path in ("<SRS0=HHH=TT=gmx.de=jonas.weber@forward.example>",
+                 "<prvs=0123456789=jonas@firma.example>"):
+        forwarded = parse_message(make_raw(sender="jonas@gmx.de", extra={"Return-Path": path}))
+        assert not header_signals(forwarded).machine, path
+    # A host answering through the booking platform is still a person answering.
+    reply = parse_message(make_raw(
+        subject="RE: Reservation for the old town studio", sender="express@stays.example",
+        extra={"Return-Path": "<bounces+60338058-5edf-you=example.com@em.stays.example>"}))
+    assert not header_signals(reply).machine
+
+
+def test_a_job_digest_is_an_alert_whatever_the_adverts_in_it_say(conn):
+    """A digest quotes thirty adverts. One said "Online-Test", another "bitte
+    senden Sie Ihre Unterlagen", and the digest was filed as an assessment and
+    as a request for documents, both to be done this week."""
+    message = parse_message(make_raw(
+        subject="30 Jobs in Neu-Ulm, Bayern",
+        sender="donotreply@jobalert.indeed.com", sender_name="Indeed",
+        body=("Indeed Job-E-Mail\n30 Jobs in Neu-Ulm, Bayern\n\n"
+              "Kommissionierer (m/w/d)\nNach Ihrer Bewerbung erhalten Sie einen Online-Test.\n\n"
+              "Sachbearbeiter (m/w/d)\nBitte senden Sie Ihre Unterlagen an unsere Personalabteilung.\n\n"
+              "Werkstudent (m/w/d)\nWe would like to invite you to an interview."),
+        message_id="<digest@jobalert.indeed.com>"))
+    result = RulesEngine(load_pack("job-seeker")).run(conn, message)
+    assert result.resolved and result.verdict.category == "job_alert"
+    assert not result.verdict.action_required
+
+    # The same board writing about an application of yours is not a digest.
+    update = parse_message(make_raw(
+        subject="Neuigkeiten zu Ihrer Bewerbung", sender="noreply@indeed.com",
+        body="Vielen Dank für Ihre Bewerbung. Wir haben Ihre Unterlagen erhalten.",
+        message_id="<update@indeed.com>"))
+    assert RulesEngine(load_pack("job-seeker")).run(conn, update).verdict.category == "acknowledgement"
+
+
+def test_sorting_everything_again_does_not_copy_the_answers_it_replaces(conn):
+    """A repeat inherits the verdict of what it repeats, from the store too.
+    Sorting the whole store again, the store still held the old answers, so
+    every repeat copied the very mistake the new rules had fixed."""
+    from bmail.models import Verdict
+    from bmail.pipeline import Pipeline
+
+    pack = load_pack("job-seeker")
+    body = ("Indeed Job-E-Mail\n30 Jobs in Neu-Ulm\n\nKommissionierer (m/w/d)\n"
+            "Nach Ihrer Bewerbung erhalten Sie einen Online-Test.")
+    first, repeat = (parse_message(make_raw(
+        subject="30 Jobs in Neu-Ulm", sender="info@jobs.board.example", body=body,
+        date=f"Mon, {day} Sep 2026 10:00:00 +0200", message_id=f"<digest-{day}@board.example>"))
+        for day in (14, 21))
+    repo.bulk_upsert(conn, [first, repeat])
+    # What an older version decided for the later one, with full confidence.
+    repo.save_verdict(conn, Verdict(message_id=repeat.message_id, pack=pack.name,
+                                    category="offer", confidence=0.95, action_required=True))
+    conn.commit()
+
+    Pipeline(pack, use_llm=False).triage(conn, [first, repeat], fresh=True)
+    assert repo.get_verdict(conn, first.message_id, pack.name).category != "offer"
+    assert repo.get_verdict(conn, repeat.message_id, pack.name).category != "offer"

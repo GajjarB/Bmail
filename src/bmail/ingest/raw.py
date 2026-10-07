@@ -20,7 +20,8 @@ from email.message import EmailMessage
 from email.utils import getaddresses, parsedate_to_datetime
 
 from bmail.models import Attachment, Direction, EmailAddress, Message
-from bmail.text.clean import clean_body, detect_language, normalise_whitespace
+from bmail.text import original
+from bmail.text.clean import clean_body, detect_language, has_markup, normalise_whitespace
 from bmail.text.html import html_to_text, looks_like_html
 
 KEEP_HEADERS = (
@@ -67,11 +68,12 @@ def _references(msg: EmailMessage) -> list[str]:
     return [ref for ref in raw.replace(",", " ").split() if ref.startswith("<")]
 
 
-def _bodies(msg: EmailMessage) -> tuple[str, bool, list[Attachment]]:
-    """Return (plain text, had_html, attachments)."""
+def _bodies(msg: EmailMessage) -> tuple[str, bool, list[Attachment], str]:
+    """Return (plain text, had_html, attachments, the HTML as it was sent)."""
     plain_parts: list[str] = []
     html_parts: list[str] = []
     attachments: list[Attachment] = []
+    pictures: dict[str, tuple[str, bytes]] = {}   # Content-ID -> (type, bytes)
 
     for part in msg.walk():
         if part.is_multipart():
@@ -79,6 +81,11 @@ def _bodies(msg: EmailMessage) -> tuple[str, bool, list[Attachment]]:
         content_type = part.get_content_type()
         disposition = (part.get_content_disposition() or "").lower()
         filename = _decode(part.get_filename())
+        content_id = str(part.get("Content-ID") or "").strip().strip("<>").lower()
+        if content_id and content_type.startswith("image/"):
+            data = part.get_payload(decode=True) or b""
+            if len(data) <= original.MAX_INLINE_IMAGE_BYTES:
+                pictures[content_id] = (content_type, data)
         if disposition == "attachment" or (filename and content_type not in ("text/plain",)):
             payload = part.get_payload(decode=True) or b""
             attachments.append(
@@ -106,9 +113,11 @@ def _bodies(msg: EmailMessage) -> tuple[str, bool, list[Attachment]]:
 
     plain = "\n\n".join(plain_parts)
     if not html_parts:
-        return plain, False, attachments
+        return plain, False, attachments, ""
     html = html_to_text("\n".join(html_parts))
-    return (html if _html_says_more(plain, html) else plain), True, attachments
+    text = html if _html_says_more(plain, html) else plain
+    source = original.inline_images(chr(10).join(html_parts), pictures)
+    return text, True, attachments, source
 
 
 def decode_payload(payload: bytes, charset: str | None) -> str:
@@ -163,8 +172,8 @@ def _html_says_more(plain: str, html: str) -> bool:
     The plain part wins when it is a real rendering of the mail: it is what
     the sender chose to write as text. It loses when it is missing, when it is
     a stub pointing at the HTML ("view this email in your browser"), when it is
-    machine-made and shows it (a stylesheet, or more tracking links than
-    words), or when it leaves out much of what the HTML says. An HTML part with
+    machine-made and shows it (a stylesheet, HTML tags, or more tracking links
+    than words), or when it leaves out much of what the HTML says. An HTML part with
     almost nothing to read never wins.
 
     Words, not characters, are compared: three tracking links make a plain part
@@ -180,7 +189,7 @@ def _html_says_more(plain: str, html: str) -> bool:
     html_words = _words(html)
     if html_words < 8:
         return False
-    if _CSS_IN_PLAIN.search(plain):
+    if _CSS_IN_PLAIN.search(plain) or has_markup(plain):
         return True
     plain_words = _words(plain)
     if _link_share(plain) > 0.35 and html_words * 1.6 >= plain_words:
@@ -212,7 +221,7 @@ def parse_message(
         raw = raw.encode("utf-8", errors="replace")
     msg: EmailMessage = email.message_from_bytes(raw, policy=email.policy.default)  # type: ignore[assignment]
 
-    body_raw, has_html, attachments = _bodies(msg)
+    body_raw, has_html, attachments, body_html = _bodies(msg)
     body_raw = normalise_whitespace(body_raw)
     body_clean = clean_body(body_raw)
     subject = _decode(msg.get("Subject"))
@@ -272,4 +281,5 @@ def parse_message(
         headers=headers,
         body_text=body_clean,
         body_raw_text=body_raw,
+        body_html=body_html,
     )

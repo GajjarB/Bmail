@@ -1,6 +1,18 @@
 # Bulk and housekeeping mail. These exist so obviously-uninteresting messages
 # never reach the classifier, let alone a model.
 
+- id: job-board-digest
+  vendor: generic
+  description: >-
+    A job board's alert mailbox. A digest quotes thirty job adverts, and between
+    them they contain every phrase an outcome recipe listens for ("Online-Test",
+    "bitte senden Sie Ihre Unterlagen", "we would like to invite you"). Whatever
+    it quotes, mail from the alert mailbox is an alert, so this outranks them all.
+  category: job_alert
+  priority: 96
+  match:
+    from_addr_regex: 'job-?alerts?|jobagent|jobs-listings|^alerts?@.*(?:job|career|karriere)|@alerts?\..*(?:job|career|karriere)'
+
 # Mail that talks about an application or an interview is never housekeeping,
 # whatever else it says: these recipes stand aside for it.
 - id: security-notice

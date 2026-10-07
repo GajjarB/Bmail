@@ -473,3 +473,181 @@ def test_a_repeat_still_inherits_a_human_correction(conn, pack):
     conn.commit()
     Pipeline(pack, classifier=Classifier(pack), use_llm=False).triage(conn, [repeat])
     assert repo.get_verdict(conn, repeat.message_id, pack.name).category == "other"
+
+
+class _Guess:
+    """A classifier that is unsure, and says the same thing about everything."""
+
+    accept_threshold = 0.72
+
+    def __init__(self, pack, category: str, probability: float = 0.2) -> None:
+        self.pack, self.category, self.probability = pack, category, probability
+
+    def run(self, message, verdict):
+        from bmail.classify.stage2 import Stage2Result
+        from bmail.models import Stage
+
+        spec = self.pack.spec(self.category)
+        verdict.category, verdict.confidence = self.category, self.probability
+        verdict.stage = Stage.classifier
+        verdict.action_required, verdict.urgency = spec.action_required, spec.urgency
+        verdict.next_action = spec.next_action
+        return Stage2Result(verdict, escalate=True, reason="unsure")
+
+    def train(self, conn):
+        return {"trained": False}
+
+
+def _sorted_with_a_guess(conn, pack, message, category="offer", probability=0.2):
+    repo.bulk_upsert(conn, [message])
+    Pipeline(pack, classifier=_Guess(pack, category, probability), use_llm=False).triage(conn, [message])
+    return repo.get_verdict(conn, message.message_id, pack.name)
+
+
+def test_an_unsure_guess_does_not_turn_a_machines_mail_into_an_offer(conn, pack):
+    """With no local model a guess at p=0.2 was final. A freelance platform's
+    welcome series, a bank notice and a broadband order were each shown as a
+    job offer to answer today."""
+    promo = parse_message(make_raw(
+        subject="Supercharge your business with Platform Pro",
+        sender="hello@platform.example", sender_name="Platform",
+        body="Do more with Platform Pro. Find your next job, send proposals and get hired faster.",
+        extra={"X-Mailer": "Customer.io (abc; +https://whatis.customeriomail.com)"},
+        message_id="<promo@platform.example>"))
+    verdict = _sorted_with_a_guess(conn, pack, promo)
+    assert verdict.category == "newsletter"
+    assert not verdict.action_required
+    assert verdict.needs_review, "still in the review queue, so a correction can teach"
+
+
+def test_an_unsure_guess_about_a_persons_job_mail_still_stands(conn, pack):
+    """The other half of the rule: a false alarm costs three seconds, a missed
+    offer costs the job. A person writing about a position keeps the guess."""
+    person = parse_message(make_raw(
+        subject="Your application - next steps", sender="nina.hartmann@tessera.example",
+        sender_name="Nina Hartmann",
+        body="Dear Alex, the team enjoyed meeting you. I will send the paperwork for the position.",
+        message_id="<nina@tessera.example>"))
+    verdict = _sorted_with_a_guess(conn, pack, person)
+    assert verdict.category == "offer" and verdict.action_required
+
+    # An applicant system relays the same words from a no-reply address.
+    relayed = parse_message(make_raw(
+        subject="Your application - next steps", sender="no-reply@us.greenhouse-mail.io",
+        sender_name="Tessera",
+        body="Dear Alex, the team enjoyed meeting you. We will send the paperwork for the position.",
+        message_id="<ats@greenhouse.example>"))
+    assert _sorted_with_a_guess(conn, pack, relayed).category == "offer"
+
+
+def test_a_confident_reading_of_machine_mail_is_not_second_guessed(conn, pack):
+    machine = parse_message(make_raw(
+        subject="Your coding test for the Backend Engineer position",
+        sender="noreply@tests.example", sender_name="Tests",
+        body="Please complete the test for the Backend Engineer position by Friday.",
+        message_id="<test@tests.example>"))
+    verdict = _sorted_with_a_guess(conn, pack, machine, category="assessment", probability=0.9)
+    assert verdict.category == "assessment" and verdict.action_required
+
+
+def test_relayed_recommendations_are_not_personal_mail(conn, pack):
+    """Ninety-seven "ideas for you" mails had no list header and a sender that
+    looked like a mailbox, so an unsure guess about them was "shown, not
+    filed" as personal mail waiting for a reply."""
+    message = parse_message(make_raw(
+        subject="App Dashboard UI mood", sender="recommendations@discover.pins.example",
+        sender_name="Pins", body="Ideas picked for you. Appointment UI, Cycle Calendar Screen.",
+        extra={"Return-Path": "<bounce+90a8d5.56089b-you=example.com@discover.pins.example>"},
+        message_id="<pins@pins.example>"))
+    repo.bulk_upsert(conn, [message])
+    Pipeline(pack, classifier=Classifier(pack), use_llm=False).triage(conn, [message])
+    verdict = repo.get_verdict(conn, message.message_id, pack.name)
+    assert verdict.category != "personal" and not verdict.action_required
+
+
+def test_the_first_sort_records_which_rules_gave_the_answers(conn, pack):
+    from bmail.pipeline import sorted_by_older_rules
+
+    message = _coffee()
+    repo.bulk_upsert(conn, [message])
+    assert not sorted_by_older_rules(conn, pack.name), "nothing sorted yet: nothing is out of date"
+    Pipeline(pack, classifier=Classifier(pack), use_llm=False).triage(conn, [message])
+    assert not sorted_by_older_rules(conn, pack.name)
+
+    # As a store sorted by an earlier release looks: answers, and no record.
+    conn.execute("DELETE FROM meta WHERE key LIKE 'triage_version:%'")
+    conn.commit()
+    assert sorted_by_older_rules(conn, pack.name)
+    Pipeline(pack, classifier=Classifier(pack), use_llm=False).triage(conn, [message], fresh=True)
+    assert not sorted_by_older_rules(conn, pack.name)
+
+
+def test_a_recruiters_note_through_an_unlisted_system_keeps_its_guess(conn, pack):
+    """An applicant system nobody has listed delivers through a sending
+    service and puts "unsubscribe" under the note. Neither makes it a mailing:
+    a digest has that footer under a page of links."""
+    note = parse_message(make_raw(
+        subject="Next step for the Backend Engineer position",
+        sender="talent@hiring-suite.example", sender_name="Tessera Talent",
+        body=("Dear Alex, the team enjoyed meeting you and would like to continue with you "
+              "for the Backend Engineer position.\n\nNina\n\nUnsubscribe from these emails"),
+        extra={"X-SES-Outgoing": "2026.08.05-54.240.8.43",
+               "Return-Path": "<bounces+11829549-456e-you=example.com@em.hiring-suite.example>"},
+        message_id="<note@hiring-suite.example>"))
+    verdict = _sorted_with_a_guess(conn, pack, note, category="interview_invite")
+    assert verdict.category == "interview_invite" and verdict.action_required
+
+    links = "\n".join(f"Read more: https://digest.example/posts/{n}" for n in range(8))
+    digest = parse_message(make_raw(
+        subject="This week: how I passed my interview", sender="yo@digest.example",
+        sender_name="Community Digest",
+        body=f"Top posts about your career this week.\n{links}\n\nUnsubscribe from this digest",
+        extra={"X-SG-EID": "u001.abc"}, message_id="<digest@digest.example>"))
+    verdict = _sorted_with_a_guess(conn, pack, digest, category="interview_invite")
+    assert verdict.category == "newsletter" and not verdict.action_required
+
+
+def test_a_reading_the_local_model_gave_is_not_replaced_by_a_guess(conn, pack):
+    """Sorting everything again after an update runs with whatever model is
+    there now. Mail the model read last month must not fall back to a guess
+    because the model is switched off today."""
+    from bmail.models import Stage
+
+    message = _coffee()
+    repo.bulk_upsert(conn, [message])
+    read = Verdict(message_id=message.message_id, pack=pack.name, category="scheduling",
+                   confidence=0.9, stage=Stage.llm, action_required=True)
+    repo.save_verdict(conn, read)
+    conn.commit()
+    Pipeline(pack, classifier=Classifier(pack), use_llm=False).triage(conn, [message], fresh=True)
+    kept = repo.get_verdict(conn, message.message_id, pack.name)
+    assert kept.category == "scheduling" and kept.stage is Stage.llm
+
+
+def test_sorting_everything_again_rebuilds_the_application_cards(conn, pack):
+    """A card only moves forward. One opened by a job digest misread as an
+    assessment stayed "Indeed, assessment" through every later sort, with
+    each new digest filed under it as part of that application."""
+    from bmail.models import Case
+
+    digest = parse_message(make_raw(
+        subject="30 Jobs in Neu-Ulm, Bayern", sender="donotreply@jobalert.indeed.com",
+        sender_name="Indeed", body="Indeed Job-E-Mail\n30 Jobs in Neu-Ulm\nKommissionierer (m/w/d)",
+        message_id="<digest@jobalert.indeed.com>"))
+    real = parse_message(make_raw(
+        subject="Your application for Backend Engineer",
+        sender="jobs@tessera.example", sender_name="Tessera",
+        body="Thank you for your application for the Backend Engineer position. "
+             "We have received your application and will review it.",
+        message_id="<ack@tessera.example>"))
+    repo.bulk_upsert(conn, [digest, real])
+    # What an older version left behind: a card for the job board itself.
+    stale = repo.save_case(conn, Case(pack=pack.name, key="indeed|", title="Indeed", org="Indeed",
+                                      state="assessment", opened_at=digest.date))
+    repo.link_message(conn, stale.id, digest.message_id)
+    conn.commit()
+
+    Pipeline(pack, classifier=Classifier(pack), use_llm=False).triage(conn, [digest, real], fresh=True)
+    cases = repo.list_cases(conn, pack.name)
+    assert [case.org for case in cases] == ["Tessera"], [(c.org, c.state) for c in cases]
+    assert repo.find_case_by_message(conn, pack.name, digest.message_id) is None

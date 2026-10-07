@@ -244,7 +244,7 @@ def cmd_triage(args: argparse.Namespace) -> int:
         if index == total:
             sys.stderr.write("\n")
 
-    stats = pipeline.triage(conn, messages, progress=progress)
+    stats = pipeline.triage(conn, messages, progress=progress, fresh=args.all and not args.limit and not args.days)
     _out("")
     _out(f"processed {stats.processed}")
     _out(f"  by stage    {dict(stats.by_stage)}")

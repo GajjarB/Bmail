@@ -1490,7 +1490,7 @@ table.calendar { width: 100%; border-collapse: collapse; table-layout: fixed; te
 }
 .row.mail-card .tag { align-self: flex-start; margin-top: 6px; }
 
-.reader { min-width: 0; overflow: auto; padding: var(--s5) var(--s6) var(--s7); }
+.reader { --reader-pad: var(--s6); min-width: 0; overflow: auto; padding: var(--s5) var(--reader-pad) var(--s7); }
 .reader-subject { font: 650 20px/28px var(--sans); letter-spacing: -.01em; margin: 0 0 var(--s4); max-width: 760px; }
 .reader-meta { display: flex; align-items: center; gap: 12px; max-width: 760px; padding-bottom: var(--s4); margin-bottom: var(--s4); border-bottom: 1px solid var(--line-soft); }
 .reader-who { display: flex; flex-direction: column; min-width: 0; flex: 1; }
@@ -1498,6 +1498,23 @@ table.calendar { width: 100%; border-collapse: collapse; table-layout: fixed; te
 .reader-address { font-size: var(--t-small); color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .reader-when { font-size: var(--t-small); color: var(--ink-3); white-space: nowrap; }
 .reader .body-text { max-width: 760px; font-size: var(--t-body); line-height: 22px; background: transparent; padding: 0; color: var(--ink); border: 0; }
+/* A message as it was sent sits on paper whatever the app's colours are: mail
+   is written for a white page and says so nowhere. The frame scrolls itself;
+   the app cannot see inside it to size it, which is the point of the frame. */
+.reader-view { display: flex; align-items: center; gap: 12px; margin-bottom: var(--s3); }
+/* As wide as the pane, and once measured as tall as the message: it is part of
+   the page, and the page is what scrolls. Until then, and if measuring is ever
+   refused, it is a window onto the message with a scrollbar of its own. */
+.mail-frame {
+  display: block; height: calc(100vh - 270px); min-height: 320px;
+  /* Out to the edges of the pane: a designed mail is 600 to 650 wide, and the
+     pane beside a list and a sidebar has little more than that to give. */
+  width: calc(100% + 2 * var(--reader-pad)); margin: 0 calc(-1 * var(--reader-pad));
+  border: 0; background: #fff;
+}
+.mail-frame.fitted { min-height: 0; }
+.reader-note { margin: 0 0 var(--s3); font-size: var(--t-small); color: var(--ink-3); }
+.reader-note button { margin-left: 4px; }
 .reader .attachments { list-style: none; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: var(--s4); }
 .reader .attachment { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: var(--r); border: 1px solid var(--line); font-size: var(--t-small); }
 .reader-empty { display: grid; place-items: center; height: 100%; color: var(--ink-3); text-align: center; padding: var(--s6); }
@@ -1578,7 +1595,7 @@ table.calendar { width: 100%; border-collapse: collapse; table-layout: fixed; te
   .mail-col { border-right: 0; }
   .mail-scroll { overflow: visible; }
   .read-pane { overflow: visible; }
-  .reader { overflow: visible; padding: var(--s4); border-top: 1px solid var(--line); }
+  .reader { --reader-pad: var(--s4); overflow: visible; padding: var(--s4); border-top: 1px solid var(--line); }
   .reader-empty { display: none; }
 }
 @media (max-width: 720px) {

@@ -276,3 +276,45 @@ def test_a_second_document_inside_the_body_keeps_its_stylesheet_out_of_the_text(
 @pytest.mark.parametrize("line", ["Online ansehen", "Im Browser ansehen", "View online", "Webversion"])
 def test_view_it_online_lines_are_not_the_first_line(line):
     assert parse_message(_mail(plain=f"{line}\nHej Anna,\nyour order is ready.")).body_text.startswith("Hej Anna")
+
+
+# --- markup a browser forgives ------------------------------------------------ #
+# The app ships without selectolax, so the stdlib path is the one people use.
+
+SLOPPY = {
+    "a head that never ends": (
+        "<html><head><meta charset='utf-8'><title>Rate alert</title>"
+        "<body><p>Your card is ready, Alex.</p><p>Apply by Friday.</p></body></html>",
+        "Your card is ready, Alex.\n\nApply by Friday."),
+    "a head that never ends, and no body tag": (
+        "<html><head><meta charset='utf-8'><table><tr><td>Sensex up 0.5%</td></tr></table></html>",
+        "Sensex up 0.5%"),
+    "a stylesheet that never ends": (
+        "<html><head><style>p { color: red }</head><body><p>Fuel rewards on your card.</p></body></html>",
+        "Fuel rewards on your card."),
+    "a script that never ends": (
+        "<html><head><script>var a = 1;</head><body><p>Your statement is ready.</p></body></html>",
+        "Your statement is ready."),
+    "a picture element that never ends": (
+        "<html><body><p>Hello Alex,</p><svg><path d='M0 0'>"
+        "<div>your weekly summary is below.</div></body></html>",
+        "Hello Alex,\n\nyour weekly summary is below."),
+}
+
+
+@pytest.mark.parametrize("name", list(SLOPPY))
+def test_markup_that_never_closes_what_it_opens_is_still_read(name):
+    """An unclosed <head> made the whole mail "still in the head", and it came
+    out empty: sixty-five mails from one bank comparison site, fifty-eight from
+    one broker, shown as "(no text)"."""
+    markup, expected = SLOPPY[name]
+    assert html_to_text(markup) == expected
+
+
+def test_a_closed_stylesheet_is_left_exactly_as_it_was():
+    from bmail.text.html import _close_raw_text
+
+    markup = ("<html><head><style>p{color:red}</style><script>x()</script></head>"
+              "<body><p>Fine.</p><style>b{}</style></body></html>")
+    assert _close_raw_text(markup) == markup
+    assert html_to_text(markup) == "Fine."

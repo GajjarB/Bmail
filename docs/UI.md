@@ -150,6 +150,8 @@ The local server reads mail, so it is guarded on five fronts:
 | `Host` header pinned to loopback | Blocks DNS rebinding, which is how a web page reaches a localhost server |
 | `Origin` checked on every request | Blocks cross-site writes from a page you happen to have open |
 | Strict `Content-Security-Policy` | The page loads nothing from anywhere else, and says so |
+| A message as sent is served sandboxed, under its own policy, at a one-time address | Someone else's HTML can be looked at and nothing more: no script, no form, no window, and no remote content but pictures over `https` |
+| Links in a message are opened by the engine, in your browser | The frame may not open windows; only `http`, `https` and `mailto` addresses are accepted, and only on a click |
 
 The token is passed once in the URL, moved into `sessionStorage`, and stripped
 from the address bar so it does not end up in history or a screenshot.

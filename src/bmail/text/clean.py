@@ -9,10 +9,13 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from html import unescape
+
+from bmail.text.html import html_to_text, looks_like_html
 
 # Raise this whenever `clean_body` changes what it produces: the store cleans
 # every body it holds again, once, the next time it is opened.
-TEXT_VERSION = 2
+TEXT_VERSION = 3
 
 # --- quoted-reply attribution lines -------------------------------------- #
 # Matching the *attribution* line and cutting there beats matching ">" prefixes,
@@ -62,13 +65,16 @@ _WEB_VIEW = re.compile(
     r"(?:an(?:zeigen|sehen)|lesen|öffnen)(?: zu können)?"
     r"|online (?:an)?(?:sehen|zeigen|lesen|öffnen)"
     r"|web ?version|online[- ]version|webansicht)"
+    r"(?:\s*:?\s*<?https?://\S+>?)?"
     r"[^\w\n]*$",
     re.IGNORECASE | re.MULTILINE,
 )
 
 # Characters with no width that mail uses to pad preview text. U+200D is kept:
 # emoji sequences are built with it.
-_INVISIBLE = dict.fromkeys(map(ord, "\u00ad\u034f\u180e\u200b\u200c\u2060\u2061\u2062\u2063\ufeff"))
+_INVISIBLE = dict.fromkeys(map(ord, "\u00ad\u034f\u180e\u200b\u200c\u200e\u200f\u2060\u2061\u2062\u2063\ufeff"))
+# A joiner with nothing on one side joins nothing: preview padding again.
+_STRAY_JOINER = re.compile(r"(?:(?<=\s)|^)\u200d+|\u200d+(?=\s|$)", re.MULTILINE)
 
 _URL = re.compile(r"https?://\S+")
 _TRACKING_PIXEL = re.compile(r"\[image:[^\]]*\]", re.IGNORECASE)
@@ -88,6 +94,76 @@ _URL_TAIL = re.compile(r"^[\w=&%./~?#+:;@!$-]{16,}$")
 _READABLE_PATH = re.compile(r"^/?[\w./-]{0,40}$")
 _TOKEN = re.compile(r"[A-Za-z0-9_-]{20,}")
 _RULE_LINE = re.compile(r"^[-=*~#.•·]{10,}$", re.MULTILINE)
+
+
+# Markup in what was sent as plain text. Marketing systems build the plain part
+# from the HTML one and leave tags and entities in it; a few send the whole
+# HTML document labelled as text. Only names HTML has: "List<String>" and
+# "<https://a.link>" are text.
+_TAG_NAMES = (
+    r"(?:a|abbr|b|blockquote|body|br|center|code|dd|details|div|dl|dt|em|font|h[1-6]|head|hr|"
+    r"html|i|img|li|link|meta|ol|p|pre|small|span|strong|style|sub|summary|sup|table|tbody|td|"
+    r"tfoot|th|thead|title|tr|u|ul)"
+)
+_HTML_TAG = re.compile(rf"</?{_TAG_NAMES}(?:\s[^<>]{{0,2000}})?/?>", re.IGNORECASE)
+_NOT_A_TAG = re.compile(rf"<(?!/?{_TAG_NAMES}(?:\s[^<>]*)?/?>|!--)", re.IGNORECASE)
+# "&" that begins no complete entity. An HTML reader also accepts the old
+# entities without their semicolon, and so reads "?id=5&region=de" as "®ion".
+_BARE_AMPERSAND = re.compile(r"&(?!(?:[a-z]{2,8}|#\d{2,6}|#x[0-9a-f]{2,5});)", re.IGNORECASE)
+_ENTITY = re.compile(r"&(?:[a-z]{2,8}|#\d{2,6}|#x[0-9a-f]{2,5});", re.IGNORECASE)
+
+# What a mail-merge left unfilled, on a line of its own: %opentrack%,
+# {{first_name}}, *|UNSUB|*.
+_PLACEHOLDER_LINE = re.compile(
+    r"^[ \t]*(?:%[a-z_]{3,30}%|\{\{[^{}\n]{1,40}\}\}|\*\|[\w:]{2,30}\|\*)[ \t]*$",
+    re.IGNORECASE | re.MULTILINE,
+)
+# A line that is one link and nothing else.
+_LINK_LINE = re.compile(r"^\(?\s*(?:https?://)?[\w.-]+\.[a-z]{2,}(?:/\S*)?\s*\)?$", re.IGNORECASE)
+
+
+def has_markup(text: str) -> bool:
+    """Whether text sent as plain text carries HTML tags."""
+    found = 0
+    for _ in _HTML_TAG.finditer(text or ""):
+        found += 1
+        if found == 2:
+            return True
+    return False
+
+
+def strip_markup(text: str) -> str:
+    """Read HTML that arrived as plain text the way it was meant to be seen."""
+    if looks_like_html(text):
+        return html_to_text(text)
+    if has_markup(text):
+        # The line breaks are the sender's layout here, and an HTML reader
+        # ignores them; "<" that opens no tag is a character, not markup, and
+        # so is the "&" in a link.
+        text = _NOT_A_TAG.sub("&lt;", _BARE_AMPERSAND.sub("&amp;", text))
+        return html_to_text(text.replace("\n", "<br>\n"))
+    if "&" in text and _ENTITY.search(text):
+        return _ENTITY.sub(lambda match: unescape(match.group(0)), text)
+    return text
+
+
+def drop_repeated_link_lines(text: str) -> str:
+    """Remove a bare link that stands alone three times or more.
+
+    A plain part made from an image-heavy mail has one for every picture, all
+    the same tracking address: a column of "click.news.shop.com" between the
+    sentences. A link given once is something to follow and stays.
+    """
+    lines = text.split("\n")
+    counts: dict[str, int] = {}
+    for line in lines:
+        bare = line.strip()
+        if bare and _LINK_LINE.match(bare):
+            counts[bare] = counts.get(bare, 0) + 1
+    repeated = {bare for bare, count in counts.items() if count >= 3}
+    if not repeated:
+        return text
+    return "\n".join(line for line in lines if line.strip() not in repeated)
 
 
 def _is_css_line(line: str) -> bool:
@@ -149,9 +225,13 @@ def shorten_links(text: str) -> str:
         if len(url) <= 60:
             return url + trail
         rest = re.sub(r"^https?://(www\.)?", "", url)
-        host, _, path = rest.partition("/")
-        path = "/" + path.split("?")[0].split("#")[0] if path else ""
-        if path and _READABLE_PATH.match(path) and not _TOKEN.search(path):
+        # The host ends at the path, or at the query when there is no path:
+        # "shop.com?utm_campaign=..." kept all of its tracking as "the host".
+        host = re.split(r"[/?#]", rest, maxsplit=1)[0]
+        path = rest[len(host):].split("?")[0].split("#")[0]
+        if not path.strip("/"):
+            return host + trail
+        if _READABLE_PATH.match(path) and not _TOKEN.search(path):
             return f"{host}{path.rstrip('/')}" + trail
         return f"{host}/..." + trail
 
@@ -160,6 +240,8 @@ def shorten_links(text: str) -> str:
 
 def normalise_whitespace(text: str) -> str:
     text = unicodedata.normalize("NFKC", text or "").translate(_INVISIBLE)
+    if "‍" in text:
+        text = _STRAY_JOINER.sub("", text)
     text = text.replace(" ", " ").replace("\r\n", "\n").replace("\r", "\n")
     text = re.sub(r"[ \t]+", " ", text)
     text = re.sub(r" *\n *", "\n", text)
@@ -204,13 +286,16 @@ def strip_signature(text: str) -> str:
 def clean_body(text: str) -> str:
     """Full cleaning pass used by the normaliser."""
     text = normalise_whitespace(text)
+    text = normalise_whitespace(strip_markup(text))
     text = _TRACKING_PIXEL.sub(" ", text)
+    text = _PLACEHOLDER_LINE.sub("", text)
     text = strip_css(text)
     text = join_wrapped_links(text)
     text = _WEB_VIEW.sub("", text)
     text = strip_quoted(text)
     text = strip_signature(text)
     text = shorten_links(text)
+    text = drop_repeated_link_lines(text)
     text = _RULE_LINE.sub("", text)
     return normalise_whitespace(text)
 
