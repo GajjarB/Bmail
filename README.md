@@ -13,7 +13,7 @@
   <a href="https://github.com/GajjarB/Bmail/actions/workflows/tests.yml"><img src="https://github.com/GajjarB/Bmail/actions/workflows/tests.yml/badge.svg" alt="Tests"></a>
   <img src="https://img.shields.io/badge/python-3.10%20%E2%80%93%203.13-10111A" alt="Python 3.10 to 3.13">
   <img src="https://img.shields.io/badge/licence-MIT-10111A" alt="MIT licence">
-  <img src="https://img.shields.io/badge/runs-100%25%20local-1B6644" alt="Runs entirely locally">
+  <img src="https://img.shields.io/badge/mail-stays%20on%20your%20computer-1B6644" alt="Your mail stays on your computer">
   <img src="https://img.shields.io/badge/telemetry-none-1B6644" alt="No telemetry">
 </p>
 
@@ -128,9 +128,8 @@ More in [docs/PRIVACY.md](docs/PRIVACY.md).
 Installers for macOS (Apple silicon), Windows and Linux are on the
 [latest release](https://github.com/GajjarB/Bmail/releases/latest). Open the app and it
 walks you through connecting a mailbox. Nothing else to install: the engine is
-inside. From 0.2.0 it keeps itself up to date: new versions download in the
-background and install when you close it. What changed in each version:
-[CHANGELOG.md](CHANGELOG.md).
+inside. To update, download the newest installer and run it: your mail and
+settings are kept. What changed in each version: [CHANGELOG.md](CHANGELOG.md).
 
 Until the builds are signed, your system will warn you the first time. On
 macOS: System Settings → Privacy & Security → Open Anyway. On Windows: More info

@@ -20,8 +20,8 @@ will reach you privately.
 
 ## Which versions are fixed
 
-Only the newest release. The desktop app updates itself, so a fix reaches
-installed copies as soon as it is released.
+Only the newest release. Builds do not yet update themselves, so a fix reaches
+you when you install the newest release.
 
 ## What Bmail is built to protect
 

@@ -1,9 +1,9 @@
 """The release notes for one version: its section of CHANGELOG.md, and how to
 install it.
 
-The release build puts this on the release page, and the updater carries it to
-installed copies, which show it under "What's new". Writing the notes once, in
-the changelog, keeps the two from saying different things.
+The release build puts this on the release page, and a build that carries the
+updater shows it to installed copies under "What's new". Writing the notes
+once, in the changelog, keeps the two from saying different things.
 
     python packaging/release_notes.py 0.2.0
     python packaging/release_notes.py          # the version in tauri.conf.json
@@ -25,8 +25,8 @@ INSTALL = """\
 - **macOS** (Apple silicon): the `.dmg`
 - **Linux**: the `.AppImage` (any distribution), or the `.deb` (Debian, Ubuntu)
 
-Already have Bmail 0.2.0 or later? It updates itself; there is nothing to
-download. Everything runs on your computer. Nothing is uploaded.
+Already have Bmail? Run the new installer over it: your mail and settings are
+kept. Everything runs on your computer. Your mail is never uploaded.
 
 If this build is not signed, your system warns you the first time you open it.
 On Windows: More info, then Run anyway. On macOS: System Settings, Privacy &
