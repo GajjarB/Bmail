@@ -33,13 +33,13 @@ dependencies = [
 [project.optional-dependencies]
 ml = ["numpy>=2.2.6", "scikit-learn>=1.7.2"]
 embeddings = ["sentence-transformers>=6.1.0"]
-html = ["selectolax>=0.4.13"]
+html = ["selectolax>=1.0.0"]
 gmail = ["google-api-python-client>=2.201.0", "google-auth-oauthlib>=1.5.0"]
 graph = ["msal>=1.39.0"]
 keyring = ["keyring>=25.7.0"]
-dev = ["pytest>=9.1.1", "ruff>=0.16.9"]
+dev = ["pytest>=9.1.1", "ruff>=0.16.10"]
 all = [
-  "numpy>=2.2.6", "scikit-learn>=1.7.2", "selectolax>=0.4.13",
+  "numpy>=2.2.6", "scikit-learn>=1.7.2", "selectolax>=1.0.0",
   "google-api-python-client>=2.201.0", "google-auth-oauthlib>=1.5.0",
   "msal>=1.39.0", "keyring>=25.7.0",
 ]
