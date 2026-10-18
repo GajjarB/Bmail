@@ -20,7 +20,7 @@ classifiers = [
   "Topic :: Communications :: Email",
 ]
 dependencies = [
-  "pydantic>=2.13.5",
+  "pydantic>=2.14.1",
   "PyYAML>=6.0.3",
   "openpyxl>=3.1.5",
   # Passwords for accounts added in the app go to the OS keychain, so it is
@@ -37,7 +37,7 @@ html = ["selectolax>=1.0.0"]
 gmail = ["google-api-python-client>=2.201.0", "google-auth-oauthlib>=1.5.0"]
 graph = ["msal>=1.39.0"]
 keyring = ["keyring>=25.7.0"]
-dev = ["pytest>=9.1.1", "ruff>=0.16.10"]
+dev = ["pytest>=9.1.1", "ruff>=0.17.0"]
 all = [
   "numpy>=2.2.6", "scikit-learn>=1.7.2", "selectolax>=1.0.0",
   "google-api-python-client>=2.201.0", "google-auth-oauthlib>=1.5.0",
