@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=84.0.0", "wheel"]
+requires = ["setuptools>=84.2.1", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -20,7 +20,7 @@ classifiers = [
   "Topic :: Communications :: Email",
 ]
 dependencies = [
-  "pydantic>=2.13.5",
+  "pydantic>=2.14.1",
   "PyYAML>=6.0.3",
   "openpyxl>=3.1.5",
   # Passwords for accounts added in the app go to the OS keychain, so it is
@@ -32,14 +32,14 @@ dependencies = [
 
 [project.optional-dependencies]
 ml = ["numpy>=2.2.6", "scikit-learn>=1.7.2"]
-embeddings = ["sentence-transformers>=6.1.0"]
-html = ["selectolax>=1.0.0"]
+embeddings = ["sentence-transformers>=6.2.0"]
+html = ["selectolax>=1.0.2"]
 gmail = ["google-api-python-client>=2.201.0", "google-auth-oauthlib>=1.5.0"]
 graph = ["msal>=1.39.0"]
 keyring = ["keyring>=25.7.0"]
-dev = ["pytest>=9.1.1", "ruff>=0.16.10"]
+dev = ["pytest>=9.2.0", "ruff>=0.17.3"]
 all = [
-  "numpy>=2.2.6", "scikit-learn>=1.7.2", "selectolax>=1.0.0",
+  "numpy>=2.2.6", "scikit-learn>=1.7.2", "selectolax>=1.0.2",
   "google-api-python-client>=2.201.0", "google-auth-oauthlib>=1.5.0",
   "msal>=1.39.0", "keyring>=25.7.0",
 ]
